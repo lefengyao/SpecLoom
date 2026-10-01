@@ -20,6 +20,7 @@ const RecordSchema = z.object({
 }).strict();
 const VaultSchema = z.object({ version: z.literal(1), records: z.array(RecordSchema).max(128) }).strict();
 type VaultRecord = z.infer<typeof RecordSchema>;
+const MAX_VAULT_BYTES = 1_048_576;
 const SealedCredentialSchema = z.object({ endpoint: z.string(), secret: z.string().min(1).max(8_192) }).strict();
 
 export class ModelVault {
@@ -94,7 +95,7 @@ export class ModelVault {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
       throw new ProjectError("BACKEND_UNAVAILABLE", "The model profile vault could not be read.");
     }
-    if (raw.length > 1_048_576) throw new ProjectError("MODEL_ERROR", "The model profile vault exceeds the size limit.");
+    if (Buffer.byteLength(raw) > MAX_VAULT_BYTES) throw new ProjectError("MODEL_ERROR", "The model profile vault exceeds the size limit.");
     try {
       const data = VaultSchema.parse(JSON.parse(raw));
       if (new Set(data.records.map((record) => record.profile.id)).size !== data.records.length) throw new Error("Duplicate profile");
@@ -107,10 +108,12 @@ export class ModelVault {
       const result = await operation(await this.readRecords());
       const data = VaultSchema.safeParse({ version: 1, records: result.records });
       if (!data.success) throw new ProjectError("MODEL_ERROR", "The model profile vault capacity was exceeded.");
+      const serialized = JSON.stringify(data.data);
+      if (Buffer.byteLength(serialized) > MAX_VAULT_BYTES) throw new ProjectError("MODEL_ERROR", "The model profile vault exceeds the size limit.");
       const temporary = `${this.path}.${randomUUID()}.tmp`;
       try {
         await mkdir(resolve(this.path, ".."), { recursive: true });
-        await writeFile(temporary, JSON.stringify(data.data), { encoding: "utf8", flag: "wx", mode: 0o600 });
+        await writeFile(temporary, serialized, { encoding: "utf8", flag: "wx", mode: 0o600 });
         await rename(temporary, this.path);
       } catch { throw new ProjectError("BACKEND_UNAVAILABLE", "The model profile vault could not be saved."); }
       finally { await unlink(temporary).catch(() => undefined); }

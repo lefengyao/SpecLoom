@@ -194,6 +194,18 @@ describe("AgentRuntime", () => {
     expect(requests).toBe(3);
   });
 
+  it("redacts credentials in object keys before exposing tool events", async () => {
+    let requests = 0;
+    const events: unknown[] = [];
+    const baseUrl = await mockEndpoint((_request, response) => {
+      requests++;
+      completion(response, requests === 1 ? { role: "assistant", content: null, tool_calls: [{ id: "call", type: "function", function: { name: "skills_list", arguments: "{}" } }] } : { role: "assistant", content: "OK" });
+    });
+    const runtime = new AgentRuntime({ executeTool: async () => ({ "local-test-key": "value" }), resolveCredential: async () => "local-test-key", onEvent: (event) => { events.push(event); } });
+    await runtime.run({ taskId: "t", profile: profile(baseUrl), prompt: "go" });
+    expect(JSON.stringify(events)).not.toContain("local-test-key");
+  });
+
   it("rejects unapproved profiles, malformed replies and oversized history", async () => {
     const baseUrl = await mockEndpoint((_request, response) => completion(response, { role: "assistant", tool_calls: "malformed" }));
     const runtime = new AgentRuntime({ executeTool: async () => undefined });

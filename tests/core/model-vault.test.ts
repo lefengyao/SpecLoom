@@ -68,4 +68,19 @@ describe("ModelVault", () => {
     await writeFile(vault.path, JSON.stringify(raw));
     await expect(vault.resolveCredential(changed)).rejects.toMatchObject({ code: "APPROVAL_REQUIRED" });
   });
+
+  it("rejects an oversized aggregate save and preserves a readable vault", async () => {
+    const vault = new ModelVault(await directory(), adapter);
+    let previous = "";
+    let rejected = false;
+    for (let index = 0; index < 128; index++) {
+      try { await vault.save(profile({ id: `profile-${index}` }), "x".repeat(8192)); }
+      catch (error) { expect(error).toMatchObject({ code: "MODEL_ERROR" }); rejected = true; break; }
+      previous = await readFile(vault.path, "utf8");
+    }
+    expect(rejected).toBe(true);
+    expect(await readFile(vault.path, "utf8")).toBe(previous);
+    expect((await vault.list()).length).toBeGreaterThan(0);
+    await vault.remove("profile-0");
+  });
 });

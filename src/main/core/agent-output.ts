@@ -28,7 +28,7 @@ export function toolOutput(ok: boolean, value: unknown, secret?: string): string
     const entries = Object.entries(item);
     if (entries.length > 64) truncated = true;
     return Object.fromEntries(entries.slice(0, 64).filter(([key]) => !secretField.test(key))
-      .map(([key, entry]) => [key.slice(0, 256), compact(entry, depth + 1)]));
+      .map(([key, entry]) => [redactSecret(key, secret).slice(0, 256), compact(entry, depth + 1)]));
   }
   const result = compact(value);
   const envelope = ok ? { ok: true, result, truncated } : { ok: false, error: result, truncated };
