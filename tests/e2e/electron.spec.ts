@@ -1,4 +1,5 @@
 import { fileURLToPath } from "node:url";
+import path from "node:path";
 import { expect, test, _electron as electron } from "@playwright/test";
 
 test("opens the packaged renderer behind the sandboxed preload", async () => {
@@ -8,7 +9,7 @@ test("opens the packaged renderer behind the sandboxed preload", async () => {
   delete environment.ELECTRON_RUN_AS_NODE;
   delete environment.SPECLOOM_DEV_SERVER_URL;
   const application = await electron.launch({
-    args: [fileURLToPath(new URL("../../", import.meta.url))],
+    args: [path.resolve(fileURLToPath(new URL("../../", import.meta.url))), "--headless", "--disable-gpu"],
     env: environment,
   });
   try {

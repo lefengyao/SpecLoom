@@ -2,11 +2,12 @@ import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+import path from "node:path";
 import { context } from "esbuild";
 import { createServer } from "vite";
 import { electronBuildOptions } from "./electron-build.mjs";
 
-const projectRoot = fileURLToPath(new URL("../", import.meta.url));
+const projectRoot = path.resolve(fileURLToPath(new URL("../", import.meta.url)));
 /** @type {string} */
 const electronPath = createRequire(import.meta.url)("electron");
 /** @type {import('node:child_process').ChildProcess | undefined} */

@@ -12,8 +12,8 @@
 
 ## Execution Status
 
-- [ ] Task 0: Scaffold (in progress)
-- [ ] Task 1: Shared contracts and layout
+- [x] Task 0: Scaffold (`1f81c08`; 4 tests, typecheck, lint, Windows build passed; headless Electron workflow passes after normalizing Windows launch paths)
+- [ ] Task 1: Shared contracts and layout (in progress)
 - [ ] Task 2: Versioned files and staged changes
 - [ ] Task 3: Scopes and Skills
 - [ ] Task 4: Isolated snapshot Bash
