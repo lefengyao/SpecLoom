@@ -1,7 +1,7 @@
 import { TaskScopeSpecSchema, type TaskScopeSpec } from "../../shared/contracts";
 import { ProjectError } from "./errors";
 
-const windowsDeviceName = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i;
+const windowsDeviceName = /^(?:con|prn|aux|nul|com[1-9\u00b9\u00b2\u00b3]|lpt[1-9\u00b9\u00b2\u00b3])(?:\.|$)/i;
 
 export function normalizeTaskPath(relativePath: string): string {
   if (typeof relativePath !== "string" || !relativePath || /[<>:"|?*]/.test(relativePath)

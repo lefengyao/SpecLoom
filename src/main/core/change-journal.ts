@@ -6,6 +6,8 @@ import { ProjectError } from "./errors";
 import { FileStore, type GuardedFileAccess } from "./file-store";
 import { decodeText, digestBytes, hasCode, removeTemporary } from "./store-fs";
 
+const maxJournalBytes = 64 * 1024 * 1024;
+
 const OperationSchema = z.object({
   entry: ChangeEntrySchema,
   preimage: z.string().nullable(),
@@ -26,13 +28,15 @@ export class ChangeJournal {
 
   async write(record: JournalRecord): Promise<void> {
     const validated = JournalSchema.parse(record);
+    const serialized = `${JSON.stringify(validated, null, 2)}\n`;
+    if (Buffer.byteLength(serialized, "utf8") > maxJournalBytes) throw new ProjectError("VALIDATION_FAILED", "Change journal exceeds the byte limit", { limit: maxJournalBytes });
     const target = await this.store.policy.resolve(`${this.directory}/${validated.id}.json`, true);
     await this.store.policy.ensureParent(target);
     const temporary = path.join(path.dirname(target), `.specloom-tmp-${randomUUID()}`);
     try {
       await this.store.policy.assertSafe(temporary, true);
       const handle = await this.store.fs.open(temporary, "wx");
-      try { await handle.writeFile(`${JSON.stringify(validated, null, 2)}\n`, "utf8"); await handle.sync(); } finally { await handle.close(); }
+      try { await handle.writeFile(serialized, "utf8"); await handle.sync(); } finally { await handle.close(); }
       await this.store.policy.assertSafe(target, true);
       await this.store.fs.rename(temporary, target);
     } finally { await removeTemporary(this.store.fs, temporary); }
@@ -48,9 +52,9 @@ export class ChangeJournal {
       const handle = await this.store.fs.open(filename, "r");
       try {
         const stats = await handle.stat();
-        if (!stats.isFile() || stats.size > 64 * 1024 * 1024) throw new ProjectError("VALIDATION_FAILED", "Invalid or oversized change journal", { path: name });
+        if (!stats.isFile() || stats.size > maxJournalBytes) throw new ProjectError("VALIDATION_FAILED", "Invalid or oversized change journal", { path: name });
         let parsed: unknown;
-        try { parsed = JSON.parse(decodeText(await handle.readFile(), 64 * 1024 * 1024)); }
+        try { parsed = JSON.parse(decodeText(await handle.readFile(), maxJournalBytes)); }
         catch { throw new ProjectError("VALIDATION_FAILED", "Change journal is not valid UTF-8 JSON", { path: name }); }
         const validated = JournalSchema.safeParse(parsed);
         if (!validated.success || validated.data.id + ".json" !== name) throw new ProjectError("VALIDATION_FAILED", "Invalid change journal", { path: name });
@@ -80,6 +84,11 @@ export class ChangeJournal {
   }
 
   async prepare(id: string, taskId: string, digest: string, entries: ChangeEntry[]): Promise<JournalRecord> {
+    const target = await this.store.policy.resolve(`${this.directory}/${JournalSchema.shape.id.parse(id)}.json`, true);
+    try {
+      await this.store.fs.lstat(target);
+      throw new ProjectError("VERSION_CONFLICT", "A change journal already uses this ID", { id });
+    } catch (error) { if (!hasCode(error, "ENOENT")) throw error; }
     const operations: JournalOperation[] = [];
     for (const entry of entries) {
       const preimage = entry.expectedVersion === "absent" ? null : (await this.store.read(entry.path, entry.expectedVersion)).content;

@@ -81,6 +81,18 @@ describe("versioned file store", () => {
     await expect(store.listVersion(relative)).rejects.toMatchObject({ code: "PATH_ESCAPE" });
   });
 
+  it.each([
+    "COM\u00b9", "COM\u00b2", "COM\u00b3", "LPT\u00b9", "LPT\u00b2", "LPT\u00b3",
+    "specs/com\u00b9.md", "specs/com\u00b2.md", "specs/com\u00b3.md",
+    "specs/lpt\u00b9.md", "specs/lpt\u00b2.md", "specs/lpt\u00b3.md",
+  ])("rejects Windows superscript device path %j before filesystem access", async (relative) => {
+    const root = await fixture();
+    const store = new FileStore(root);
+    await expect(store.listVersion(relative)).rejects.toMatchObject({ code: "PATH_ESCAPE" });
+    await expect(store.write(relative, "unsafe", "absent")).rejects.toMatchObject({ code: "PATH_ESCAPE" });
+    expect(await fs.readdir(root)).toEqual([]);
+  });
+
   it("rejects root junctions, ancestor junctions and links to files", async () => {
     const root = await fixture();
     const outside = await fixture();

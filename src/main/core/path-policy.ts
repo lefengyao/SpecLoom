@@ -8,7 +8,7 @@ export function normalizeProjectPath(input: string, internal = false): string {
   const segments = portable.split("/");
   if (!portable || portable.startsWith("/") || /[:\0]/.test(portable) || segments.includes("..")
     || segments.some((segment) => /[. ]$/.test(segment) && segment !== ".")
-    || segments.some((segment) => /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(segment))) {
+    || segments.some((segment) => /^(?:con|prn|aux|nul|com[1-9\u00b9\u00b2\u00b3]|lpt[1-9\u00b9\u00b2\u00b3])(?:\.|$)/i.test(segment))) {
     throw new ProjectError("PATH_ESCAPE", "Only relative project paths without traversal or device names are allowed", { path: input });
   }
   const normalized = path.posix.normalize(portable).replace(/\/$/, "");

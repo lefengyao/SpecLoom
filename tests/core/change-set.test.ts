@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { type ChangeEntry } from "../../src/shared/contracts";
 import { FileStore } from "../../src/main/core/file-store";
 import { StagedChangeSet } from "../../src/main/core/change-set";
+import { ChangeJournal } from "../../src/main/core/change-journal";
 
 const roots: string[] = [];
 async function fixture(): Promise<string> {
@@ -121,6 +122,48 @@ describe("staged change sets", () => {
     const changes = new StagedChangeSet(store, { taskId: "task" });
     expect(() => changes.stage(entry(".specloom/history/changes/unsafe.json", "unsafe"))).toThrow();
     expect(() => new StagedChangeSet(store, { taskId: "task", id: "../outside" })).toThrow();
+  });
+
+  it("rejects oversized aggregate journal serialization before preparing history", async () => {
+    const root = await fixture();
+    const store = new FileStore(root);
+    const preimage = "\u0001".repeat(store.maxTextBytes);
+    const nextContent = "\u0002".repeat(store.maxTextBytes);
+    const entries: ChangeEntry[] = [];
+    for (let index = 0; index < 6; index++) {
+      const relative = `file-${index}.md`;
+      await writeFile(path.join(root, relative), preimage);
+      entries.push(entry(relative, nextContent, (await store.listVersion(relative)).version));
+    }
+    await expect(new ChangeJournal(store).prepare("oversized", "task", "digest", entries).then(() => undefined)).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
+    expect((await readdir(root)).sort()).toEqual(entries.map((value) => value.path));
+    for (const value of entries) expect(await readFile(path.join(root, value.path), "utf8")).toBe(preimage);
+  });
+
+  it("bounds journal writes by serialized UTF-8 bytes before creating any file", async () => {
+    const root = await fixture();
+    const journal = new ChangeJournal(new FileStore(root));
+    await expect(journal.write({
+      schemaVersion: 1, id: "oversized", taskId: "task", digest: "\u00e9".repeat(32 * 1024 * 1024),
+      status: "committing", createdAt: new Date().toISOString(), operations: [], recoveryConflicts: [],
+    })).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
+    expect(await readdir(root)).toEqual([]);
+  });
+
+  it("preserves immutable audit history when another change set reuses an ID", async () => {
+    const root = await fixture();
+    const store = new FileStore(root);
+    const first = new StagedChangeSet(store, { taskId: "task", id: "reused" });
+    first.stage(entry("a.md", "first"));
+    await first.commit(first.preview().digest);
+    const historyPath = path.join(root, ".specloom/history/changes/reused.json");
+    const originalHistory = await readFile(historyPath, "utf8");
+    const second = new StagedChangeSet(store, { taskId: "another-task", id: first.id });
+    second.stage(entry("a.md", "second", (await store.listVersion("a.md")).version));
+    await expect(second.commit(second.preview().digest)).rejects.toMatchObject({ code: "VERSION_CONFLICT" });
+    expect(await readFile(path.join(root, "a.md"), "utf8")).toBe("first");
+    expect(await readFile(historyPath, "utf8")).toBe(originalHistory);
+    expect(await StagedChangeSet.inspectHistory(store)).toMatchObject([{ id: first.id, status: "applied" }]);
   });
 
   it("persists preimages and rolls back a midway failure", async () => {

@@ -48,6 +48,19 @@ describe("TaskScope", () => {
     expect(() => new TaskScope(specification({ writePaths: [unsafePath] }))).toThrow();
   });
 
+  it.each([
+    "specs/COM\u00b9", "specs/COM\u00b2", "specs/COM\u00b3",
+    "specs/LPT\u00b9", "specs/LPT\u00b2", "specs/LPT\u00b3",
+    "specs/com\u00b9.md", "specs/com\u00b2.md", "specs/com\u00b3.md",
+    "specs/lpt\u00b9.md", "specs/lpt\u00b2.md", "specs/lpt\u00b3.md",
+  ])("rejects Windows superscript device path %j at the task boundary", (unsafePath) => {
+    const scope = new TaskScope(specification({ readPaths: ["*"], writePaths: ["specs/**"] }));
+    expect(() => scope.assertRead(unsafePath)).toThrowError(expect.objectContaining({ code: "PATH_ESCAPE" }));
+    expect(() => scope.assertWrite(unsafePath, "create")).toThrowError(expect.objectContaining({ code: "PATH_ESCAPE" }));
+    expect(() => new TaskScope(specification({ readPaths: [unsafePath] }))).toThrowError(expect.objectContaining({ code: "PATH_ESCAPE" }));
+    expect(() => new TaskScope(specification({ writePaths: [unsafePath] }))).toThrowError(expect.objectContaining({ code: "PATH_ESCAPE" }));
+  });
+
   it.each([".specloom/project.yaml", ".specloom/history/changes/1.json", ".SPEClOOM/project.yaml", ".git/config", ".godot/editor/project_metadata.cfg"])("blocks protected path %s even with wildcard reads", (protectedPath) => {
     const scope = new TaskScope(specification({ readPaths: ["*"] }));
     expect(() => scope.assertRead(protectedPath)).toThrowError(expect.objectContaining({ code: "TASK_SCOPE_DENIED" }));
