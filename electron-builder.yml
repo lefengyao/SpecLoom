@@ -1,0 +1,16 @@
+appId: com.trailblazer.specloom
+productName: SpecLoom
+asar: true
+directories:
+  output: release
+files:
+  - dist/main/**
+  - dist/renderer/**
+  - package.json
+win:
+  target: nsis
+  signAndEditExecutable: false
+mac:
+  target: dmg
+linux:
+  target: AppImage

@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node", "vitest/globals", "@testing-library/jest-dom"],
+    "jsx": "react-jsx",
+    "noEmit": true,
+    "allowJs": true,
+    "checkJs": true
+  },
+  "include": ["vite.config.ts", "vitest.config.ts", "playwright.config.ts", "scripts/**/*.mjs", "tests/**/*.ts", "tests/**/*.tsx"]
+}
