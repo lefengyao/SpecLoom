@@ -1,10 +1,12 @@
 import type { ValidationDiagnostic } from "../../shared/contracts";
 import { VersionTokenSchema } from "../../shared/contracts";
-import { diagnostic, nonempty, record, type ParsedSpec } from "./validator-markdown";
+import { diagnostic, nonempty, record, validationPathIdentity, type ParsedSpec } from "./validator-markdown";
 import { ValidationSource } from "./validator-source";
+import { normalizeProjectPath } from "./path-policy";
 
 export async function validateReferences(specs: ParsedSpec[], source: ValidationSource, diagnostics: ValidationDiagnostic[]): Promise<void> {
   const ids = new Map<string, ParsedSpec>();
+  const paths = new Map(specs.map((spec) => [validationPathIdentity(spec.path), spec]));
   for (const spec of specs) {
     if (!nonempty(spec.data.id)) continue;
     const existing = ids.get(spec.data.id);
@@ -21,8 +23,12 @@ export async function validateReferences(specs: ParsedSpec[], source: Validation
     const isPath = target.startsWith("res://") || target.includes("/") || /\.(?:md|gd|tscn|tres|godot|json|yaml|yml)$/i.test(target) || (record(value) && value.path !== undefined);
     if (isPath) {
       try {
-        const relative = target.replace(/^res:\/\//, "");
+        const relative = normalizeProjectPath(target.replace(/^res:\/\//, ""));
         if (!(await source.exists(relative))) diagnostics.push(diagnostic(owner, code, `Referenced file '${relative}' does not exist`));
+        const identity = validationPathIdentity(relative);
+        const referencedSpec = paths.get(identity);
+        if (relation && (!identity.startsWith("specs/entities/") || !referencedSpec)) diagnostics.push(diagnostic(owner, "RELATION_TARGET_INVALID", `Relation '${relative}' must reference an entity specification`));
+        else if (record(value) && value.type !== undefined && referencedSpec && referencedSpec.data.type !== value.type) diagnostics.push(diagnostic(owner, "RELATION_TYPE_MISMATCH", `Referenced file '${relative}' does not have type '${String(value.type)}'`));
         if (record(value) && value.version !== undefined) {
           if (!VersionTokenSchema.safeParse(value.version).success) diagnostics.push(diagnostic(owner, "REFERENCE_VERSION_INVALID", `Reference '${relative}' requires a file version token`));
           else if (await source.effectiveVersion(relative) !== value.version) diagnostics.push(diagnostic(owner, "REFERENCE_VERSION_STALE", `Referenced file '${relative}' has changed`));
@@ -32,14 +38,14 @@ export async function validateReferences(specs: ParsedSpec[], source: Validation
       }
     } else {
       const found = ids.get(target);
-      if (!found || (relation && !found.path.startsWith("specs/entities/"))) diagnostics.push(diagnostic(owner, code, `Referenced ID '${target}' does not exist`));
+      if (!found || (relation && !validationPathIdentity(found.path).startsWith("specs/entities/"))) diagnostics.push(diagnostic(owner, code, `Referenced ID '${target}' does not exist`));
       else if (record(value) && value.type !== undefined && found.data.type !== value.type) diagnostics.push(diagnostic(owner, "RELATION_TYPE_MISMATCH", `Referenced ID '${target}' does not have type '${String(value.type)}'`));
     }
   }
 
   for (const spec of specs) {
     if (Array.isArray(spec.data.relations)) for (const value of spec.data.relations) await reference(value, spec.path, "RELATION_NOT_FOUND", true);
-    if (spec.path.startsWith("specs/tasks/") && Array.isArray(spec.data.inputs)) for (const value of spec.data.inputs) await reference(value, spec.path, "TASK_INPUT_NOT_FOUND");
+    if (validationPathIdentity(spec.path).startsWith("specs/tasks/") && Array.isArray(spec.data.inputs)) for (const value of spec.data.inputs) await reference(value, spec.path, "TASK_INPUT_NOT_FOUND");
     if (Array.isArray(spec.data.source)) for (const value of spec.data.source) await reference(value, spec.path, "SOURCE_NOT_FOUND");
     else if (record(spec.data.source)) await reference(spec.data.source, spec.path, "SOURCE_NOT_FOUND");
   }

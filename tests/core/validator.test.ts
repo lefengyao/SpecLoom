@@ -78,6 +78,61 @@ describe("specification validation", () => {
     expect(result.diagnostics.map((entry) => entry.code)).toEqual(["FRONTMATTER_MISSING", "FRONTMATTER_INVALID"]);
   });
 
+  it("checks Markdown specifications with uppercase extensions", async () => {
+    const { root, store } = await fixture();
+    await put(root, "specs/entities/items/bad.MD", "# Missing front matter\n");
+    const result = await new Validator(store).validate({ runGodot: false });
+    expect(result.status).toBe("fail");
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({ path: "specs/entities/items/bad.MD", code: "FRONTMATTER_MISSING" }));
+  });
+
+  it.each([
+    ["specs/entities/characters/hero.md", "hero", { type: "map" }],
+    ["specs/entities/characters/hero.md", "different", {}],
+    ["specs/entities/characters/nested/hero.md", "hero", {}],
+  ])("requires the entity type and ID to match %s", async (relative, id, changes) => {
+    const { root, store } = await fixture();
+    if (relative !== "specs/entities/characters/hero.md") await rm(path.join(root, "specs/entities/characters/hero.md"));
+    await put(root, relative, entity(id, changes));
+    const result = await new Validator(store).validate({ runGodot: false });
+    expect(result.status).toBe("fail");
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({ path: relative, code: "ENTITY_LAYOUT_INVALID" }));
+  });
+
+  it.runIf(process.platform === "win32")("checks staged specification paths using Windows file identities", async () => {
+    const { store } = await fixture();
+    const current = await store.listVersion("specs/entities/characters/hero.md");
+    const relative = "SPECS/ENTITIES/CHARACTERS/HERO.MD";
+    const overlay: ChangeEntry[] = [{ path: relative, operation: "update", expectedVersion: current.version, nextContent: md({ id: "hero", type: "character" }), sourceTaskId: "build", sourceTool: "test" }];
+    const result = await new Validator(store).validate({ overlay, runGodot: false });
+    expect(result.status).toBe("fail");
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({ path: relative, code: "SPEC_FIELD_INVALID", message: expect.stringContaining("status") }));
+  });
+
+  it("requires path-based entity relations to target entity specifications of the declared type", async () => {
+    const { root, store } = await fixture();
+    await put(root, "scripts/foo.gd", "extends Node\n");
+    await put(root, "specs/entities/maps/island.md", entity("island", { type: "map" }));
+    await put(root, "specs/entities/characters/hero.md", entity("hero", { relations: [{ path: "scripts/foo.gd", type: "character" }, { path: "specs/entities/maps/island.md", type: "character" }] }));
+    const result = await new Validator(store).validate({ runGodot: false });
+    expect(result.status).toBe("fail");
+    expect(result.diagnostics.map((entry) => entry.code)).toContain("RELATION_TARGET_INVALID");
+    expect(result.diagnostics.map((entry) => entry.code)).toContain("RELATION_TYPE_MISMATCH");
+    await put(root, "specs/entities/characters/hero.md", entity("hero", { relations: [{ path: "specs/entities/maps/island.md", type: "map" }] }));
+    expect((await new Validator(store).validate({ runGodot: false })).status).toBe("pass");
+  });
+
+  it.runIf(process.platform === "win32")("resolves entity relation paths using Windows file identities", async () => {
+    const { root, store } = await fixture();
+    await put(root, "specs/entities/maps/island.md", entity("island", { type: "map" }));
+    const relation = { path: "SPECS/ENTITIES/MAPS/ISLAND.MD", type: "map" };
+    await put(root, "specs/entities/characters/hero.md", entity("hero", { relations: [relation] }));
+    expect((await new Validator(store).validate({ runGodot: false })).status).toBe("pass");
+    await put(root, "specs/entities/characters/hero.md", entity("hero", { relations: [{ ...relation, type: "character" }] }));
+    const result = await new Validator(store).validate({ runGodot: false });
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({ code: "RELATION_TYPE_MISMATCH" }));
+  });
+
   it("validates task inputs and generated targets against the staged view", async () => {
     const { root, store } = await fixture();
     await put(root, "specs/tasks/build.md", md({ id: "build", title: "Build", readPaths: ["*"], writePaths: ["scripts/**"], inputs: ["scripts/input.gd", { id: "missing-entity" }] }));
@@ -149,6 +204,17 @@ describe("specification validation", () => {
     ];
     const result = await new Validator(store).validate({ overlay, runGodot: false });
     expect(result.diagnostics.map((entry) => entry.code)).toEqual(["SCENE_NODE_BUDGET_EXCEEDED", "SCRIPT_LINE_BUDGET_EXCEEDED"]);
+  });
+
+  it.each([
+    ["scripts/new.GD", Array.from({ length: 251 }, () => "# line").join("\n"), "SCRIPT_LINE_BUDGET_EXCEEDED"],
+    ["scenes/new.TSCN", Array.from({ length: 81 }, (_, index) => `[node name="N${index}" type="Node"]`).join("\n"), "SCENE_NODE_BUDGET_EXCEEDED"],
+  ])("applies generated budgets to uppercase extensions in %s", async (relative, content, code) => {
+    const { store } = await fixture();
+    const overlay: ChangeEntry[] = [{ path: relative, operation: "create", expectedVersion: "absent", nextContent: content, sourceTaskId: "build", sourceTool: "test" }];
+    const result = await new Validator(store).validate({ overlay, runGodot: false });
+    expect(result.status).toBe("fail");
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({ path: relative, code }));
   });
 });
 

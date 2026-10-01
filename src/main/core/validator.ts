@@ -4,7 +4,7 @@ import { ProjectError } from "./errors";
 import { TaskScope } from "./task-scope";
 import { GODOT_IMAGE } from "./snapshot-runner";
 import { godotDiagnostics } from "./validator-godot";
-import { diagnostic, nonempty, parseSpec, projectBudgets, validateFields, type ParsedSpec } from "./validator-markdown";
+import { diagnostic, nonempty, parseSpec, projectBudgets, validateFields, validationPathIdentity, type ParsedSpec } from "./validator-markdown";
 import { validateReferences } from "./validator-references";
 import { ValidationSource } from "./validator-source";
 
@@ -46,8 +46,11 @@ export class Validator {
     const source = await ValidationSource.create(this.store, options.overlay, options.scope);
     const diagnostics: ValidationDiagnostic[] = [];
     const specs: ParsedSpec[] = [];
-    const specPaths = source.paths.filter((relative) => relative.endsWith(".md") && (relative.startsWith("specs/entities/") || relative.startsWith("specs/tasks/") || ["specs/project.md", "specs/outline.md"].includes(relative)));
-    for (const required of ["specs/project.md", "specs/outline.md"]) if (!specPaths.includes(required)) {
+    const specPaths = source.paths.filter((relative) => {
+      const identity = validationPathIdentity(relative);
+      return relative.toLowerCase().endsWith(".md") && (identity.startsWith("specs/entities/") || identity.startsWith("specs/tasks/") || ["specs/project.md", "specs/outline.md"].includes(identity));
+    });
+    for (const required of ["specs/project.md", "specs/outline.md"]) if (!specPaths.some((relative) => validationPathIdentity(relative) === required)) {
       await source.version(required);
       diagnostics.push(diagnostic(required, "SPEC_NOT_FOUND", "Required project specification does not exist"));
     }
@@ -59,15 +62,15 @@ export class Validator {
       if (spec) { validateFields(spec, diagnostics); specs.push(spec); }
     }
     await validateReferences(specs, source, diagnostics);
-    const budgets = projectBudgets(specs.find((spec) => spec.path === "specs/project.md"), diagnostics);
+    const budgets = projectBudgets(specs.find((spec) => validationPathIdentity(spec.path) === "specs/project.md"), diagnostics);
     for (const entry of options.overlay ?? []) {
       if (entry.operation === "delete") continue;
       const relative = this.store.normalizePath(entry.path);
       const content = entry.nextContent!;
-      if (relative.endsWith(".gd")) {
+      if (relative.toLowerCase().endsWith(".gd")) {
         const lineCount = content === "" ? 0 : content.replace(/\r?\n$/, "").split(/\r?\n/).length;
         if (lineCount > budgets.maxScriptLines) diagnostics.push(diagnostic(relative, "SCRIPT_LINE_BUDGET_EXCEEDED", `Script has ${lineCount} lines; limit is ${budgets.maxScriptLines}`));
-      } else if (relative.endsWith(".tscn")) {
+      } else if (relative.toLowerCase().endsWith(".tscn")) {
         const nodeCount = content.split(/\r?\n/).filter((line) => /^\s*\[node(?:\s|\])/.test(line)).length;
         if (nodeCount > budgets.maxSceneNodes) diagnostics.push(diagnostic(relative, "SCENE_NODE_BUDGET_EXCEEDED", `Scene has ${nodeCount} nodes; limit is ${budgets.maxSceneNodes}`));
       }
@@ -92,7 +95,7 @@ export class Validator {
       diagnostics.push({ path: "project.godot", code: "GODOT_NOT_FOUND", severity: "warning", message: "Godot validation requires Docker and the pinned Godot image" });
     };
     if (!this.snapshotRunner) { unavailable(); return; }
-    const task = specs.find((spec) => spec.path.startsWith("specs/tasks/") && spec.data.id === options.taskId);
+    const task = specs.find((spec) => validationPathIdentity(spec.path).startsWith("specs/tasks/") && spec.data.id === options.taskId);
     const smoke = options.smokeScene ?? (nonempty(task?.data.smokeScene) ? task.data.smokeScene : undefined);
     const base = options.scope?.describe();
     const scope = new TaskScope({ id: base?.id ?? options.taskId ?? options.overlay?.[0]?.sourceTaskId ?? "validation", title: "Validation snapshot", readPaths: ["*"], writePaths: base?.writePaths ?? (options.overlay ?? []).map((entry) => entry.path), allowDelete: base?.allowDelete ?? (options.overlay ?? []).some((entry) => entry.operation === "delete"), mode: "manual" });
@@ -118,7 +121,7 @@ export class Validator {
       if (smoke !== undefined) {
         let relative: string;
         try { relative = this.store.normalizePath(smoke.replace(/^res:\/\//, "")); } catch { diagnostics.push(diagnostic("project.godot", "SMOKE_SCENE_INVALID", "Smoke scene must be a safe project path")); return; }
-        if (!relative.endsWith(".tscn") || !await source.exists(relative)) { diagnostics.push(diagnostic(relative, "SMOKE_SCENE_NOT_FOUND", "Smoke scene must reference an existing .tscn file")); return; }
+        if (!relative.toLowerCase().endsWith(".tscn") || !await source.exists(relative)) { diagnostics.push(diagnostic(relative, "SMOKE_SCENE_NOT_FOUND", "Smoke scene must reference an existing .tscn file")); return; }
         await execute("godot-smoke", "Godot scene smoke", ["--headless", "--path", "/workspace", "--scene", `res://${relative}`, "--quit-after", "120"]);
       }
     } catch (error) {

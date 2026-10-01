@@ -8,6 +8,10 @@ export const ENTITY_TYPES = ["character", "map", "system", "item", "event"] as c
 export const nonempty = (value: unknown): value is string => typeof value === "string" && value.trim().length > 0;
 export const record = (value: unknown): value is SpecData => value !== null && typeof value === "object" && !Array.isArray(value);
 
+export function validationPathIdentity(relative: string): string {
+  return process.platform === "win32" ? relative.toLowerCase() : relative;
+}
+
 export function diagnostic(path: string, code: string, message: string): ValidationDiagnostic {
   return { path, code, message, severity: "error" };
 }
@@ -32,19 +36,28 @@ export function parseSpec(relative: string, content: string, diagnostics: Valida
 
 export function validateFields(spec: ParsedSpec, diagnostics: ValidationDiagnostic[]): void {
   const { path, data } = spec;
+  const identity = validationPathIdentity(path);
   const field = (key: string, valid: boolean) => { if (!valid) diagnostics.push(diagnostic(path, "SPEC_FIELD_INVALID", `Field '${key}' is missing or invalid`)); };
   field("id", nonempty(data.id));
-  if (path.startsWith("specs/entities/")) {
-    if (!ENTITY_TYPES.includes(data.type as typeof ENTITY_TYPES[number])) diagnostics.push(diagnostic(path, "ENTITY_TYPE_INVALID", `Entity type must be one of ${ENTITY_TYPES.join(", ")}`));
+  if (identity.startsWith("specs/entities/")) {
+    const validType = ENTITY_TYPES.includes(data.type as typeof ENTITY_TYPES[number]);
+    if (!validType) diagnostics.push(diagnostic(path, "ENTITY_TYPE_INVALID", `Entity type must be one of ${ENTITY_TYPES.join(", ")}`));
+    if (validType && nonempty(data.id)) {
+      const segments = identity.split("/");
+      const filenameId = segments[segments.length - 1]!.slice(0, -3);
+      if (segments.length !== 4 || segments[2] !== `${String(data.type)}s` || filenameId !== validationPathIdentity(data.id)) {
+        diagnostics.push(diagnostic(path, "ENTITY_LAYOUT_INVALID", "Entity specifications must use specs/entities/<type plural>/<id>.md"));
+      }
+    }
     field("status", nonempty(data.status));
     field("version", nonempty(data.version) || (typeof data.version === "number" && Number.isSafeInteger(data.version) && data.version > 0));
     field("relations", Array.isArray(data.relations));
     field("source", nonempty(data.source) || Array.isArray(data.source) || (record(data.source) && (nonempty(data.source.path) || nonempty(data.source.id))));
-  } else if (path === "specs/project.md" || path === "specs/outline.md") {
+  } else if (identity === "specs/project.md" || identity === "specs/outline.md") {
     field("schemaVersion", data.schemaVersion === 1);
     field("title", nonempty(data.title));
     field("description", typeof data.description === "string");
-  } else if (path.startsWith("specs/tasks/")) {
+  } else if (identity.startsWith("specs/tasks/")) {
     const candidate = {
       id: data.id, title: data.title, readPaths: data.readPaths, writePaths: data.writePaths,
       ...(data.allowDelete === undefined ? {} : { allowDelete: data.allowDelete }),
