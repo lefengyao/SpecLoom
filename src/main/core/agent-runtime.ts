@@ -1,12 +1,14 @@
 import { z } from "zod";
 import type { ModelProfile } from "../../shared/contracts";
-import { MessageSchema, requestCompletion, type AgentMessage } from "./agent-client";
+import { requestCompletion, type AgentMessage } from "./agent-client";
+import { AgentConversationSchema, boundConversation, redactConversation } from "./agent-conversation";
 import { redactSecret, toolOutput } from "./agent-output";
 import { ProjectError, serializeError } from "./errors";
 import { parseModelProfile } from "./model-config";
 import { ToolCatalog, type ToolName } from "./tool-catalog";
 
 export { chatCompletionsUrl } from "./model-config";
+export { AgentConversationSchema, boundConversation } from "./agent-conversation";
 export type { AgentMessage } from "./agent-client";
 export interface ToolExecution { taskId: string; name: ToolName; input: Record<string, unknown>; signal?: AbortSignal }
 export type ToolExecutor = (call: ToolExecution) => Promise<unknown>;
@@ -19,6 +21,7 @@ export interface AgentRuntimeOptions {
   executeTool: ToolExecutor;
   resolveCredential?: (profile: ModelProfile) => Promise<string | undefined>;
   onEvent?: (event: AgentEvent) => void | Promise<void>;
+  onConversation?: (messages: AgentMessage[]) => void | Promise<void>;
   fetch?: typeof fetch;
   catalog?: ToolCatalog;
 }
@@ -30,7 +33,7 @@ export interface AgentRunResult { summary: string; toolCalls: number; rounds: nu
 
 const RunInputSchema = z.object({
   taskId: z.string().min(1).max(256), prompt: z.string().min(1).max(131_072),
-  systemPrompt: z.string().max(65_536).optional(), previousMessages: z.array(MessageSchema).max(96).optional(),
+  systemPrompt: z.string().max(65_536).optional(), previousMessages: AgentConversationSchema.optional(),
 });
 
 export class AgentRuntime {
@@ -42,7 +45,7 @@ export class AgentRuntime {
     const profile = parseModelProfile(input.profile);
     if (!profile.approved) throw new ProjectError("APPROVAL_REQUIRED", "Approve the model profile and endpoint before running an agent.");
     const validation = RunInputSchema.safeParse(input);
-    if (!validation.success || JSON.stringify(validation.data.previousMessages ?? []).length > 262_144) {
+    if (!validation.success) {
       throw new ProjectError("MODEL_ERROR", "Invalid or oversized agent conversation.");
     }
     this.assertActive(input.signal);
@@ -51,6 +54,7 @@ export class AgentRuntime {
       ...(input.systemPrompt ? [{ role: "system" as const, content: input.systemPrompt }] : []),
       ...(validation.data.previousMessages ?? []), { role: "user", content: input.prompt },
     ];
+    await this.checkpoint(messages, secret);
     let toolCalls = 0;
     let toolRounds = 0;
     let dispatched = false;
@@ -63,18 +67,13 @@ export class AgentRuntime {
       messages.push(message);
       if (!message.tool_calls?.length) {
         const summary = redactSecret(message.content ?? "", secret);
+        await this.checkpoint(messages, secret);
         await this.emit({ type: "summary", summary, toolCalls });
-        return { summary, toolCalls, rounds: toolRounds,
-          messages: messages.map((item) => ({ ...item, content: item.content === null ? null : redactSecret(item.content, secret),
-            ...(item.tool_call_id ? { tool_call_id: redactSecret(item.tool_call_id, secret) } : {}),
-            ...(item.tool_calls ? { tool_calls: item.tool_calls.map((call) => ({ ...call, id: redactSecret(call.id, secret), function: {
-              name: redactSecret(call.function.name, secret), arguments: redactSecret(call.function.arguments, secret),
-            } })) } : {}),
-          })) };
+        return { summary, toolCalls, rounds: toolRounds, messages: redactConversation(messages, secret) };
       }
       if (toolRounds >= profile.maxToolRounds) throw new ProjectError("MODEL_ERROR", "The agent tool round limit was reached.");
       toolRounds++;
-      for (const call of message.tool_calls) {
+      for (const [index, call] of message.tool_calls.entries()) {
         this.assertActive(input.signal);
         let name: ToolName | undefined;
         let ok = false;
@@ -95,6 +94,7 @@ export class AgentRuntime {
           output = toolOutput(false, serializeError(error), secret);
         }
         messages.push({ role: "tool", tool_call_id: call.id, content: output });
+        if (index === message.tool_calls.length - 1) await this.checkpoint(messages, secret);
         await this.emit({ type: "tool-result", round: toolRounds, toolCallId: redactSecret(call.id, secret), ...(name ? { name } : {}), output, ok });
       }
       if (messages.length > 640 || JSON.stringify(messages).length > 2_097_152) throw new ProjectError("MODEL_ERROR", "The agent conversation size limit was reached.");
@@ -106,4 +106,7 @@ export class AgentRuntime {
   }
 
   private async emit(event: AgentEvent): Promise<void> { await this.options.onEvent?.(event); }
+  private async checkpoint(messages: AgentMessage[], secret?: string): Promise<void> {
+    if (this.options.onConversation) await this.options.onConversation(boundConversation(messages, secret));
+  }
 }

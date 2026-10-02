@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
-import { AgentRuntime, chatCompletionsUrl } from "../../src/main/core/agent-runtime";
+import { AgentConversationSchema, AgentRuntime, boundConversation, chatCompletionsUrl, type AgentMessage } from "../../src/main/core/agent-runtime";
 import { ProjectError } from "../../src/main/core/errors";
 import type { ModelProfile } from "../../src/shared/contracts";
 
@@ -116,6 +116,170 @@ describe("AgentRuntime", () => {
     const runtime = new AgentRuntime({ executeTool: async () => true, resolveCredential: async () => "local-test-key" });
     await expect(runtime.run({ taskId: "t", profile: profile(baseUrl), prompt: "go" })).rejects.toMatchObject({ code: "MODEL_ERROR" });
     expect(requests).toBe(2);
+  });
+
+  it("continues from the last complete tool batch after a model HTTP failure", async () => {
+    const requests: RequestBody[] = [];
+    const checkpoints: AgentMessage[][] = [];
+    let executions = 0;
+    const baseUrl = await mockEndpoint((_request, response, body) => {
+      requests.push(body);
+      if (requests.length === 1) completion(response, { role: "assistant", content: null,
+        tool_calls: [{ id: "read-versions", type: "function", function: { name: "files_list_versions", arguments: "{}" } }] });
+      else if (requests.length === 2) { response.statusCode = 503; response.end("unavailable"); }
+      else completion(response, { role: "assistant", content: "Resumed using the previous tool result." });
+    });
+    const runtime = new AgentRuntime({ executeTool: async () => { executions++; return { version: "current" }; },
+      onConversation: (messages) => { checkpoints.push(messages); } });
+    await expect(runtime.run({ taskId: "t", profile: profile(baseUrl), prompt: "Inspect project versions" }))
+      .rejects.toMatchObject({ code: "MODEL_ERROR" });
+    expect(checkpoints.map((messages) => messages.map((message) => message.role)))
+      .toEqual([["user"], ["user", "assistant", "tool"]]);
+    const previousMessages = checkpoints.at(-1)!;
+    const result = await runtime.run({ taskId: "t", profile: profile(baseUrl), prompt: "Continue", previousMessages });
+    expect(requests[2]!.messages).toEqual([...previousMessages, { role: "user", content: "Continue" }]);
+    expect(executions).toBe(1);
+    expect(result.summary).toContain("Resumed");
+    expect(checkpoints.at(-1)?.at(-1)).toMatchObject({ role: "assistant", content: result.summary });
+  });
+
+  it("retains the preceding checkpoint when cancellation interrupts a later tool batch", async () => {
+    let requests = 0;
+    let executions = 0;
+    const checkpoints: AgentMessage[][] = [];
+    const controller = new AbortController();
+    const call = (id: string) => ({ id, type: "function", function: { name: "skills_list", arguments: "{}" } });
+    const baseUrl = await mockEndpoint((_request, response) => {
+      requests++;
+      completion(response, { role: "assistant", content: null,
+        tool_calls: requests === 1 ? [call("completed")] : [call("partial"), call("cancelled")] });
+    });
+    const runtime = new AgentRuntime({ executeTool: async () => { if (++executions === 3) controller.abort(); return []; },
+      onConversation: (messages) => { checkpoints.push(messages); } });
+    await expect(runtime.run({ taskId: "t", profile: profile(baseUrl), prompt: "go", signal: controller.signal }))
+      .rejects.toMatchObject({ code: "MODEL_ERROR", message: expect.stringMatching(/cancelled/) });
+    expect(checkpoints).toHaveLength(2);
+    expect(checkpoints.at(-1)?.at(-1)).toMatchObject({ role: "tool", tool_call_id: "completed" });
+    expect(JSON.stringify(checkpoints)).not.toContain("partial");
+    expect(JSON.stringify(checkpoints)).not.toContain("cancelled");
+  });
+
+  it("redacts every checkpoint field without mutating the live request conversation", async () => {
+    const secret = "local-test-key";
+    const checkpoints: AgentMessage[][] = [];
+    const events: string[] = [];
+    let requests = 0;
+    const baseUrl = await mockEndpoint((_request, response, body) => {
+      requests++;
+      expect(body.messages[0]).toMatchObject({ role: "system", content: "private system instructions" });
+      expect(body.messages[1]).toMatchObject({ role: "user", content: `Check ${secret}` });
+      if (requests === 1) completion(response, { role: "assistant", content: `Echo ${secret}`, tool_calls: [
+        { id: secret, type: "function", function: { name: "files_list_versions", arguments: JSON.stringify({ prefix: secret }) } },
+        { id: "other", type: "function", function: { name: `unknown_${secret}`, arguments: "{}" } },
+      ] });
+      else completion(response, { role: "assistant", content: `Bearer ${secret}` });
+    });
+    const runtime = new AgentRuntime({ executeTool: async () => ({ value: secret }), resolveCredential: async () => secret,
+      onConversation: (messages) => {
+        checkpoints.push(structuredClone(messages));
+        events.push("checkpoint");
+        messages[0]!.content = "consumer mutation";
+      }, onEvent: (event) => { events.push(event.type); } });
+    await runtime.run({ taskId: "t", profile: profile(baseUrl), prompt: `Check ${secret}`, systemPrompt: "private system instructions" });
+    expect(checkpoints).toHaveLength(3);
+    expect(JSON.stringify(checkpoints)).not.toContain(secret);
+    expect(checkpoints.flat().every((message) => message.role !== "system")).toBe(true);
+    expect(checkpoints.every((messages) => AgentConversationSchema.safeParse(messages).success)).toBe(true);
+    expect(events.slice(-2)).toEqual(["checkpoint", "summary"]);
+  });
+
+  it("bounds persisted history by removing whole tool batches", () => {
+    const history: AgentMessage[] = [{ role: "user", content: "Old request" }];
+    for (let index = 0; index < 40; index++) history.push(
+      { role: "assistant", content: null, tool_calls: [
+        { id: `one-${index}`, type: "function", function: { name: "skills_list", arguments: "{}" } },
+        { id: `two-${index}`, type: "function", function: { name: "skills_list", arguments: "{}" } },
+      ] },
+      { role: "tool", content: "[]", tool_call_id: `one-${index}` },
+      { role: "tool", content: "[]", tool_call_id: `two-${index}` },
+    );
+    history.push({ role: "user", content: "Latest request" });
+    const bounded = boundConversation(history);
+    expect(bounded.length).toBeLessThanOrEqual(96);
+    expect(bounded[0]?.role).toBe("assistant");
+    expect(bounded.at(-1)).toEqual({ role: "user", content: "Latest request" });
+    expect(AgentConversationSchema.safeParse(bounded).success).toBe(true);
+    const incomplete = [{ role: "assistant", content: null, tool_calls: [
+      { id: "missing", type: "function", function: { name: "skills_list", arguments: "{}" } },
+    ] }] as AgentMessage[];
+    expect(AgentConversationSchema.safeParse(incomplete).success).toBe(false);
+    expect(AgentConversationSchema.safeParse([{ role: "tool", content: "[]", tool_call_id: "orphan" }]).success).toBe(false);
+  });
+
+  it("enforces the persisted JSON size limit without changing tool arguments", () => {
+    const history: AgentMessage[] = [{ role: "system", content: "not persisted" }];
+    for (let index = 0; index < 4; index++) history.push(
+      { role: "assistant", content: "x".repeat(65_000), tool_calls: [
+        { id: `call-${index}`, type: "function", function: { name: "files_list_versions", arguments: JSON.stringify({ prefix: `prefix-${index}` }) } },
+      ] }, { role: "tool", content: "x".repeat(65_000), tool_call_id: `call-${index}` },
+    );
+    const bounded = boundConversation(history);
+    expect(JSON.stringify(bounded).length).toBeLessThanOrEqual(262_144);
+    expect(bounded).toHaveLength(4);
+    expect(bounded[0]!.tool_calls?.[0]?.id).toBe("call-2");
+    expect(bounded[0]!.tool_calls?.[0]?.function.arguments).toBe('{"prefix":"prefix-2"}');
+    expect(AgentConversationSchema.safeParse(bounded).success).toBe(true);
+  });
+
+  it("keeps the latest user goal when tool batches exceed either history bound", () => {
+    const history: AgentMessage[] = [{ role: "user", content: "Current goal" }];
+    for (let index = 0; index < 40; index++) history.push(
+      { role: "assistant", content: null, tool_calls: [
+        { id: `one-${index}`, type: "function", function: { name: "skills_list", arguments: "{}" } },
+        { id: `two-${index}`, type: "function", function: { name: "skills_list", arguments: "{}" } },
+      ] }, { role: "tool", content: "[]", tool_call_id: `one-${index}` },
+      { role: "tool", content: "[]", tool_call_id: `two-${index}` },
+    );
+    const bounded = boundConversation(history);
+    expect(bounded[0]).toEqual(history[0]);
+    expect(bounded.at(-1)?.tool_call_id).toBe("two-39");
+    expect(AgentConversationSchema.safeParse(bounded).success).toBe(true);
+    history.push({ role: "assistant", content: null, tool_calls: [
+      { id: "oversized", type: "function", function: { name: "skills_list", arguments: "x".repeat(300_000) } },
+    ] }, { role: "tool", content: "[]", tool_call_id: "oversized" });
+    expect(boundConversation(history)).toEqual([history[0]]);
+    const escaped = boundConversation([{ role: "user", content: "\0".repeat(131_072) }]);
+    expect(escaped[0]!.content).toContain("[truncated]");
+    expect(AgentConversationSchema.safeParse(escaped).success).toBe(true);
+  });
+
+  it("keeps tool-call IDs unique and paired when redaction causes collisions", async () => {
+    const secret = "local-test-key";
+    let requests = 0;
+    const baseUrl = await mockEndpoint((_request, response) => {
+      requests++;
+      completion(response, requests === 1 ? { role: "assistant", content: null, tool_calls: [secret, "[redacted]"].map((id) =>
+        ({ id, type: "function", function: { name: "skills_list", arguments: "{}" } })) } : { role: "assistant", content: "OK" });
+    });
+    const checkpoints: AgentMessage[][] = [];
+    const runtime = new AgentRuntime({ executeTool: async () => [], resolveCredential: async () => secret,
+      onConversation: (messages) => { checkpoints.push(messages); } });
+    const result = await runtime.run({ taskId: "t", profile: profile(baseUrl), prompt: "go" });
+    expect(AgentConversationSchema.safeParse(checkpoints.at(-1)).success).toBe(true);
+    expect(AgentConversationSchema.safeParse(result.messages).success).toBe(true);
+    expect(JSON.stringify(result.messages)).not.toContain(secret);
+  });
+
+  it("rejects orphaned tool history before dispatching a model request", async () => {
+    let requests = 0;
+    const runtime = new AgentRuntime({ executeTool: async () => [], fetch: async () => {
+      requests++;
+      return Response.json({ choices: [{ message: { role: "assistant", content: "OK" } }] });
+    } });
+    await expect(runtime.run({ taskId: "t", profile: profile("http://127.0.0.1:1234"), prompt: "go",
+      previousMessages: [{ role: "tool", content: "[]", tool_call_id: "orphan" }] }))
+      .rejects.toMatchObject({ code: "MODEL_ERROR" });
+    expect(requests).toBe(0);
   });
 
   it("rejects redirects without sending the credential to the destination", async () => {
