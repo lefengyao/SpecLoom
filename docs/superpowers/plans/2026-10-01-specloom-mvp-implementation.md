@@ -4,7 +4,7 @@
 
 **Goal:** Build a Godot-first Electron desktop agent that organizes Markdown/YAML project specifications, performs version-guarded project changes, runs snapshot Bash and Godot validation, and exposes the same capabilities through local MCP.
 
-**Architecture:** Electron main process owns `ProjectCore`; renderer communicates only through typed IPC. `ProjectCore` owns path validation, SHA-256 version tokens, task scopes, atomic change sets, Skills, model tool calls, snapshot execution, and validation. The MCP adapter calls the same core interfaces, so desktop and external agents cannot bypass the file gate.
+**Architecture:** Electron main process owns `ProjectCore`; renderer communicates only through typed IPC. `ProjectCore` owns path validation, SHA-256 version tokens, task scopes, journaled change sets, Skills, model tool calls, snapshot execution, and validation. The MCP adapter calls the same core interfaces, so desktop and external agents cannot bypass the file gate.
 
 **Tech Stack:** Electron, TypeScript, React, Vite, Vitest, Zod, Node `crypto`/`fs`/`child_process`, OpenAI-compatible HTTP API, MCP Streamable HTTP transport, Godot 4 headless CLI.
 
@@ -13,16 +13,18 @@
 ## Execution Status
 
 - [x] Task 0: Scaffold (`1f81c08`; 4 tests, typecheck, lint, Windows build passed; headless Electron workflow passes after normalizing Windows launch paths)
-- [ ] Task 1: Shared contracts and layout (in progress)
-- [ ] Task 2: Versioned files and staged changes
-- [ ] Task 3: Scopes and Skills
-- [ ] Task 4: Isolated snapshot Bash
-- [ ] Task 5: Model/tool runtime
-- [ ] Task 6: Specification and Godot validation
-- [ ] Task 7: ProjectCore and IPC
-- [ ] Task 8: MCP
-- [ ] Task 9: Desktop workflow
-- [ ] Task 10: Acceptance and documentation
+- [x] Task 1: Shared contracts and layout (`e169431`; 15 focused tests, spec/quality reviews passed)
+- [x] Task 2: Versioned files and staged changes (`d448cbf`, `adb7cc4`; independent review passed after journal capacity/identity fixes)
+- [x] Task 3: Scopes and Skills (`b170ca8`, `adb7cc4`; review passed after Windows device-name fix)
+- [x] Task 4: Isolated snapshot Bash and durable abandoned-resource recovery (`2e19981`, `f9b1ba4`, `63a5e9b`, `4963a70`; real Docker isolation, interruption cleanup, and crashed-owner recovery passed)
+- [x] Task 5: Model/tool runtime and bounded conversation recovery (`d863002`, `ad5c492`, `2842224`, `681c239`; structured credential redaction and complete tool-batch checkpoints passed review and tests)
+- [x] Task 6: Specification and Godot validation (`6ca02d6`, `decaf8c`; real valid import/smoke and invalid script checks passed)
+- [x] Task 7: ProjectCore, desktop controller, and typed IPC (scope, overlay, read receipts, commit races, durable history, conversation and recovery diagnostics passed)
+- [x] Task 8: Authenticated local MCP (official SDK, host/origin/authentication, shared-core scopes and stale-version checks passed)
+- [x] Task 9: Chinese desktop workflow (documents/entities, tasks, models, Skills, MCP, review and history; asynchronous response regressions passed)
+- [x] Task 10: Acceptance and documentation (297 tests passed with no skips; typecheck/lint/Windows packaging passed; packaged Electron end-to-end workflow passed)
+
+Final verification: `npm test -- --fileParallelism=false` passed 297/297 tests across 25 files, including real Docker and Godot checks. `npm run typecheck`, `npm run lint`, and `npm run build` passed. Packaged executable acceptance using `SPECLOOM_E2E_EXECUTABLE` passed with isolated user data; desktop and narrow-layout screenshots were inspected. No remote push or merge was performed.
 
 Execution clarifications: the new repository stays in the user-selected `SpecLoom/` directory on `feat/specloom-mvp`. Arbitrary Bash uses a Docker Linux container whose only project mount is the snapshot, with networking disabled and resource limits; missing Docker/image fails closed. PowerShell is not a Bash substitute. Managed changes are serialized and journaled with guarded recovery; ordinary filesystem replacements cannot promise atomicity across arbitrary external editors or multiple paths. File tools stage changes, and manual mode requires UI approval before commit. Tests target these actual guarantees.
 
@@ -63,7 +65,7 @@ Each task below names every file it creates or modifies. Execute the test step i
 - Create: `src/renderer/App.tsx`
 - Create: `tests/smoke/toolchain.test.ts`
 
-- [ ] **Step 1: Initialize Git and write package metadata**
+- [x] **Step 1: Initialize Git and write package metadata**
 
 Run:
 
@@ -92,7 +94,7 @@ Set `package.json` scripts and dependencies to:
 
 Install runtime packages `electron`, `react`, `react-dom`, `zod`, `@modelcontextprotocol/sdk`, and `execa`; install development packages `typescript`, `vite`, `@vitejs/plugin-react`, `vitest`, `jsdom`, `electron-builder`, `concurrently`, `wait-on`, `eslint`, `@types/node`, `@types/react`, and `@types/react-dom`.
 
-- [ ] **Step 2: Add compiler and Vite configuration**
+- [x] **Step 2: Add compiler and Vite configuration**
 
 Use `tsconfig.json` as the shared strict base:
 
@@ -113,11 +115,11 @@ Use `tsconfig.json` as the shared strict base:
 
 `tsconfig.main.json` includes `src/main`, `src/shared` and emits to `dist/main`; `tsconfig.renderer.json` includes `src/renderer`, `src/shared`, uses DOM libs and emits to `dist/renderer`. Configure `vite.config.ts` with the React plugin, renderer root `src/renderer`, output `dist/renderer`, and port `5173`.
 
-- [ ] **Step 3: Add the minimal Electron and renderer entrypoints**
+- [x] **Step 3: Add the minimal Electron and renderer entrypoints**
 
 `src/main/main.ts` must create a `BrowserWindow` with `contextIsolation: true`, `nodeIntegration: false`, preload path `dist/main/preload.js`, and load the Vite renderer in development or `dist/renderer/index.html` in production. `src/renderer/App.tsx` renders the text `SpecLoom` and a disabled `Select Godot Project` button until IPC exists.
 
-- [ ] **Step 4: Add a toolchain smoke test and run it**
+- [x] **Step 4: Add a toolchain smoke test and run it**
 
 Create `tests/smoke/toolchain.test.ts`:
 
@@ -133,7 +135,7 @@ describe("toolchain", () => {
 
 Run `npm test -- tests/smoke/toolchain.test.ts` and expect one passing test. Run `npm run typecheck` and expect exit code 0.
 
-- [ ] **Step 5: Checkpoint the scaffold**
+- [x] **Step 5: Checkpoint the scaffold**
 
 Run:
 
@@ -150,21 +152,21 @@ git commit -m "chore: scaffold specloom desktop app"
 - Create: `src/main/core/errors.ts`
 - Create: `tests/unit/project-layout.test.ts`
 
-- [ ] **Step 1: Write failing layout tests**
+- [x] **Step 1: Write failing layout tests**
 
 Cover a valid Godot root containing `project.godot`, initialization of `specs/` and `.specloom/`, and rejection of a directory without `project.godot`.
 
-- [ ] **Step 2: Implement contracts and layout initialization**
+- [x] **Step 2: Implement contracts and layout initialization**
 
 Define these shared types in `src/shared/contracts.ts`: `VersionToken = string`, `FileVersion`, `FileReadResult`, `WriteRequest`, `PatchRequest`, `TaskScope`, `ChangeEntry`, `ChangeSet`, `ValidationResult`, `SkillSource`, and `ToolResult`. Define `ProjectLayout.initialize(root)` to create the exact directories from the design and copy bundled Skills from `skills/`.
 
 Use `ProjectError` with codes `INVALID_PROJECT`, `PATH_ESCAPE`, `VERSION_CONFLICT`, `TASK_SCOPE_DENIED`, `COMMAND_FAILED`, `VALIDATION_FAILED`, and `MODEL_ERROR`.
 
-- [ ] **Step 3: Run layout tests**
+- [x] **Step 3: Run layout tests**
 
 Run `npm test -- tests/unit/project-layout.test.ts`; expect all tests to pass and `npm run typecheck` to remain green.
 
-- [ ] **Step 4: Checkpoint the contracts**
+- [x] **Step 4: Checkpoint the contracts**
 
 ```powershell
 git add src/shared src/main/core/project-layout.ts src/main/core/errors.ts tests/unit/project-layout.test.ts
@@ -179,11 +181,11 @@ git commit -m "feat: define project contracts and layout"
 - Create: `tests/unit/file-store.test.ts`
 - Create: `tests/unit/change-set.test.ts`
 
-- [ ] **Step 1: Write failing file-store tests**
+- [x] **Step 1: Write failing file-store tests**
 
 Test SHA-256 tokens for existing files, `absent` for missing files, successful `read` with the current token, rejection of a stale read, root path confinement, and atomic creation with `expectedVersion: "absent"`.
 
-- [ ] **Step 2: Implement `FileStore`**
+- [x] **Step 2: Implement `FileStore`**
 
 Expose:
 
@@ -199,19 +201,19 @@ class FileStore {
 
 Resolve every path against the project root, reject traversal and symlink escapes, hash file bytes with SHA-256, and recheck the token immediately before an atomic temporary-file replacement. `patch` must verify its context and reject an ambiguous or missing match.
 
-- [ ] **Step 3: Write failing change-set tests**
+- [x] **Step 3: Write failing change-set tests**
 
 Cover staging create/update/delete, preview output, all-files-match commit, and rejection of the entire batch when one expected token is stale.
 
-- [ ] **Step 4: Implement `ChangeSet`**
+- [x] **Step 4: Implement `ChangeSet`**
 
 Store each entry with `path`, `operation`, `expectedVersion`, `nextContent`, `sourceTaskId`, and `sourceTool`. `commit()` must list every current version first, reject on any mismatch, then apply all entries through `FileStore` while preserving a JSON audit record under `.specloom/history/changes/`.
 
-- [ ] **Step 5: Run file and change-set tests**
+- [x] **Step 5: Run file and change-set tests**
 
 Run `npm test -- tests/unit/file-store.test.ts tests/unit/change-set.test.ts`; expect all tests to pass. Add a test that edits a file between `listVersion` and `commit` and observes `VERSION_CONFLICT` with no other file changed.
 
-- [ ] **Step 6: Checkpoint the file gate**
+- [x] **Step 6: Checkpoint the file gate**
 
 ```powershell
 git add src/main/core/file-store.ts src/main/core/change-set.ts tests/unit/file-store.test.ts tests/unit/change-set.test.ts
@@ -234,27 +236,27 @@ git commit -m "feat: add version guarded project file access"
 - Create: `tests/unit/task-scope.test.ts`
 - Create: `tests/unit/skill-registry.test.ts`
 
-- [ ] **Step 1: Write failing scope tests**
+- [x] **Step 1: Write failing scope tests**
 
 Test a scope allowing `specs/entities/hero.md` and `scenes/hero.tscn`, rejecting `scripts/unrelated.gd`, rejecting delete when delete is disabled, and allowing read-only access outside the write set.
 
-- [ ] **Step 2: Implement `TaskScope`**
+- [x] **Step 2: Implement `TaskScope`**
 
 Expose `assertRead(path)`, `assertWrite(path, operation)`, and `describe()`. Match normalized relative paths against explicit allow lists; never treat a directory prefix as permission for an unrelated file unless the scope explicitly contains that directory.
 
-- [ ] **Step 3: Write failing Skill tests**
+- [x] **Step 3: Write failing Skill tests**
 
 Test discovery of a Skill directory containing `SKILL.md`, loading its content plus source file versions, and refusing a cached load after the source version changes.
 
-- [ ] **Step 4: Implement `SkillRegistry` and bundled Skills**
+- [x] **Step 4: Implement `SkillRegistry` and bundled Skills**
 
 Each Skill has front matter with `id`, `name`, `purpose`, `allowedSources`, and `instructions`. `SkillRegistry.list()` returns metadata; `load(id, scope)` reads allowed source files through `FileStore` and returns content plus `VersionToken` for every source. Keep prompts, specifications, and entity catalogs as source references rather than duplicated hidden state.
 
-- [ ] **Step 5: Run scope and Skill tests**
+- [x] **Step 5: Run scope and Skill tests**
 
 Run `npm test -- tests/unit/task-scope.test.ts tests/unit/skill-registry.test.ts`; expect all tests to pass.
 
-- [ ] **Step 6: Checkpoint Skills**
+- [x] **Step 6: Checkpoint Skills**
 
 ```powershell
 git add src/main/core/task-scope.ts src/main/core/skill-registry.ts skills tests/unit/task-scope.test.ts tests/unit/skill-registry.test.ts
@@ -268,23 +270,23 @@ git commit -m "feat: add task scopes and version bound skills"
 - Create: `tests/unit/snapshot-runner.test.ts`
 - Create: `tests/integration/snapshot-conflict.test.ts`
 
-- [ ] **Step 1: Write failing snapshot tests**
+- [x] **Step 1: Write failing snapshot tests**
 
 Test that a command can create a file in a temporary snapshot, its diff is collected, the real project is unchanged before commit, timeout returns `COMMAND_FAILED`, and an external edit causes the final change set to reject all files.
 
-- [ ] **Step 2: Implement snapshot creation and command limits**
+- [x] **Step 2: Implement snapshot creation and command limits**
 
 `SnapshotRunner.create(taskScope)` copies readable project files into a private temporary snapshot, records baseline versions, and rejects symlinks. `exec(command, options)` invokes Bash in a Linux Docker container: the snapshot is the only project mount, root filesystem is read-only, networking is disabled, capabilities are dropped, no-new-privileges is enabled, and time/output/process/memory limits apply. Diff collection rejects files outside the approved write scope. No host shell fallback is allowed.
 
-- [ ] **Step 3: Implement diff collection and commit handoff**
+- [x] **Step 3: Implement diff collection and commit handoff**
 
 Compare snapshot files to the baseline, classify add/update/delete, and return a `ChangeSet` whose expected versions are the recorded real-project tokens. Do not expose a method that writes to the real root directly.
 
-- [ ] **Step 4: Run snapshot tests**
+- [x] **Step 4: Run snapshot tests**
 
 Run `npm test -- tests/unit/snapshot-runner.test.ts tests/integration/snapshot-conflict.test.ts`; expect all tests to pass with the real fixture untouched after a rejected conflict.
 
-- [ ] **Step 5: Checkpoint Bash isolation**
+- [x] **Step 5: Checkpoint Bash isolation**
 
 ```powershell
 git add src/main/core/snapshot-runner.ts tests/unit/snapshot-runner.test.ts tests/integration/snapshot-conflict.test.ts
@@ -299,23 +301,23 @@ git commit -m "feat: run agent commands in versioned snapshots"
 - Create: `tests/unit/agent-runtime.test.ts`
 - Create: `tests/integration/agent-tool-loop.test.ts`
 
-- [ ] **Step 1: Write failing HTTP-client tests**
+- [x] **Step 1: Write failing HTTP-client tests**
 
 Mock a `/v1/chat/completions` endpoint and test base URL joining, bearer authentication, tool schema serialization, one tool call followed by a final assistant message, request timeout, and bounded retry on a 429 response.
 
-- [ ] **Step 2: Implement the OpenAI-compatible client**
+- [x] **Step 2: Implement the OpenAI-compatible client**
 
 Define `ModelConfig` with `baseUrl`, `model`, `apiKeyRef`, `temperature`, `timeoutMs`, and `maxToolRounds`. Store only `apiKeyRef` in project configuration; retrieve the key from the OS credential adapter. Send standard `messages`, `tools`, and `tool_choice` fields and parse assistant `tool_calls` without vendor-specific branches.
 
-- [ ] **Step 3: Implement the tool catalog and loop**
+- [x] **Step 3: Implement the tool catalog and loop**
 
 Register `files.list_versions`, `files.read`, `files.write`, `files.patch`, `bash.exec`, `skills.list`, `skills.load`, `godot.validate`, `changes.preview`, and `changes.commit`. Before dispatching a call, validate its Zod input, assert the task scope, and append an audit event. Return tool errors as structured messages so the model must react to conflicts instead of receiving hidden exceptions.
 
-- [ ] **Step 4: Run model tests**
+- [x] **Step 4: Run model tests**
 
 Run `npm test -- tests/unit/agent-runtime.test.ts tests/integration/agent-tool-loop.test.ts`; expect all tests to pass without a live API key.
 
-- [ ] **Step 5: Checkpoint the agent runtime**
+- [x] **Step 5: Checkpoint the agent runtime**
 
 ```powershell
 git add src/main/core/agent-runtime.ts src/main/core/tool-catalog.ts tests/unit/agent-runtime.test.ts tests/integration/agent-tool-loop.test.ts
@@ -332,23 +334,23 @@ git commit -m "feat: add openai compatible agent tool loop"
 - Create: `tests/fixtures/godot-minimal/main.gd`
 - Create: `tests/integration/godot-validation.test.ts`
 
-- [ ] **Step 1: Write failing specification and reference tests**
+- [x] **Step 1: Write failing specification and reference tests**
 
 Cover missing front matter fields, duplicate entity IDs, a relation to a missing entity, and a valid fixture. Assert each diagnostic contains `path`, `code`, `message`, and `severity`.
 
-- [ ] **Step 2: Implement Markdown/YAML parsing and reference validation**
+- [x] **Step 2: Implement Markdown/YAML parsing and reference validation**
 
 Parse front matter with a YAML parser, validate the required fields and allowed entity types, index all `specs/entities/**/*.md`, then resolve `relations`, task inputs, and generated-manifest references. Return deterministic diagnostics sorted by path and code.
 
-- [ ] **Step 3: Add Godot headless execution**
+- [x] **Step 3: Add Godot headless execution**
 
-Use a configured executable path and invoke `godot --headless --path <project> --editor --quit`. Capture exit code, stdout/stderr summaries, timeout, and command line. If a task declares a smoke scene, invoke `godot --headless --path <project> --scene <scene>` after import validation.
+Run Godot 4.4.1 through the pinned isolated snapshot container, invoking `godot --headless --path /workspace --editor --quit`. Capture exit code, stdout/stderr summaries, timeout, and command line. If a task declares a smoke scene, invoke `godot --headless --path /workspace --scene res://<scene> --quit-after 120` after import validation. Never fall back to a host executable.
 
-- [ ] **Step 4: Run validator tests**
+- [x] **Step 4: Run validator tests**
 
-Run `npm test -- tests/unit/validator.test.ts`. Run `npm test -- tests/integration/godot-validation.test.ts`; when Godot is unavailable, the test must skip with an explicit `GODOT_NOT_FOUND` diagnostic rather than report success.
+Run `npm test -- tests/core/validator.test.ts`. Run `npm test -- tests/integration/godot-validation.test.ts`; when the Docker Linux backend or pinned image is unavailable, the test must skip with an explicit prerequisite diagnostic rather than report success.
 
-- [ ] **Step 5: Checkpoint validation**
+- [x] **Step 5: Checkpoint validation**
 
 ```powershell
 git add src/main/core/validator.ts tests/unit/validator.test.ts tests/fixtures/godot-minimal tests/integration/godot-validation.test.ts
@@ -365,23 +367,23 @@ git commit -m "feat: validate specs references and godot projects"
 - Modify: `src/shared/contracts.ts`
 - Create: `tests/integration/project-core.test.ts`
 
-- [ ] **Step 1: Write failing façade tests**
+- [x] **Step 1: Write failing façade tests**
 
 Test project initialization, task creation with an explicit scope, a read using a token, staged preview, rejected stale commit, and validation result persistence under `.specloom/history/validations/`.
 
-- [ ] **Step 2: Implement `ProjectCore`**
+- [x] **Step 2: Implement `ProjectCore`**
 
 Construct `FileStore`, `SkillRegistry`, `SnapshotRunner`, `AgentRuntime`, and `Validator` with one project root. Expose `initializeProject`, `createTask`, `read`, `write`, `patch`, `runBash`, `listSkills`, `loadSkill`, `validate`, `previewChanges`, and `commitChanges`. Every method receives a task/session ID and records the actor and source tool.
 
-- [ ] **Step 3: Add typed preload and IPC handlers**
+- [x] **Step 3: Add typed preload and IPC handlers**
 
 Expose a narrow `window.specloom` API from `preload.ts`; do not expose Node or `ipcRenderer` directly. Add handlers for project selection, initialization, task creation, agent message, skills, change preview, commit, and validation. Validate every incoming payload with the same shared Zod schemas used by the tool catalog.
 
-- [ ] **Step 4: Run core integration tests**
+- [x] **Step 4: Run core integration tests**
 
 Run `npm test -- tests/integration/project-core.test.ts` and `npm run typecheck`; expect both to pass.
 
-- [ ] **Step 5: Checkpoint the core boundary**
+- [x] **Step 5: Checkpoint the core boundary**
 
 ```powershell
 git add src/main/core/project-core.ts src/main/preload.ts src/main/ipc.ts src/main/main.ts src/shared/contracts.ts tests/integration/project-core.test.ts
@@ -395,15 +397,15 @@ git commit -m "feat: compose project core and secure electron ipc"
 - Create: `tests/integration/mcp-server.test.ts`
 - Modify: `src/main/main.ts`
 
-- [ ] **Step 1: Write failing MCP tests**
+- [x] **Step 1: Write failing MCP tests**
 
 Test unauthenticated requests return 401, a valid local session can list versions and preview changes, and an MCP tool cannot commit a stale change set. Assert that the MCP server and IPC call the same `ProjectCore` instance.
 
-- [ ] **Step 2: Implement the MCP adapter**
+- [x] **Step 2: Implement the MCP adapter**
 
 Start a loopback-only Streamable HTTP server with a random session token generated at startup. Register the tool schemas from `tool-catalog.ts`, translate MCP calls into `ProjectCore` calls, and return structured tool errors. Never expose raw filesystem or unrestricted shell endpoints.
 
-- [ ] **Step 3: Run MCP tests and checkpoint**
+- [x] **Step 3: Run MCP tests and checkpoint**
 
 Run `npm test -- tests/integration/mcp-server.test.ts`; expect all tests to pass.
 
@@ -425,19 +427,19 @@ git commit -m "feat: expose project core through local mcp"
 - Create: `src/renderer/styles.css`
 - Create: `tests/renderer/App.test.tsx`
 
-- [ ] **Step 1: Write failing renderer tests**
+- [x] **Step 1: Write failing renderer tests**
 
 Using Testing Library, test the state transitions: no project selected, initialized project, task scope confirmation, agent response, pending changes, stale conflict, and validation failure. The UI must show the affected paths and never show a successful completion when validation failed.
 
-- [ ] **Step 2: Implement the minimal project workflow UI**
+- [x] **Step 2: Implement the minimal project workflow UI**
 
 Keep the first screen task-oriented: project path and Godot status at the top, task scope form, agent conversation, change preview with approve/reject controls, and validation results. Use the typed `window.specloom` API only. Render conflict paths and the required next action (`Read latest version`) as structured messages.
 
-- [ ] **Step 3: Run renderer tests and build**
+- [x] **Step 3: Run renderer tests and build**
 
-Run `npm test -- tests/renderer/App.test.tsx`, `npm run typecheck`, and `npm run build`; expect all to pass and the Electron unpacked build to exist under `dist/`.
+Run `npm test -- tests/renderer`, `npm run typecheck`, and `npm run build`; expect all to pass and the Electron unpacked build to exist under `release/win-unpacked/`.
 
-- [ ] **Step 4: Checkpoint the UI**
+- [x] **Step 4: Checkpoint the UI**
 
 ```powershell
 git add src/renderer
@@ -453,27 +455,27 @@ git commit -m "feat: add specloom desktop workflow ui"
 - Create: `docs/mcp.md`
 - Modify: `docs/superpowers/specs/2026-10-01-specloom-mvp-design.md`
 
-- [ ] **Step 1: Write the MVP fixture flow**
+- [x] **Step 1: Write the MVP fixture flow**
 
 The test creates a temporary Godot fixture with one character entity, starts `ProjectCore`, creates a task allowing `specs/entities/characters/hero.md`, `scenes/hero.tscn`, and `scripts/hero.gd`, stages a generated scene through the tool loop, previews it, commits it, and runs validation. A second task attempts to commit using the old token and must receive `VERSION_CONFLICT`.
 
-- [ ] **Step 2: Run the full verification suite**
+- [x] **Step 2: Run the full verification suite**
 
 Run:
 
 ```powershell
-npm test
+npm test -- --fileParallelism=false
 npm run typecheck
 npm run build
 ```
 
-Expected result: all tests pass, type checking exits 0, and Electron packaging completes. Run the Godot integration test separately and record whether a Godot 4 executable is available.
+Expected result: all tests pass, type checking exits 0, and Electron packaging completes. Record whether the Docker Linux backend and pinned Godot image are available; skipped checks are not validation passes. Run the Electron workflow against the packaged executable using `SPECLOOM_E2E_EXECUTABLE` and isolated user data.
 
-- [ ] **Step 3: Document local operation**
+- [x] **Step 3: Document local operation**
 
-`README.md` must include prerequisites, `npm install`, `npm run dev`, project initialization, model configuration, local MCP endpoint discovery, Godot executable configuration, and the meaning of version conflicts. `docs/architecture.md` must link the core boundaries and `docs/mcp.md` must show a minimal authenticated MCP client configuration without including an API key.
+`README.md` must include prerequisites, `npm install`, `npm run dev`, project initialization, model configuration, local MCP endpoint discovery, pinned Godot container prerequisites, and the meaning of version conflicts. `docs/architecture.md` must link the core boundaries and `docs/mcp.md` must show a minimal authenticated MCP client configuration without including an API key.
 
-- [ ] **Step 4: Update the design status and checkpoint**
+- [x] **Step 4: Update the design status and checkpoint**
 
 Change the design document status to `Implemented in MVP` only after the full verification suite passes. Record any unavailable Godot executable as an explicit validation limitation.
 
