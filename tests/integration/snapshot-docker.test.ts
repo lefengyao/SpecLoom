@@ -37,15 +37,16 @@ it.skipIf(!prerequisites.available)("enforces isolation in the real Docker runti
 
 it.skipIf(!prerequisites.available).each(["timeout", "output", "abort"])("force-removes the real container after %s interruption", async (reason) => {
   let name = "";
+  const controller = new AbortController();
   const docker: DockerExecutor = async (args, options) => {
     if (args[0] === "create") name = args[args.indexOf("--name") + 1]!;
-    return executeDocker(args, options);
+    const execution = executeDocker(args, options);
+    if (reason === "abort" && args[0] === "start") controller.abort();
+    return execution;
   };
   const { session } = await fixture({ docker, maxOutputBytes: 1024 });
-  const controller = new AbortController();
   const pending = session.exec(reason === "output" ? "while :; do printf '0123456789'; done" : "sleep 20", { timeoutMs: reason === "timeout" ? 200 : 10_000, signal: controller.signal });
-  if (reason === "abort") setTimeout(() => controller.abort(), 500);
-  await expect(pending).rejects.toMatchObject({ code: "COMMAND_FAILED" });
+  await expect(pending).rejects.toMatchObject({ code: "COMMAND_FAILED", ...(reason === "abort" ? { details: { reason: "aborted" } } : {}) });
   expect(name).toMatch(/^specloom-/);
   const result = await executeDocker(["ps", "--all", "--filter", `name=^/${name}$`, "--format", "{{.Names}}"], { timeoutMs: 10_000, maxOutputBytes: 1024 });
   expect(result.stdout.trim()).toBe("");
