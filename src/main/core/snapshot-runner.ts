@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { ChangeEntrySchema, type ChangeEntry, type SkillSource, type VersionToken } from "../../shared/contracts";
 import { executeDocker, type DockerExecutor, type DockerExecutionResult } from "./docker-process";
 import { ProjectError } from "./errors";
 import { FileStore } from "./file-store";
+import { SnapshotRegistry, type SnapshotLease, type SnapshotLifecycleOptions, type SnapshotRecoveryDiagnostic } from "./snapshot-lifecycle";
 import { decodeText, digestBytes, hasCode } from "./store-fs";
 import { normalizeTaskPath, TaskScope } from "./task-scope";
 
@@ -19,6 +19,7 @@ export interface SnapshotRunnerOptions {
   timeoutMs?: number;
   maxTimeoutMs?: number;
   docker?: DockerExecutor;
+  lifecycle?: SnapshotLifecycleOptions;
 }
 
 export interface SnapshotCreateOptions {
@@ -132,26 +133,23 @@ async function readBytes(store: FileStore, relative: string, limit: number, expe
   } finally { await handle.close(); }
 }
 
-async function removeSnapshot(directory: string): Promise<void> {
-  const resolved = path.resolve(directory);
-  if (path.dirname(resolved) !== path.resolve(os.tmpdir()) || !path.basename(resolved).startsWith("specloom-snapshot-")) {
-    throw new ProjectError("PATH_ESCAPE", "Invalid snapshot cleanup directory");
-  }
-  await rm(resolved, { recursive: true, force: true });
-}
-
 export class SnapshotRunner {
   private readonly limits: SnapshotLimits;
   private readonly docker: DockerExecutor;
+  private readonly registry: SnapshotRegistry;
 
   constructor(private readonly store: FileStore, options: SnapshotRunnerOptions = {}) {
     this.limits = limitsFrom(options);
     this.docker = options.docker ?? executeDocker;
+    this.registry = new SnapshotRegistry(this.store, this.docker, options.lifecycle);
   }
+
+  async recoverAbandoned(): Promise<SnapshotRecoveryDiagnostic[]> { return this.registry.recoverAbandoned(); }
 
   async create(scope: TaskScope, options: SnapshotCreateOptions = {}): Promise<SnapshotSession> {
     const extra = new Set((options.extraReadPaths ?? []).map((relative) => this.store.pathIdentity(normalizeTaskPath(relative))));
-    const directory = await mkdtemp(path.join(os.tmpdir(), "specloom-snapshot-"));
+    const lease = await this.registry.create();
+    const directory = lease.directory;
     const snapshotStore = new FileStore(directory, { maxTextBytes: this.store.maxTextBytes });
     const baseline = new Map<string, VersionToken>();
     const editable = new Set<string>();
@@ -211,9 +209,9 @@ export class SnapshotRunner {
           sizes.set(canonical, bytes.length);
         }
       }
-      return new SnapshotSession(snapshotStore, scope, baseline, editable, this.limits, this.docker);
+      return new SnapshotSession(snapshotStore, scope, baseline, editable, this.limits, this.docker, lease);
     } catch (error) {
-      await removeSnapshot(directory);
+      await lease.dispose();
       throw error;
     }
   }
@@ -226,6 +224,7 @@ export class SnapshotSession {
   readonly #editable: Set<string>;
   readonly #limits: SnapshotLimits;
   readonly #docker: DockerExecutor;
+  readonly #lease: SnapshotLease;
   readonly #containers = new Set<string>();
   #disposed = false;
   #cleaned = false;
@@ -233,13 +232,14 @@ export class SnapshotSession {
   #interrupted = false;
   #active: { controller: AbortController; operation: Promise<SnapshotCommandResult> } | undefined;
 
-  constructor(store: FileStore, scope: TaskScope, baseline: Map<string, VersionToken>, editable: Set<string>, limits: SnapshotLimits, docker: DockerExecutor) {
+  constructor(store: FileStore, scope: TaskScope, baseline: Map<string, VersionToken>, editable: Set<string>, limits: SnapshotLimits, docker: DockerExecutor, lease: SnapshotLease) {
     this.#store = store;
     this.#scope = scope;
     this.#versions = baseline;
     this.#editable = editable;
     this.#limits = limits;
     this.#docker = docker;
+    this.#lease = lease;
   }
 
   get baseline(): ReadonlyMap<string, VersionToken> { return new Map(this.#versions); }
@@ -279,6 +279,7 @@ export class SnapshotSession {
     const pids = options.image === GODOT_IMAGE ? "128" : "64";
     const createArgs = [
       "create", "--name", name, "--pull=never", "--read-only", "--network", "none",
+      "--label", `com.specloom.snapshot=${this.#lease.id}`, "--label", `com.specloom.instance=${this.#lease.instanceId}`, "--label", `com.specloom.owner-pid=${this.#lease.ownerPid}`,
       "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--pids-limit", pids,
       "--memory", memory, "--memory-swap", memory, "--cpus", "1", "--cpuset-cpus", "0", "--user", user,
       "--workdir", "/workspace", "--env", "HOME=/tmp", "--env", "TMPDIR=/tmp",
@@ -291,6 +292,7 @@ export class SnapshotSession {
       await enumerate(this.#store, this.#limits, "runtime");
       await this.assertBackendAvailable(options.image, signal);
       // A create attempt can leave a container behind even if the CLI is interrupted.
+      await this.#lease.registerContainer(name);
       this.#containers.add(name);
       const created = await this.#docker(createArgs, { timeoutMs: Math.min(10_000, this.#limits.maxTimeoutMs), maxOutputBytes: this.#limits.maxOutputBytes, signal });
       if (created.exitCode !== 0) throw new ProjectError("BACKEND_UNAVAILABLE", "Docker or the pinned container image is unavailable", { stderr: created.stderr, exitCode: created.exitCode });
@@ -369,7 +371,7 @@ export class SnapshotSession {
       await active.operation.catch(() => {});
     }
     for (const name of this.#containers) await this.removeContainer(name);
-    await removeSnapshot(this.#store.root);
+    await this.#lease.dispose();
     this.#cleaned = true;
   }
 
@@ -377,6 +379,7 @@ export class SnapshotSession {
     try {
       const removed = await this.#docker(["rm", "--force", name], { timeoutMs: 10_000, maxOutputBytes: 64 * 1024 });
       if (removed.exitCode !== 0 && !removed.stderr.includes("No such container")) throw new Error(removed.stderr);
+      await this.#lease.removeContainer(name);
       this.#containers.delete(name);
     } catch (error) {
       this.#interrupted = true;

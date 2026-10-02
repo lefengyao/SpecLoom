@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, open, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -292,5 +292,90 @@ describe("private snapshot runner", () => {
     cleanupFails = false;
     await session.dispose();
     await expect(readFile(path.join(docker.directory(), "scripts/main.gd"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("registers a snapshot before copying and records each container before Docker create", async () => {
+    const { root } = await fixture();
+    const registryDirectory = path.join(root, ".specloom/runtime/snapshots");
+    const currentRecord = async () => {
+      const files = (await readdir(registryDirectory)).filter((name) => name.endsWith(".json"));
+      expect(files).toHaveLength(1);
+      return JSON.parse(await readFile(path.join(registryDirectory, files[0]!), "utf8")) as { id: string; directory: string; ownerPid: number; instanceId: string; containers: string[] };
+    };
+    let copied = false;
+    const store = new FileStore(root, { fs: { open: async (target, flags, mode) => {
+      if (String(target) === path.join(root, "scripts/main.gd") && flags === "r") {
+        const record = await currentRecord();
+        expect(record.ownerPid).toBe(process.pid);
+        expect(record.containers).toEqual([]);
+        copied = true;
+      }
+      return open(target, flags, mode);
+    } } });
+    const docker = fakeDocker();
+    const execute: DockerExecutor = async (args, options) => {
+      if (args[0] === "create") {
+        const record = await currentRecord();
+        expect(record.containers).toEqual([args[args.indexOf("--name") + 1]]);
+        expect(args).toEqual(expect.arrayContaining([`com.specloom.snapshot=${record.id}`, `com.specloom.instance=${record.instanceId}`, `com.specloom.owner-pid=${record.ownerPid}`]));
+        expect(record.directory).toBe(docker.directory() || args[args.indexOf("--mount") + 1]!.slice("type=bind,source=".length).split(",target=/workspace")[0]);
+      }
+      return docker.execute(args, options);
+    };
+    const session = await new SnapshotRunner(store, { docker: execute }).create(scope());
+    sessions.push(session);
+    expect(copied).toBe(true);
+    expect(session.sources().map((source) => source.path)).toEqual(["scripts/main.gd"]);
+    await session.exec("ignored");
+    expect((await currentRecord()).containers).toEqual([]);
+    await session.dispose();
+    expect(await readdir(registryDirectory)).toEqual([]);
+  });
+
+  it("never attempts Docker create when durable container registration fails", async () => {
+    const { root } = await fixture();
+    const store = new FileStore(root, { fs: { open: async (target, flags, mode) => {
+      const handle = await open(target, flags, mode);
+      if (flags === "wx" && path.basename(String(target)).startsWith(".specloom-tmp-")) handle.sync = async () => { throw new Error("Injected journal sync failure"); };
+      return handle;
+    } } });
+    const docker = fakeDocker();
+    const session = await new SnapshotRunner(store, { docker: docker.execute }).create(scope());
+    sessions.push(session);
+    await expect(session.exec("ignored")).rejects.toThrow("Injected journal sync failure");
+    expect(docker.calls.some((args) => ["create", "start", "rm"].includes(args[0]!))).toBe(false);
+    await session.dispose();
+    expect(await readdir(path.join(root, ".specloom/runtime/snapshots"))).toEqual([]);
+  });
+
+  it("recovers a crashed runner's uncertain container using its durable ownership record", async () => {
+    const { root, store } = await fixture();
+    const docker = fakeDocker();
+    const labels: Record<string, string> = {};
+    let recovering = false;
+    const execute: DockerExecutor = async (args, options) => {
+      const result = await docker.execute(args, options);
+      if (args[0] === "create") {
+        for (let index = 0; index < args.length; index += 1) {
+          if (args[index] === "--label") {
+            const [key, value] = args[index + 1]!.split("=");
+            labels[key!] = value!;
+          }
+        }
+        throw new ProjectError("COMMAND_FAILED", "Create timed out", { reason: "timeout" });
+      }
+      if (args[0] === "inspect") return { ...result, stdout: JSON.stringify(labels) };
+      if (args[0] === "rm" && !recovering) return { ...result, stderr: "daemon unavailable", exitCode: 1 };
+      return result;
+    };
+    const crashed = await new SnapshotRunner(store, { docker: execute, lifecycle: { ownerPid: 2_000_000_000 } }).create(scope());
+    await expect(crashed.exec("ignored")).rejects.toMatchObject({ details: { reason: "cleanup-failed" } });
+    expect(await readFile(path.join(docker.directory(), "scripts/main.gd"), "utf8")).toBe("old");
+    recovering = true;
+    const reopened = new SnapshotRunner(store, { docker: execute, lifecycle: { ownerStatus: (pid) => pid === 2_000_000_000 ? "dead" : "alive" } });
+    expect(await reopened.recoverAbandoned()).toEqual([]);
+    await expect(readFile(path.join(docker.directory(), "scripts/main.gd"))).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await readdir(path.join(root, ".specloom/runtime/snapshots"))).toEqual([]);
+    expect(await readFile(path.join(root, "scripts/main.gd"), "utf8")).toBe("old");
   });
 });
