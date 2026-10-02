@@ -4,9 +4,11 @@ import path from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { StagedChangeSet } from "../../src/main/core/change-set";
 import { FileStore } from "../../src/main/core/file-store";
-import { SnapshotRunner, type SnapshotSession } from "../../src/main/core/snapshot-runner";
+import { BASH_IMAGE, SnapshotRunner, type SnapshotSession } from "../../src/main/core/snapshot-runner";
 import { TaskScope } from "../../src/main/core/task-scope";
+import { dockerPrerequisites } from "./docker-prerequisites";
 
+const prerequisites = await dockerPrerequisites("snapshot-conflict", [BASH_IMAGE]);
 const roots: string[] = [];
 const sessions: SnapshotSession[] = [];
 afterEach(async () => {
@@ -14,7 +16,7 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
-it("hands Docker snapshot changes to the version gate and rejects the whole stale batch", async () => {
+it.skipIf(!prerequisites.available)("hands Docker snapshot changes to the version gate and rejects the whole stale batch", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "specloom-snapshot-conflict-"));
   roots.push(root);
   await writeFile(path.join(root, "a.md"), "old");

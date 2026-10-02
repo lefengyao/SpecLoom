@@ -289,6 +289,8 @@ export class SnapshotSession {
     let failure: unknown;
     try {
       await enumerate(this.#store, this.#limits, "runtime");
+      await this.assertBackendAvailable(options.image, signal);
+      // A create attempt can leave a container behind even if the CLI is interrupted.
       this.#containers.add(name);
       const created = await this.#docker(createArgs, { timeoutMs: Math.min(10_000, this.#limits.maxTimeoutMs), maxOutputBytes: this.#limits.maxOutputBytes, signal });
       if (created.exitCode !== 0) throw new ProjectError("BACKEND_UNAVAILABLE", "Docker or the pinned container image is unavailable", { stderr: created.stderr, exitCode: created.exitCode });
@@ -300,6 +302,20 @@ export class SnapshotSession {
     } finally {
       // Killing the Docker CLI does not stop its container; removal is a separate uncancelled call.
       if (this.#containers.has(name)) await this.removeContainer(name, failure);
+    }
+  }
+
+  private async assertBackendAvailable(image: string, signal: AbortSignal): Promise<void> {
+    const options = { timeoutMs: Math.min(10_000, this.#limits.maxTimeoutMs), maxOutputBytes: 64 * 1024, signal };
+    try {
+      const backend = await this.#docker(["info", "--format", "{{.OSType}}"], options);
+      if (backend.exitCode !== 0) throw new ProjectError("BACKEND_UNAVAILABLE", "Docker's Linux container backend is unavailable", { stderr: backend.stderr, exitCode: backend.exitCode });
+      if (backend.stdout.trim() !== "linux") throw new ProjectError("BACKEND_UNAVAILABLE", "Docker must use its Linux container backend", { osType: backend.stdout.trim() });
+      const inspected = await this.#docker(["image", "inspect", "--format", "{{.Id}}", image], options);
+      if (inspected.exitCode !== 0) throw new ProjectError("BACKEND_UNAVAILABLE", "The pinned container image is unavailable", { image, stderr: inspected.stderr, exitCode: inspected.exitCode });
+    } catch (error) {
+      if (error instanceof ProjectError && (error.code === "BACKEND_UNAVAILABLE" || error.details?.reason === "aborted")) throw error;
+      throw new ProjectError("BACKEND_UNAVAILABLE", "Docker runtime prerequisites could not be checked", { image }, { cause: error });
     }
   }
 

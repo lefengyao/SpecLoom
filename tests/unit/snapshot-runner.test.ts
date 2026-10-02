@@ -38,7 +38,7 @@ function fakeDocker(action: (directory: string) => Promise<void> = async () => {
       directory = mount.slice("type=bind,source=".length, mount.indexOf(",target=/workspace"));
     }
     if (args[0] === "start") await action(directory);
-    return { stdout: "ok", stderr: "", exitCode: 0, durationMs: 1 };
+    return { stdout: args[0] === "info" ? "linux\n" : "ok", stderr: "", exitCode: 0, durationMs: 1 };
   };
   return { execute, calls, directory: () => directory };
 }
@@ -178,9 +178,10 @@ describe("private snapshot runner", () => {
     await expect(session.runContainer({ image: "bash:latest", entrypoint: "bash", args: [] })).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
     await expect(session.runContainer({ image: BASH_IMAGE, entrypoint: "sh", args: [] })).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
     await session.runContainer({ image: GODOT_IMAGE, entrypoint: "godot", args: ["--version"], readOnlyWorkspace: true });
-    expect(docker.calls[0]).toContain(GODOT_IMAGE);
-    expect(docker.calls[0]).toEqual(expect.arrayContaining(["--memory", "1536m", "--memory-swap", "1536m", "--pids-limit", "128"]));
-    expect(docker.calls[0]?.find((argument) => argument.includes("target=/workspace"))).toContain(",readonly");
+    const create = docker.calls.find((args) => args[0] === "create")!;
+    expect(create).toContain(GODOT_IMAGE);
+    expect(create).toEqual(expect.arrayContaining(["--memory", "1536m", "--memory-swap", "1536m", "--pids-limit", "128"]));
+    expect(create.find((argument) => argument.includes("target=/workspace"))).toContain(",readonly");
   });
 
   it("reports failed cleanup and retries removal before deleting the private snapshot", async () => {
@@ -239,5 +240,57 @@ describe("private snapshot runner", () => {
     await expect(session.exec("printf changed > scripts/main.gd")).rejects.toMatchObject({ code: "BACKEND_UNAVAILABLE" });
     expect(docker.calls.some((args) => args[0] === "start")).toBe(false);
     expect(await readFile(path.join(root, "scripts/main.gd"), "utf8")).toBe("old");
+  });
+
+  it.each(["missing-executable", "offline-daemon", "windows-engine", "missing-image"])("reports %s before creating or removing a container", async (reason) => {
+    const { root, store } = await fixture();
+    const calls: string[][] = [];
+    const execute: DockerExecutor = async (args) => {
+      calls.push(args);
+      if (reason === "missing-executable") throw new ProjectError("BACKEND_UNAVAILABLE", "Docker could not be started");
+      if (reason === "offline-daemon") return { stdout: "", stderr: "daemon unavailable", exitCode: 1, durationMs: 1 };
+      if (args[0] === "info") return { stdout: reason === "windows-engine" ? "windows\n" : "linux\n", stderr: "", exitCode: 0, durationMs: 1 };
+      if (args[0] === "image") return { stdout: "", stderr: "pinned image unavailable", exitCode: 1, durationMs: 1 };
+      throw new Error(`Unexpected mutating Docker command: ${args[0]}`);
+    };
+    const session = await new SnapshotRunner(store, { docker: execute }).create(scope());
+    sessions.push(session);
+    await expect(session.exec("printf changed > scripts/main.gd")).rejects.toMatchObject({ code: "BACKEND_UNAVAILABLE" });
+    await session.dispose();
+    expect(calls.some((args) => ["create", "start", "rm"].includes(args[0]!))).toBe(false);
+    expect(await readFile(path.join(root, "scripts/main.gd"), "utf8")).toBe("old");
+  });
+
+  it.each(["timeout", "aborted"])("handles a %s during backend preflight without container cleanup", async (reason) => {
+    const { store } = await fixture();
+    const calls: string[][] = [];
+    const execute: DockerExecutor = async (args) => {
+      calls.push(args);
+      throw new ProjectError("COMMAND_FAILED", "Preflight interrupted", { reason });
+    };
+    const session = await new SnapshotRunner(store, { docker: execute }).create(scope());
+    sessions.push(session);
+    await expect(session.exec("ignored")).rejects.toMatchObject({ code: reason === "aborted" ? "COMMAND_FAILED" : "BACKEND_UNAVAILABLE" });
+    await session.dispose();
+    expect(calls).toEqual([["info", "--format", "{{.OSType}}"]]);
+  });
+
+  it("retains the snapshot if a timed-out create cannot be confirmed removed", async () => {
+    const { store } = await fixture();
+    const docker = fakeDocker();
+    let cleanupFails = true;
+    const execute: DockerExecutor = async (args, options) => {
+      const result = await docker.execute(args, options);
+      if (args[0] === "create") throw new ProjectError("COMMAND_FAILED", "Create timed out", { reason: "timeout" });
+      if (args[0] === "rm" && cleanupFails) return { ...result, stderr: "daemon unavailable", exitCode: 1 };
+      return result;
+    };
+    const session = await new SnapshotRunner(store, { docker: execute }).create(scope());
+    sessions.push(session);
+    await expect(session.exec("ignored")).rejects.toMatchObject({ code: "COMMAND_FAILED", details: { reason: "cleanup-failed" }, cause: { details: { reason: "timeout" } } });
+    expect(await readFile(path.join(docker.directory(), "scripts/main.gd"), "utf8")).toBe("old");
+    cleanupFails = false;
+    await session.dispose();
+    await expect(readFile(path.join(docker.directory(), "scripts/main.gd"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 });

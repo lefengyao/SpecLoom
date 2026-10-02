@@ -4,9 +4,11 @@ import path from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { executeDocker, type DockerExecutor } from "../../src/main/core/docker-process";
 import { FileStore } from "../../src/main/core/file-store";
-import { SnapshotRunner, type SnapshotSession } from "../../src/main/core/snapshot-runner";
+import { BASH_IMAGE, SnapshotRunner, type SnapshotSession } from "../../src/main/core/snapshot-runner";
 import { TaskScope } from "../../src/main/core/task-scope";
+import { dockerPrerequisites } from "./docker-prerequisites";
 
+const prerequisites = await dockerPrerequisites("snapshot-docker", [BASH_IMAGE]);
 const roots: string[] = [];
 const sessions: SnapshotSession[] = [];
 afterEach(async () => {
@@ -23,7 +25,7 @@ async function fixture(options: ConstructorParameters<typeof SnapshotRunner>[1] 
   return { root, session };
 }
 
-it("enforces isolation in the real Docker runtime", async () => {
+it.skipIf(!prerequisites.available)("enforces isolation in the real Docker runtime", async () => {
   const { root, session } = await fixture();
   const result = await session.exec("printf isolated > a.md; touch /host-escape 2>/dev/null || printf readonly; printf ' network='; cat /proc/net/route");
   expect(result.exitCode).toBe(0);
@@ -33,7 +35,7 @@ it("enforces isolation in the real Docker runtime", async () => {
   expect((await session.collectChanges())[0]?.nextContent).toBe("isolated");
 }, 30_000);
 
-it.each(["timeout", "output", "abort"])("force-removes the real container after %s interruption", async (reason) => {
+it.skipIf(!prerequisites.available).each(["timeout", "output", "abort"])("force-removes the real container after %s interruption", async (reason) => {
   let name = "";
   const docker: DockerExecutor = async (args, options) => {
     if (args[0] === "create") name = args[args.indexOf("--name") + 1]!;
