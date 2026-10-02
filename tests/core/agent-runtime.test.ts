@@ -245,7 +245,7 @@ describe("AgentRuntime", () => {
     expect(bounded.at(-1)?.tool_call_id).toBe("two-39");
     expect(AgentConversationSchema.safeParse(bounded).success).toBe(true);
     history.push({ role: "assistant", content: null, tool_calls: [
-      { id: "oversized", type: "function", function: { name: "skills_list", arguments: "x".repeat(300_000) } },
+      { id: "oversized", type: "function", function: { name: "skills_list", arguments: JSON.stringify({ content: "x".repeat(300_000) }) } },
     ] }, { role: "tool", content: "[]", tool_call_id: "oversized" });
     expect(boundConversation(history)).toEqual([history[0]]);
     const escaped = boundConversation([{ role: "user", content: "\0".repeat(131_072) }]);
@@ -268,6 +268,56 @@ describe("AgentRuntime", () => {
     expect(AgentConversationSchema.safeParse(checkpoints.at(-1)).success).toBe(true);
     expect(AgentConversationSchema.safeParse(result.messages).success).toBe(true);
     expect(JSON.stringify(result.messages)).not.toContain(secret);
+  });
+
+  it.each(['local-"test\\key', 'local-"quoted-key', "local-backslash\\key"])(
+    "redacts JSON-escaped credentials in checkpoint and returned tool arguments: %s", async (secret) => {
+      let requests = 0;
+      const checkpoints: AgentMessage[][] = [];
+      const baseUrl = await mockEndpoint((_request, response, body) => {
+        requests++;
+        if (requests === 1) completion(response, { role: "assistant", content: null, tool_calls: [
+          { id: "valid", type: "function", function: { name: "files_list_versions", arguments: JSON.stringify({ prefix: secret }) } },
+          { id: "untrusted", type: "function", function: { name: "unknown", arguments: JSON.stringify({ [secret]: secret, nested: [{ value: secret }], count: 1234 }) } },
+        ] });
+        else {
+          const original = body.messages.find((message) => message.role === "assistant")!.tool_calls as Array<{ function: { arguments: string } }>;
+          expect(JSON.parse(original[0]!.function.arguments)).toEqual({ prefix: secret });
+          completion(response, { role: "assistant", content: "OK" });
+        }
+      });
+      const runtime = new AgentRuntime({ executeTool: async (call) => { expect(call.input).toEqual({ prefix: secret }); return []; },
+        resolveCredential: async () => secret, onConversation: (messages) => { checkpoints.push(messages); } });
+      const result = await runtime.run({ taskId: "t", profile: profile(baseUrl), prompt: "go" });
+      for (const messages of [result.messages, ...checkpoints.slice(1)]) {
+        const calls = messages.find((message) => message.role === "assistant" && message.tool_calls)!.tool_calls!;
+        expect(JSON.parse(calls[0]!.function.arguments)).toEqual({ prefix: "[redacted]" });
+        const decoded = JSON.parse(calls[1]!.function.arguments) as Record<string, unknown>;
+        expect(Object.keys(decoded)).not.toContain(secret);
+        expect(decoded["[redacted]"]).toBe("[redacted]");
+        expect(decoded.nested).toEqual([{ value: "[redacted]" }]);
+        expect(decoded.count).toBe(1234);
+      }
+    });
+
+  it("preserves numeric arguments and bounds malformed or deeply nested JSON during checkpoint redaction", () => {
+    const conversation = (argumentsJson: string): AgentMessage[] => [{ role: "user", content: "go" },
+      { role: "assistant", content: null, tool_calls: [
+        { id: "call", type: "function", function: { name: "unknown", arguments: argumentsJson } },
+      ] }, { role: "tool", content: "[]", tool_call_id: "call" }];
+    const argument = (messages: AgentMessage[]) => messages[1]!.tool_calls![0]!.function.arguments;
+    const numeric = boundConversation(conversation('{"count":1234,"label":"1234","enabled":true}'), "1234");
+    expect(JSON.parse(argument(numeric))).toEqual({ count: 1234, label: "[redacted]", enabled: true });
+    const secret = 'local-"test\\key';
+    const malformed = boundConversation(conversation(`${JSON.stringify({ secret })} trailing`), secret);
+    expect(JSON.parse(argument(malformed))).toBe("[invalid tool arguments omitted]");
+    let nested: unknown = { value: secret };
+    for (let index = 0; index < 100; index++) nested = { nested };
+    const deep = argument(boundConversation(conversation(JSON.stringify(nested)), secret));
+    expect(deep).toContain("[truncated]");
+    expect(deep.length).toBeLessThan(2_000);
+    const oversized = argument(boundConversation(conversation(JSON.stringify({ content: "x".repeat(524_288) })), secret));
+    expect(JSON.parse(oversized)).toBe("[tool arguments omitted: size limit]");
   });
 
   it("rejects orphaned tool history before dispatching a model request", async () => {

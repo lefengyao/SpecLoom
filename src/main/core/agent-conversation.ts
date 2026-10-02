@@ -4,6 +4,7 @@ import { redactSecret } from "./agent-output";
 
 const MESSAGE_LIMIT = 96;
 const JSON_LIMIT = 262_144;
+const ARGUMENT_LIMIT = 524_288;
 const TRUNCATED = "[truncated]";
 
 function batches(messages: readonly AgentMessage[]): { groups: AgentMessage[][]; complete: boolean } {
@@ -37,6 +38,31 @@ function boundedText(value: string, limit: number): string {
   return value.length <= limit ? value : `${value.slice(0, limit - TRUNCATED.length)}${TRUNCATED}`;
 }
 
+function redactArguments(argumentsJson: string, secret?: string): string {
+  const oversized = JSON.stringify("[tool arguments omitted: size limit]");
+  if (argumentsJson.length > ARGUMENT_LIMIT) return oversized;
+  let parsed: unknown;
+  try { parsed = JSON.parse(argumentsJson); }
+  catch { return JSON.stringify("[invalid tool arguments omitted]"); }
+  let nodes = 0;
+  function redact(value: unknown, depth = 0): unknown {
+    if (++nodes > 4_096 || depth > 16) return TRUNCATED;
+    if (typeof value === "string") return redactSecret(value, secret);
+    if (value === null || typeof value !== "object") return value;
+    if (Array.isArray(value)) {
+      const result = value.slice(0, 256).map((entry) => redact(entry, depth + 1));
+      if (value.length > 256) result.push(TRUNCATED);
+      return result;
+    }
+    const entries = Object.entries(value);
+    const result = Object.fromEntries(entries.slice(0, 256).map(([key, entry]) => [redactSecret(key, secret), redact(entry, depth + 1)]));
+    if (entries.length > 256) result[TRUNCATED] = true;
+    return result;
+  }
+  const serialized = JSON.stringify(redact(parsed));
+  return serialized.length <= ARGUMENT_LIMIT ? serialized : oversized;
+}
+
 function redactBatch(group: AgentMessage[], secret?: string): AgentMessage[] {
   const callIds = new Map<string, string>();
   const usedIds = new Set<string>();
@@ -47,7 +73,7 @@ function redactBatch(group: AgentMessage[], secret?: string): AgentMessage[] {
     callIds.set(call.id, id);
     usedIds.add(id);
     return { id, type: call.type, function: {
-      name: redactSecret(call.function.name, secret).slice(0, 128), arguments: redactSecret(call.function.arguments, secret),
+      name: redactSecret(call.function.name, secret).slice(0, 128), arguments: redactArguments(call.function.arguments, secret),
     } };
   });
   return group.map((message, index) => ({ role: message.role,
