@@ -52,6 +52,11 @@ export class StagedChangeSet {
     }
   }
 
+  unstage(relative: string): void {
+    this.assertMutable();
+    if (this.entries.delete(this.store.pathIdentity(relative))) this.invalidate();
+  }
+
   preview(): ChangeSetData {
     const entries = [...this.entries.values()].sort((a, b) => a.path.localeCompare(b.path)).map((entry) => Object.freeze(structuredClone(entry)));
     const dependencies = Object.fromEntries([...this.dependencies.values()].sort((a, b) => a.path.localeCompare(b.path)).map((dependency) => [dependency.path, dependency.version]));
@@ -74,7 +79,7 @@ export class StagedChangeSet {
     return this.preview();
   }
 
-  async commit(expectedDigest: string): Promise<ChangeSetData> {
+  async commit(expectedDigest: string, preflight?: () => Promise<void>): Promise<ChangeSetData> {
     this.assertMutable();
     this.assertDigest(expectedDigest);
     if (!this.entries.size) throw new ProjectError("VALIDATION_FAILED", "Cannot commit an empty change set");
@@ -86,6 +91,7 @@ export class StagedChangeSet {
         const journal = new ChangeJournal(this.store);
         const unresolved = (await journal.inspect()).some((record) => ["committing", "recovery-conflict"].includes(record.status));
         if (unresolved) throw new ProjectError("VERSION_CONFLICT", "Recover pending change journals before committing another batch");
+        await preflight?.();
         for (const entry of preview.entries) this.store.assertVersion(entry.path, (await this.store.listVersion(entry.path)).version, entry.expectedVersion);
         for (const [relative, expected] of Object.entries(preview.dependencies)) this.store.assertVersion(relative, (await this.store.listVersion(relative)).version, expected);
         const record = await journal.prepare(this.id, this.taskId, preview.digest, preview.entries);

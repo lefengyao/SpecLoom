@@ -6,6 +6,7 @@ directories:
 files:
   - dist/main/**
   - dist/renderer/**
+  - skills/**
   - package.json
 win:
   target: nsis
