@@ -1,0 +1,928 @@
+## Animation commands module - 18 tools.
+## Handles AnimationPlayer, AnimationTree, and state machines.
+@tool
+class_name MCPAnimationCommands
+extends RefCounted
+
+var _plugin: EditorPlugin
+var _undo_helper: MCUndoHelper
+
+
+func set_plugin(plugin: EditorPlugin) -> void:
+	_plugin = plugin
+	if _plugin.has_method("get_undo_helper"):
+		_undo_helper = _plugin.get_undo_helper()
+
+
+func get_commands() -> Dictionary:
+	return {
+		"animation/list": list_animations,
+		"animation/create": create_animation,
+		"animation/add_track": add_animation_track,
+		"animation/remove_track": remove_animation_track,
+		"animation/set_keyframe": set_animation_keyframe,
+		"animation/remove_keyframe": remove_animation_keyframe,
+		"animation/get_info": get_animation_info,
+		"animation/remove": remove_animation,
+		"animation/create_tree": create_animation_tree,
+		"animation/get_tree_structure": get_animation_tree_structure,
+		"animation/set_tree_parameter": set_tree_parameter,
+		"animation/reset_tree_parameter": reset_tree_parameter,
+		"animation/add_state": add_state_machine_state,
+		"animation/remove_state": remove_state_machine_state,
+		"animation/add_transition": add_state_machine_transition,
+		"animation/remove_transition": remove_state_machine_transition,
+		"animation/remove_tree": remove_animation_tree,
+		"animation/get_tree_parameter": get_tree_parameter,
+	}
+
+
+## List all animations in an AnimationPlayer.
+func list_animations(params: Dictionary) -> Dictionary:
+	var path: String = params.get("player_path", params.get("path", ""))
+	if path.is_empty():
+		return {"error": "AnimationPlayer path is required"}
+	var node: Node = MCPCommandHelpers.resolve_node_path(_plugin, path)
+	if node == null:
+		return {"error": "Node not found: %s" % path}
+	if not node is AnimationPlayer:
+		return {"error": "Node is not an AnimationPlayer: %s" % path}
+	var player: AnimationPlayer = node as AnimationPlayer
+	var anims: PackedStringArray = player.get_animation_list()
+	var result: Array = []
+	for anim_name: String in anims:
+		var anim: Animation = player.get_animation(anim_name)
+		if anim:
+			result.append({
+				"name": anim_name,
+				"length": anim.length,
+				"loop_mode": _loop_mode_to_string(int(anim.loop_mode)),
+				"track_count": anim.get_track_count(),
+			})
+	return {"result": {"player": path, "animations": result}}
+
+
+## Create a new empty animation.
+func create_animation(params: Dictionary) -> Dictionary:
+	var path: String = params.get("player_path", params.get("path", ""))
+	var anim_name: String = params.get("animation", params.get("name", "NewAnimation"))
+	if path.is_empty():
+		return {"error": "AnimationPlayer path is required"}
+	var node: Node = MCPCommandHelpers.resolve_node_path(_plugin, path)
+	if node == null:
+		return {"error": "Node not found: %s" % path}
+	if not node is AnimationPlayer:
+		return {"error": "Node is not an AnimationPlayer: %s" % path}
+	var player: AnimationPlayer = node as AnimationPlayer
+	var library_name: String = params.get("library", "")
+	# Check for duplicate animation name � prevent silent overwrite (BUG-2.6)
+	if not library_name.is_empty() and player.has_animation_library(library_name):
+		var lib: AnimationLibrary = player.get_animation_library(library_name)
+		if lib.has_animation(anim_name):
+			return {"error": "Animation '%s' already exists in library '%s'. Use remove_animation first or choose a different name." % [anim_name, library_name]}
+	elif library_name.is_empty() and player.has_animation(anim_name):
+		return {"error": "Animation '%s' already exists. Use remove_animation first or choose a different name." % anim_name}
+	var anim: Animation = Animation.new()
+	anim.length = params.get("length", 1.0)
+	var loop_mode_raw: Variant = params.get("loop_mode", 0)
+	var loop_mode: int = 0
+	if loop_mode_raw is String:
+		match loop_mode_raw:
+			"loop": loop_mode = 1
+			"pingpong": loop_mode = 2
+			_: loop_mode = 0
+	else:
+		loop_mode = int(loop_mode_raw)
+	anim.loop_mode = loop_mode as Animation.LoopMode
+	if library_name.is_empty():
+		if not player.has_animation_library(""):
+			var lib: AnimationLibrary = AnimationLibrary.new()
+			player.add_animation_library("", lib)
+		player.get_animation_library("").add_animation(anim_name, anim)
+	else:
+		if not player.has_animation_library(library_name):
+			var lib: AnimationLibrary = AnimationLibrary.new()
+			player.add_animation_library(library_name, lib)
+		player.get_animation_library(library_name).add_animation(anim_name, anim)
+	return {"result": "Animation '%s' created in %s" % [anim_name, path]}
+
+
+## Add a track to an animation.
+func add_animation_track(params: Dictionary) -> Dictionary:
+	var path: String = params.get("player_path", params.get("path", ""))
+	var anim_name: String = params.get("anim_name", params.get("animation", ""))
+	var track_type_raw: Variant = params.get("track_type", 0)
+	var track_type: int = 0
+	# Support library-qualified names (e.g., "my_library/anim_name") — must resolve before track_type check
+	var library_name: String = params.get("library", "")
+	if library_name.is_empty() and anim_name.contains("/"):
+		var parts := anim_name.split("/", false, 1)
+		if parts.size() == 2:
+			library_name = parts[0]
+			anim_name = parts[1]
+	if track_type_raw is String:
+		match track_type_raw:
+			"value": track_type = 0
+			"position_3d", "position": track_type = 1
+			"rotation_3d", "rotation": track_type = 2
+			"scale_3d", "scale": track_type = 3
+			"blend_shape": track_type = 4
+			"method": track_type = 5
+			"bezier": track_type = 6
+			"audio": track_type = 7
+			"animation": track_type = 8
+			_:
+				if track_type_raw is String:
+					return {"error": "Unknown track type: %s" % track_type_raw}
+				track_type = int(track_type_raw)
+	else:
+		track_type = track_type_raw as int
+	var property: String = params.get("property", params.get("track_path", ""))
+	if path.is_empty() or anim_name.is_empty():
+		return {"error": "path and anim_name are required"}
+
+	# Only value (0), blend_shape (4), and bezier (6) tracks require a property path
+	# to resolve to a target node/sub-property.
+	# Position/rotation/scale/method/audio/animation tracks target the node itself � property is optional.
+	var needs_property: bool = (track_type == 0 or track_type == 4 or track_type == 6)  # value, blend_shape, bezier
+	if needs_property and property.is_empty():
+		return {"error": "property (track path) is required for value, bezier, and blend_shape tracks. " +
+			"Examples: 'NodePath:property' for value/bezier, " +
+			"'MeshInstance:blend_shape_name' for blend_shape. " +
+			"Position/rotation/scale/method/audio/animation tracks do not require property."}
+
+	var node: Node = MCPCommandHelpers.resolve_node_path(_plugin, path)
+	if node == null:
+		return {"error": "Node not found: %s" % path}
+	if not node is AnimationPlayer:
+		return {"error": "Node is not an AnimationPlayer: %s" % path}
+	var player: AnimationPlayer = node as AnimationPlayer
+	var anim: Animation = null
+	if library_name.is_empty():
+		anim = player.get_animation(anim_name)
+	else:
+		var lib: AnimationLibrary = player.get_animation_library(library_name)
+		if lib == null:
+			return {"error": "Animation library not found: '%s'" % library_name}
+		anim = lib.get_animation(anim_name)
+	if anim == null:
+		return {"error": "Animation not found: %s" % anim_name}
+
+	var track_idx: int = -1
+	match track_type:
+		0:  # VALUE
+			track_idx = anim.add_track(Animation.TYPE_VALUE)
+			anim.track_set_path(track_idx, NodePath(property))
+		1:  # POSITION_3D
+			track_idx = anim.add_track(Animation.TYPE_POSITION_3D)
+			anim.track_set_path(track_idx, NodePath(property))
+		2:  # ROTATION_3D
+			track_idx = anim.add_track(Animation.TYPE_ROTATION_3D)
+			anim.track_set_path(track_idx, NodePath(property))
+		3:  # SCALE_3D
+			track_idx = anim.add_track(Animation.TYPE_SCALE_3D)
+			anim.track_set_path(track_idx, NodePath(property))
+		4:  # BLEND_SHAPE
+			track_idx = anim.add_track(Animation.TYPE_BLEND_SHAPE)
+			anim.track_set_path(track_idx, NodePath(property))
+		5:  # METHOD
+			track_idx = anim.add_track(Animation.TYPE_METHOD)
+			anim.track_set_path(track_idx, NodePath(property))
+		6:  # BEZIER
+			track_idx = anim.add_track(Animation.TYPE_BEZIER)
+			anim.track_set_path(track_idx, NodePath(property))
+		7:  # AUDIO
+			track_idx = anim.add_track(Animation.TYPE_AUDIO)
+			anim.track_set_path(track_idx, NodePath(property))
+		8:  # ANIMATION
+			track_idx = anim.add_track(Animation.TYPE_ANIMATION)
+			anim.track_set_path(track_idx, NodePath(property))
+		_:
+			return {"error": "Unsupported track type: %d" % track_type}
+
+	return {"result": {"track_index": track_idx, "animation": anim_name}}
+
+
+## Set a keyframe value at a time position.
+func set_animation_keyframe(params: Dictionary) -> Dictionary:
+	var path: String = params.get("player_path", params.get("path", ""))
+	var anim_name: String = params.get("anim_name", params.get("animation", ""))
+	var track_idx: int = params.get("track_idx", params.get("track_index", 0))
+	var time: float = params.get("time", 0.0)
+	var value: Variant = params.get("value")
+	var library_name: String = params.get("library", "")
+	# Support library-qualified names (e.g., "my_library/anim_name")
+	if library_name.is_empty() and anim_name.contains("/"):
+		var parts := anim_name.split("/", false, 1)
+		if parts.size() == 2:
+			library_name = parts[0]
+			anim_name = parts[1]
+	if path.is_empty() or anim_name.is_empty():
+		return {"error": "path and anim_name are required"}
+
+	var node: Node = MCPCommandHelpers.resolve_node_path(_plugin, path)
+	if node == null:
+		return {"error": "Node not found: %s" % path}
+	if not node is AnimationPlayer:
+		return {"error": "Node is not an AnimationPlayer: %s" % path}
+	var player: AnimationPlayer = node as AnimationPlayer
+	var anim: Animation = null
+	if library_name.is_empty():
+		anim = player.get_animation(anim_name)
+	else:
+		var lib: AnimationLibrary = player.get_animation_library(library_name)
+		if lib == null:
+			return {"error": "Animation library not found: '%s'" % library_name}
+		anim = lib.get_animation(anim_name)
+	if anim == null:
+		return {"error": "Animation not found: %s" % anim_name}
+	if track_idx < 0 or track_idx >= anim.get_track_count():
+		return {"error": "Invalid track index: %d" % track_idx}
+
+	# Parse value based on track type
+	var track_type: int = anim.track_get_type(track_idx)
+
+	# JSON.parse_string() may return PackedInt32Array/PackedFloat32Array
+	# or plain Array depending on Godot version. Normalize both to plain Array.
+	if value is PackedInt32Array or value is PackedInt64Array or value is PackedFloat32Array or value is PackedFloat64Array:
+		value = Array(value)
+
+	match track_type:
+		Animation.TYPE_VALUE:
+			# Try to convert the value to match the track's target property type.
+			# JSON arrays ([0, 0]) are not auto-converted by Godot � we must
+			# parse them into Vector2/Vector3/Color/etc. via MCPVariantCodec.
+			var converted_value: Variant = value
+			var track_path: NodePath = anim.track_get_path(track_idx)
+			if not track_path.is_empty():
+				var path_str: String = str(track_path)
+				var parts: PackedStringArray = path_str.split(":", false)
+				if parts.size() >= 2:
+					var target_node_path: String = parts[0]
+					var prop_name: String = parts[1]
+					var target_node: Node = MCPCommandHelpers.resolve_node_path(_plugin, target_node_path)
+					if target_node != null and prop_name != "":
+						var expected_type: int = MCPCommandHelpers.get_property_type(target_node, prop_name)
+						if expected_type != TYPE_NIL:
+							var parsed: Variant = MCPVariantCodec.parse_for_property(value, expected_type)
+							if parsed != null:
+								converted_value = parsed
+			# FIX: Fallback for Array-based values when property-type resolution fails
+			# (e.g. _plugin not set). Convert [x,y]→Vector2, [x,y,z]→Vector3, [x,y,z,w]→Vector4.
+			if typeof(converted_value) == TYPE_ARRAY:
+				var arr: Array = converted_value as Array
+				match arr.size():
+					2: converted_value = MCPVariantCodec._parse_vector2(arr)
+					3: converted_value = MCPVariantCodec._parse_vector3(arr)
+					4: converted_value = MCPVariantCodec._parse_vector4(arr)
+			anim.track_insert_key(track_idx, time, converted_value)
+		Animation.TYPE_POSITION_3D:
+			var pos: Vector3 = MCPVariantCodec._parse_vector3(value)
+			anim.position_track_insert_key(track_idx, time, pos)
+		Animation.TYPE_ROTATION_3D:
+			var rot: Quaternion = MCPVariantCodec._parse_quaternion(value)
+			anim.rotation_track_insert_key(track_idx, time, rot)
+		Animation.TYPE_SCALE_3D:
+			var scale: Vector3 = MCPVariantCodec._parse_vector3(value)
+			anim.scale_track_insert_key(track_idx, time, scale)
+		Animation.TYPE_BEZIER:
+			anim.bezier_track_insert_key(track_idx, time, float(value))
+		Animation.TYPE_METHOD:
+			# Method tracks require a dictionary with 'method' and 'args' keys.
+			# Accept plain strings as shorthand (no arguments).
+			if value is String:
+				var method_dict := {"method": value, "args": []}
+				anim.track_insert_key(track_idx, time, method_dict)
+			elif value is Dictionary and value.has("method"):
+				anim.track_insert_key(track_idx, time, value)
+			else:
+				return {"error": "Method track keys require a method name (string) or a {method, args} dictionary"}
+		_:
+			anim.track_insert_key(track_idx, time, value)
+
+	return {"result": "Keyframe set at time %.2f on track %d" % [time, track_idx]}
+
+
+## Get info about a specific animation.
+func get_animation_info(params: Dictionary) -> Dictionary:
+	var path: String = params.get("player_path", params.get("path", ""))
+	var anim_name: String = params.get("anim_name", params.get("animation", ""))
+	var library_name: String = params.get("library", "")
+	# Support library-qualified names (e.g., "my_library/anim_name")
+	if library_name.is_empty() and anim_name.contains("/"):
+		var parts := anim_name.split("/", false, 1)
+		if parts.size() == 2:
+			library_name = parts[0]
+			anim_name = parts[1]
+	if path.is_empty() or anim_name.is_empty():
+		return {"error": "path and anim_name are required"}
+
+	var node: Node = MCPCommandHelpers.resolve_node_path(_plugin, path)
+	if node == null:
+		return {"error": "Node not found: %s" % path}
+	if not node is AnimationPlayer:
+		return {"error": "Node is not an AnimationPlayer: %s" % path}
+	var player: AnimationPlayer = node as AnimationPlayer
+	var anim: Animation = null
+	if library_name.is_empty():
+		anim = player.get_animation(anim_name)
+	else:
+		var lib: AnimationLibrary = player.get_animation_library(library_name)
+		if lib == null:
+			return {"error": "Animation library not found: '%s'" % library_name}
+		anim = lib.get_animation(anim_name)
+	if anim == null:
+		return {"error": "Animation not found: %s" % anim_name}
+
+	var tracks: Array = []
+	for i: int in range(anim.get_track_count()):
+		var key_count: int = anim.track_get_key_count(i)
+		var keyframes: Array = []
+		for k: int in range(key_count):
+			var kf: Dictionary = {
+				"time": anim.track_get_key_time(i, k),
+				"value": anim.track_get_key_value(i, k),
+				"transition": anim.track_get_key_transition(i, k),
+			}
+			if anim.has_method("track_get_key_easing"):
+				kf["easing"] = anim.track_get_key_easing(i, k)
+			keyframes.append(kf)
+		tracks.append({
+			"index": i,
+			"type": _track_type_to_string(anim.track_get_type(i)),
+			"path": str(anim.track_get_path(i)),
+			"key_count": key_count,
+			"keyframes": keyframes,
+			"enabled": anim.track_is_enabled(i),
+		})
+	return {"result": {
+		"name": anim_name,
+		"length": anim.length,
+		"loop_mode": _loop_mode_to_string(int(anim.loop_mode)),
+		"step": anim.step,
+		"tracks": tracks,
+	}}
+
+
+## Remove an animation.
+func remove_animation(params: Dictionary) -> Dictionary:
+	var path: String = params.get("player_path", params.get("path", ""))
+	var anim_name: String = params.get("anim_name", params.get("animation", ""))
+	var library_name: String = params.get("library", "")
+	# Support library-qualified names (e.g., "my_library/anim_name")
+	if library_name.is_empty() and anim_name.contains("/"):
+		var parts := anim_name.split("/", false, 1)
+		if parts.size() == 2:
+			library_name = parts[0]
+			anim_name = parts[1]
+	if path.is_empty() or anim_name.is_empty():
+		return {"error": "path and anim_name are required"}
+
+	var node: Node = MCPCommandHelpers.resolve_node_path(_plugin, path)
+	if node == null:
+		return {"error": "Node not found: %s" % path}
+	if not node is AnimationPlayer:
+		return {"error": "Node is not an AnimationPlayer: %s" % path}
+	var player: AnimationPlayer = node as AnimationPlayer
+	var lib: AnimationLibrary = null
+	if library_name.is_empty():
+		lib = player.get_animation_library("")
+	else:
+		lib = player.get_animation_library(library_name)
+	if lib == null:
+		return {"error": "Animation library not found: '%s'" % library_name}
+	if not lib.has_animation(anim_name):
+		return {"error": "Animation not found: %s" % anim_name}
+	lib.remove_animation(anim_name)
+	return {"result": "Animation '%s' removed from %s" % [anim_name, path]}
+
+
+## Create an AnimationTree node, or configure existing one.
+func create_animation_tree(params: Dictionary) -> Dictionary:
+	var path: String = params.get("path", "")
+	var parent_path: String = params.get("parent_path", "")
+	var player_path: String = params.get("player_path", "")
+	var props: Dictionary = params.get("properties", {})
+	var root_type: String = params.get("root_type", props.get("root_type", "AnimationNodeBlendTree"))
+
+	var root: Node = MCPCommandHelpers.get_scene_root(_plugin)
+	if root == null:
+		return {"error": "No scene open"}
+
+	# If path points to an existing AnimationTree, configure it
+	var tree: AnimationTree = null
+	var is_existing: bool = false
+	if not path.is_empty():
+		var existing: Node = MCPCommandHelpers.resolve_node_path(_plugin, path)
+		if existing != null:
+			if existing is AnimationTree:
+				tree = existing as AnimationTree
+				is_existing = true
+			else:
+				return {"error": "Node at path '%s' is not an AnimationTree (type: %s)" % [path, existing.get_class()]}
+
+	if is_existing:
+		# Refuse to overwrite existing tree_root (BUG-5)
+		if tree.tree_root != null:
+			return {"error": "AnimationTree at '%s' already has a root (%s). Use add_state_machine_state, set_tree_parameter, or other specific tools to modify it." % [path, tree.tree_root.get_class()]}
+
+	if tree == null:
+		# Create new � determine parent and node name
+		var parent: Node = root
+		var node_name: String = props.get("name", "AnimationTree")
+		if not parent_path.is_empty():
+			# Explicit parent_path provided
+			parent = MCPCommandHelpers.resolve_node_path(_plugin, parent_path)
+		elif path.contains("/"):
+			# path like "AnimTestPlayer/AnimTree" � parent is "AnimTestPlayer", name is "AnimTree"
+			var last_slash: int = path.rfind("/")
+			var parent_part: String = path.substr(0, last_slash)
+			node_name = path.substr(last_slash + 1)
+			parent = MCPCommandHelpers.resolve_node_path(_plugin, parent_part)
+		elif not path.is_empty():
+			# Bare name � use as node name, parent is scene root
+			node_name = path
+		if parent == null:
+			return {"error": "Parent not found"}
+		# Check for duplicate node name (BUG-5)
+		# add_child() silently renames duplicates (AnimTree@2) instead of erroring
+		if parent.has_node(node_name):
+			var existing_child: Node = parent.get_node(node_name)
+			return {"error": "Node '%s' already exists under parent '%s' (type: %s)" % [node_name, parent.name, existing_child.get_class()]}
+		tree = AnimationTree.new()
+		tree.name = node_name
+		if _undo_helper:
+			_undo_helper.add_node_with_undo(tree, parent)
+		else:
+			parent.add_child(tree)
+			tree.set_owner(root)
+
+	if not player_path.is_empty():
+		var player: Node = MCPCommandHelpers.resolve_node_path(_plugin, player_path)
+		if player == null:
+			return {"error": "AnimationPlayer not found at path: %s" % player_path}
+		if not player is AnimationPlayer:
+			return {"error": "Node at '%s' is not an AnimationPlayer (type: %s)" % [player_path, player.get_class()]}
+		tree.anim_player = NodePath(player_path)
+
+	# Create the root animation node
+	var root_node: AnimationNode = null
+	match root_type:
+		"AnimationNodeBlendTree":
+			root_node = AnimationNodeBlendTree.new()
+		"AnimationNodeStateMachine":
+			root_node = AnimationNodeStateMachine.new()
+		"AnimationNodeBlendSpace1D":
+			root_node = AnimationNodeBlendSpace1D.new()
+		"AnimationNodeBlendSpace2D":
+			root_node = AnimationNodeBlendSpace2D.new()
+		"AnimationNodeAnimation":
+			root_node = AnimationNodeAnimation.new()
+		_:
+			return {"error": "Unknown root_type '%s'. Valid types: AnimationNodeBlendTree, AnimationNodeStateMachine, AnimationNodeBlendSpace1D, AnimationNodeBlendSpace2D, AnimationNodeAnimation" % root_type}
+
+	tree.tree_root = root_node
+
+	return {"result": {"name": str(tree.name), "path": MCPCommandHelpers.get_node_path(tree, _plugin), "root_type": root_type}}
+
+
+## Get AnimationTree structure.
+func get_animation_tree_structure(params: Dictionary) -> Dictionary:
+	var path: String = params.get("path", params.get("player_path", ""))
+	if path.is_empty():
+		return {"error": "path is required"}
+	var node: Node = MCPCommandHelpers.resolve_node_path(_plugin, path)
+	if node == null or not node is AnimationTree:
+		return {"error": "AnimationTree not found: %s" % path}
+	var tree: AnimationTree = node as AnimationTree
+	var result: Dictionary = {
+		"path": path,
+		"active": tree.active,
+		"anim_player": str(tree.anim_player),
+	}
+	if tree.tree_root:
+		result["root_type"] = tree.tree_root.get_class()
+		if tree.tree_root is AnimationNodeBlendTree:
+			var btree: AnimationNodeBlendTree = tree.tree_root as AnimationNodeBlendTree
+			var nodes: Dictionary = {}
+			for node_name: String in btree.get_node_list():
+				var an: AnimationNode = btree.get_node(node_name)
+				nodes[node_name] = {"type": an.get_class()}
+			result["nodes"] = nodes
+			# get_connection_list not available on AnimationNodeBlendTree in Godot 4.x
+			# Skip connections for blend trees
+		elif tree.tree_root is AnimationNodeStateMachine:
+			var sm: AnimationNodeStateMachine = tree.tree_root as AnimationNodeStateMachine
+			var states: Array = []
+			var state_names: PackedStringArray = sm.get_node_list()
+			for state_name: String in state_names:
+				var state_node: AnimationNode = sm.get_node(state_name)
+				var state_entry: Dictionary = {
+					"name": state_name,
+					"position": {"x": sm.get_node_position(state_name).x, "y": sm.get_node_position(state_name).y},
+					"type": state_node.get_class(),
+				}
+				if state_node is AnimationNodeAnimation:
+					var anim_node: AnimationNodeAnimation = state_node as AnimationNodeAnimation
+					state_entry["animation"] = anim_node.animation
+				states.append(state_entry)
+			result["states"] = states
+			var transitions: Array = []
+			for j: int in range(sm.get_transition_count()):
+				var tr: AnimationNodeStateMachineTransition = sm.get_transition(j)
+				transitions.append({
+					"from": str(sm.get_transition_from(j)),
+					"to": str(sm.get_transition_to(j)),
+					"advance_mode": _advance_mode_to_string(tr.get_advance_mode()),
+					"switch_mode": _switch_mode_to_string(tr.get_switch_mode()),
+					"xfade_time": tr.get_xfade_time(),
+					"priority": tr.get_priority(),
+					"reset": tr.is_reset(),
+					"advance_condition": str(tr.get_advance_condition()),
+				})
+			result["transitions"] = transitions
+	return {"result": result}
+
+
+## Enum-to-string helpers for transition display.
+static func _advance_mode_to_string(mode: int) -> String:
+	match mode:
+		AnimationNodeStateMachineTransition.ADVANCE_MODE_DISABLED:
+			return "disabled"
+		AnimationNodeStateMachineTransition.ADVANCE_MODE_ENABLED:
+			return "enabled"
+		AnimationNodeStateMachineTransition.ADVANCE_MODE_AUTO:
+			return "auto"
+	return "unknown"
+
+
+static func _switch_mode_to_string(mode: int) -> String:
+	match mode:
+		AnimationNodeStateMachineTransition.SWITCH_MODE_IMMEDIATE:
+			return "immediate"
+		AnimationNodeStateMachineTransition.SWITCH_MODE_SYNC:
+			return "sync"
+		AnimationNodeStateMachineTransition.SWITCH_MODE_AT_END:
+			return "at_end"
+	return "unknown"
+
+
+## Convert Animation.LoopMode int to human-readable string.
+static func _loop_mode_to_string(mode: int) -> String:
+	match mode:
+		Animation.LOOP_NONE:
+			return "none"
+		Animation.LOOP_LINEAR:
+			return "loop"
+		Animation.LOOP_PINGPONG:
+			return "pingpong"
+	return "unknown"
+
+
+## Convert Animation.TrackType int to human-readable string.
+static func _track_type_to_string(track_type: int) -> String:
+	match track_type:
+		Animation.TYPE_VALUE:
+			return "value"
+		Animation.TYPE_POSITION_3D:
+			return "position_3d"
+		Animation.TYPE_ROTATION_3D:
+			return "rotation_3d"
+		Animation.TYPE_SCALE_3D:
+			return "scale_3d"
+		Animation.TYPE_BLEND_SHAPE:
+			return "blend_shape"
+		Animation.TYPE_METHOD:
+			return "method"
+		Animation.TYPE_BEZIER:
+			return "bezier"
+		Animation.TYPE_AUDIO:
+			return "audio"
+		Animation.TYPE_ANIMATION:
+			return "animation"
+	return "unknown"
+
+
+## Set a parameter on an AnimationTree.
+func set_tree_parameter(params: Dictionary) -> Dictionary:
+	var path: String = params.get("path", params.get("player_path", ""))
+	var parameter: String = params.get("parameter", "")
+	if path.is_empty() or parameter.is_empty():
+		return {"error": "path and parameter are required"}
+
+	# Reject null and missing values � AnimationTree parameters require typed values (BUG-6)
+	var value: Variant = params.get("value", null)
+	if MCPCommandHelpers.is_null(value):
+		return {"error": "Parameter value cannot be null. AnimationTree parameters require typed values (float, int, bool, string, Vector2, etc.). Use reset_tree_parameter to reset to default."}
+
+	var node: Node = MCPCommandHelpers.resolve_node_path(_plugin, path)
+	if node == null or not node is AnimationTree:
+		return {"error": "AnimationTree not found: %s" % path}
+	var tree: AnimationTree = node as AnimationTree
+
+	# Validate parameter exists using Godot's property list (BUG-2)
+	# Object::set() silently discards r_valid=false in GDScript, so we must check manually
+	var param_exists: bool = false
+	for prop: Dictionary in tree.get_property_list():
+		if prop.get("name", "") == parameter:
+			param_exists = true
+			break
+	if not param_exists:
+		return {"error": "Parameter '%s' does not exist on AnimationTree at '%s'. Use get_animation_tree_structure to see available parameters." % [parameter, path]}
+
+	tree.set(parameter, value)
+	return {"result": "Parameter '%s' set on %s" % [parameter, path]}
+
+
+## Reset a parameter on an AnimationTree to its type-based default.
+## NOTE: Godot does not expose get_parameter_default_value() to GDScript,
+## so defaults are inferred from the current value's type plus hardcoded
+## exceptions for known parameters (closest=-1, time_to_restart=-1.0, scale=1.0).
+## Object parameters (e.g. StateMachine.playback) cannot be reset � see error.
+func reset_tree_parameter(params: Dictionary) -> Dictionary:
+	var path: String = params.get("path", params.get("player_path", ""))
+	var parameter: String = params.get("parameter", "")
+	if path.is_empty() or parameter.is_empty():
+		return {"error": "path and parameter are required"}
+	var node: Node = MCPCommandHelpers.resolve_node_path(_plugin, path)
+	if node == null or not node is AnimationTree:
+		return {"error": "AnimationTree not found: %s" % path}
+	var tree: AnimationTree = node as AnimationTree
+	# Validate parameter exists
+	var param_exists: bool = false
+	for prop: Dictionary in tree.get_property_list():
+		if prop.get("name", "") == parameter:
+			param_exists = true
+			break
+	if not param_exists:
+		return {"error": "Parameter '%s' does not exist on AnimationTree at '%s'. Use get_animation_tree_structure to see available parameters." % [parameter, path]}
+	# Read current value to infer type, then reset to type-based default
+	var current: Variant = tree.get(parameter)
+	var default: Variant = _type_default(current)
+	if typeof(default) == TYPE_OBJECT:
+		return {"error": "Parameter '%s' is an object type (e.g. StateMachine.playback). Object parameters cannot be reset from GDScript � Godot does not expose get_parameter_default_value()." % parameter}
+	# Apply name-specific hardcoded overrides (closest=-1, time_to_restart=-1.0, scale=1.0)
+	default = _param_default(parameter, default)
+	tree.set(parameter, default)
+	return {"result": "Parameter '%s' reset to default (%s)" % [parameter, default]}
+
+
+## Infer a type-based default value for pragmatic parameter reset.
+## Exceptions hardcoded from Godot source (get_parameter_default_value in C++):
+##   closest > -1, time_to_restart > -1.0, TimeScale > 1.0
+static func _type_default(value: Variant) -> Variant:
+	match typeof(value):
+		TYPE_FLOAT:   return 0.0
+		TYPE_INT:     return 0
+		TYPE_BOOL:    return false
+		TYPE_STRING, TYPE_STRING_NAME:
+			return ""
+		TYPE_VECTOR2: return Vector2.ZERO
+		TYPE_VECTOR3: return Vector3.ZERO
+		TYPE_VECTOR4: return Vector4()
+		TYPE_COLOR:   return Color.WHITE
+		_:            return value  # object/array � can't determine safe default
+
+
+## Override for specific parameter names with non-zero defaults.
+static func _param_default(param_name: String, fallback: Variant) -> Variant:
+	var tail: String = param_name.get_file()
+	match tail:
+		"closest":
+			if typeof(fallback) == TYPE_INT:
+				return -1
+		"time_to_restart":
+			if typeof(fallback) == TYPE_FLOAT:
+				return -1.0
+		"scale":
+			if typeof(fallback) == TYPE_FLOAT:
+				return 1.0  # TimeScale default for all float params
+	return fallback
+
+
+## Add a state to a state machine AnimationTree.
+func add_state_machine_state(params: Dictionary) -> Dictionary:
+	var path: String = params.get("path", params.get("player_path", ""))
+	var state_name: String = params.get("state_name", "")
+	var animation: String = params.get("animation", "")
+	var position: Dictionary = params.get("position", {})
+	if path.is_empty() or state_name.is_empty():
+		return {"error": "path and state_name are required"}
+	var node: Node = MCPCommandHelpers.resolve_node_path(_plugin, path)
+	if node == null or not node is AnimationTree:
+		return {"error": "AnimationTree not found: %s" % path}
+	var tree: AnimationTree = node as AnimationTree
+	# Refuse auto-conversion to prevent data loss (BUG-1)
+	if tree.tree_root == null:
+		return {"error": "AnimationTree at '%s' has no root node. Create a root via create_animation_tree first." % path}
+	if not tree.tree_root is AnimationNodeStateMachine:
+		return {"error": "AnimationTree root is '%s', not AnimationNodeStateMachine. Refusing to auto-convert � would destroy existing configuration. Set root_type='AnimationNodeStateMachine' in create_animation_tree instead." % tree.tree_root.get_class()}
+	var sm: AnimationNodeStateMachine = tree.tree_root as AnimationNodeStateMachine
+	# Check for duplicate state (BUG-3)
+	if sm.has_node(state_name):
+		return {"error": "State '%s' already exists in state machine at '%s'" % [state_name, path]}
+	var anim_node: AnimationNodeAnimation = AnimationNodeAnimation.new()
+	if not animation.is_empty():
+		anim_node.animation = animation
+	var pos: Vector2 = Vector2(position.get("x", 0.0) as float, position.get("y", 0.0) as float)
+	sm.add_node(state_name, anim_node, pos)
+	return {"result": "State '%s' added to state machine" % state_name}
+
+
+## Remove a state from a state machine AnimationTree.
+func remove_state_machine_state(params: Dictionary) -> Dictionary:
+	var path: String = params.get("path", params.get("player_path", ""))
+	var state_name: String = params.get("state_name", "")
+	if path.is_empty() or state_name.is_empty():
+		return {"error": "path and state_name are required"}
+	var node: Node = MCPCommandHelpers.resolve_node_path(_plugin, path)
+	if node == null or not node is AnimationTree:
+		return {"error": "AnimationTree not found: %s" % path}
+	var tree: AnimationTree = node as AnimationTree
+	if tree.tree_root == null or not tree.tree_root is AnimationNodeStateMachine:
+		return {"error": "AnimationTree root is not a StateMachine"}
+	var sm: AnimationNodeStateMachine = tree.tree_root as AnimationNodeStateMachine
+	if state_name == "Start" or state_name == "End":
+		return {"error": "Cannot remove built-in '%s' state — it is auto-generated by Godot and will reappear" % state_name}
+	if not sm.has_node(state_name):
+		return {"error": "State '%s' does not exist in state machine at '%s'" % [state_name, path]}
+	sm.remove_node(state_name)
+	return {"result": "State '%s' removed from state machine (including all connected transitions)" % state_name}
+
+
+## Add a transition between two states in a state machine.
+func add_state_machine_transition(params: Dictionary) -> Dictionary:
+	var path: String = params.get("path", "")
+	var from_state: String = params.get("from", "")
+	var to_state: String = params.get("to", "")
+	if path.is_empty() or from_state.is_empty() or to_state.is_empty():
+		return {"error": "path, from, and to are required"}
+	var node: Node = MCPCommandHelpers.resolve_node_path(_plugin, path)
+	if node == null or not node is AnimationTree:
+		return {"error": "AnimationTree not found: %s" % path}
+	var tree: AnimationTree = node as AnimationTree
+	if tree.tree_root == null or not tree.tree_root is AnimationNodeStateMachine:
+		return {"error": "AnimationTree root is not a StateMachine"}
+	var sm: AnimationNodeStateMachine = tree.tree_root as AnimationNodeStateMachine
+	if not sm.has_node(from_state):
+		return {"error": "Source state '%s' does not exist in state machine" % from_state}
+	if not sm.has_node(to_state):
+		return {"error": "Target state '%s' does not exist in state machine" % to_state}
+	if sm.has_transition(from_state, to_state):
+		return {"error": "Transition from '%s' to '%s' already exists" % [from_state, to_state]}
+	var trans: AnimationNodeStateMachineTransition = AnimationNodeStateMachineTransition.new()
+	# Parse advance_mode
+	var advance_mode_raw: String = params.get("advance_mode", "enabled")
+	match advance_mode_raw:
+		"disabled": trans.set_advance_mode(AnimationNodeStateMachineTransition.ADVANCE_MODE_DISABLED)
+		"enabled": trans.set_advance_mode(AnimationNodeStateMachineTransition.ADVANCE_MODE_ENABLED)
+		"auto": trans.set_advance_mode(AnimationNodeStateMachineTransition.ADVANCE_MODE_AUTO)
+	# Parse switch_mode
+	var switch_mode_raw: String = params.get("switch_mode", "immediate")
+	match switch_mode_raw:
+		"immediate": trans.set_switch_mode(AnimationNodeStateMachineTransition.SWITCH_MODE_IMMEDIATE)
+		"sync": trans.set_switch_mode(AnimationNodeStateMachineTransition.SWITCH_MODE_SYNC)
+		"at_end": trans.set_switch_mode(AnimationNodeStateMachineTransition.SWITCH_MODE_AT_END)
+	trans.set_xfade_time(float(params.get("xfade_time", 0.0)))
+	trans.set_priority(int(params.get("priority", 1)))
+	trans.set_reset(bool(params.get("reset", true)))
+	var advance_condition: String = params.get("advance_condition", "")
+	if not advance_condition.is_empty():
+		trans.set_advance_condition(advance_condition)
+	sm.add_transition(from_state, to_state, trans)
+	return {"result": "Transition '%s' -> '%s' added" % [from_state, to_state]}
+
+
+## Remove a transition between two states in a state machine.
+func remove_state_machine_transition(params: Dictionary) -> Dictionary:
+	var path: String = params.get("path", "")
+	var from_state: String = params.get("from", "")
+	var to_state: String = params.get("to", "")
+	if path.is_empty() or from_state.is_empty() or to_state.is_empty():
+		return {"error": "path, from, and to are required"}
+	var node: Node = MCPCommandHelpers.resolve_node_path(_plugin, path)
+	if node == null or not node is AnimationTree:
+		return {"error": "AnimationTree not found: %s" % path}
+	var tree: AnimationTree = node as AnimationTree
+	if tree.tree_root == null or not tree.tree_root is AnimationNodeStateMachine:
+		return {"error": "AnimationTree root is not a StateMachine"}
+	var sm: AnimationNodeStateMachine = tree.tree_root as AnimationNodeStateMachine
+	if not sm.has_transition(from_state, to_state):
+		return {"error": "Transition from '%s' to '%s' does not exist" % [from_state, to_state]}
+	sm.remove_transition(from_state, to_state)
+	return {"result": "Transition '%s' -> '%s' removed" % [from_state, to_state]}
+
+
+## Remove a track from an animation.
+func remove_animation_track(params: Dictionary) -> Dictionary:
+	var path: String = params.get("player_path", params.get("path", ""))
+	var anim_name: String = params.get("anim_name", params.get("animation", ""))
+	var track_idx: int = params.get("track_idx", params.get("track_index", -1))
+	var library_name: String = params.get("library", "")
+	# Support library-qualified names (e.g., "my_library/anim_name")
+	if library_name.is_empty() and anim_name.contains("/"):
+		var parts := anim_name.split("/", false, 1)
+		if parts.size() == 2:
+			library_name = parts[0]
+			anim_name = parts[1]
+	if path.is_empty() or anim_name.is_empty() or track_idx < 0:
+		return {"error": "path, anim_name, and track_index (>= 0) are required"}
+	var node: Node = MCPCommandHelpers.resolve_node_path(_plugin, path)
+	if node == null or not node is AnimationPlayer:
+		return {"error": "AnimationPlayer not found: %s" % path}
+	var player: AnimationPlayer = node as AnimationPlayer
+	var anim: Animation = null
+	if library_name.is_empty():
+		anim = player.get_animation(anim_name)
+	else:
+		var lib: AnimationLibrary = player.get_animation_library(library_name)
+		if lib == null:
+			return {"error": "Animation library not found: '%s'" % library_name}
+		anim = lib.get_animation(anim_name)
+	if anim == null:
+		return {"error": "Animation not found: %s" % anim_name}
+	if track_idx < 0 or track_idx >= anim.get_track_count():
+		return {"error": "Invalid track index: %d (track count: %d)" % [track_idx, anim.get_track_count()]}
+	anim.remove_track(track_idx)
+	return {"result": "Track %d removed from animation '%s'" % [track_idx, anim_name]}
+
+
+## Remove a keyframe from an animation track at a specific time.
+func remove_animation_keyframe(params: Dictionary) -> Dictionary:
+	var path: String = params.get("player_path", params.get("path", ""))
+	var anim_name: String = params.get("anim_name", params.get("animation", ""))
+	var track_idx: int = params.get("track_idx", params.get("track_index", -1))
+	var time: float = params.get("time", -1.0)
+	var library_name: String = params.get("library", "")
+	# Support library-qualified names (e.g., "my_library/anim_name")
+	if library_name.is_empty() and anim_name.contains("/"):
+		var parts := anim_name.split("/", false, 1)
+		if parts.size() == 2:
+			library_name = parts[0]
+			anim_name = parts[1]
+	if path.is_empty() or anim_name.is_empty() or track_idx < 0 or time < 0.0:
+		return {"error": "path, anim_name, track_index (>= 0), and time (>= 0) are required"}
+	var node: Node = MCPCommandHelpers.resolve_node_path(_plugin, path)
+	if node == null or not node is AnimationPlayer:
+		return {"error": "AnimationPlayer not found: %s" % path}
+	var player: AnimationPlayer = node as AnimationPlayer
+	var anim: Animation = null
+	if library_name.is_empty():
+		anim = player.get_animation(anim_name)
+	else:
+		var lib: AnimationLibrary = player.get_animation_library(library_name)
+		if lib == null:
+			return {"error": "Animation library not found: '%s'" % library_name}
+		anim = lib.get_animation(anim_name)
+	if anim == null:
+		return {"error": "Animation not found: %s" % anim_name}
+	if track_idx < 0 or track_idx >= anim.get_track_count():
+		return {"error": "Invalid track index: %d (track count: %d)" % [track_idx, anim.get_track_count()]}
+	# Use FIND_MODE_EXACT to avoid removing wrong keyframe (NEW-BUG-2)
+	# track_remove_key_at_time uses FIND_MODE_APPROX which removes the nearest keyframe
+	var key_idx: int = anim.track_find_key(track_idx, time, Animation.FIND_MODE_EXACT)
+	if key_idx < 0:
+		return {"error": "No keyframe found at exact time %.4f on track %d" % [time, track_idx]}
+	anim.track_remove_key(track_idx, key_idx)
+	return {"result": "Keyframe at time %.4f removed from track %d" % [time, track_idx]}
+
+
+## Remove an AnimationTree node from the scene.
+func remove_animation_tree(params: Dictionary) -> Dictionary:
+	var path: String = params.get("path", params.get("player_path", ""))
+	if path.is_empty():
+		return {"error": "path is required"}
+	var node: Node = MCPCommandHelpers.resolve_node_path(_plugin, path)
+	if node == null or not node is AnimationTree:
+		return {"error": "AnimationTree not found: %s" % path}
+	var tree: AnimationTree = node as AnimationTree
+	var root: Node = MCPCommandHelpers.get_scene_root(_plugin)
+	if root != null and tree == root:
+		return {"error": "Cannot remove scene root"}
+	if _undo_helper:
+		_undo_helper.remove_node_with_undo(tree)
+	else:
+		tree.queue_free()
+	return {"result": "AnimationTree '%s' removed from scene" % path}
+
+
+## Get the current value of a parameter on an AnimationTree.
+func get_tree_parameter(params: Dictionary) -> Dictionary:
+	var path: String = params.get("path", params.get("player_path", ""))
+	var parameter: String = params.get("parameter", "")
+	if path.is_empty() or parameter.is_empty():
+		return {"error": "path and parameter are required"}
+	var node: Node = MCPCommandHelpers.resolve_node_path(_plugin, path)
+	if node == null or not node is AnimationTree:
+		return {"error": "AnimationTree not found: %s" % path}
+	var tree: AnimationTree = node as AnimationTree
+	# Validate parameter exists using Godot's property list (BUG-2)
+	var param_exists: bool = false
+	for prop: Dictionary in tree.get_property_list():
+		if prop.get("name", "") == parameter:
+			param_exists = true
+			break
+	if not param_exists:
+		return {"error": "Parameter '%s' does not exist on AnimationTree at '%s'. Use get_animation_tree_structure to see available parameters." % [parameter, path]}
+	var value: Variant = tree.get(parameter)
+	return {"result": {"parameter": parameter, "value": value}}

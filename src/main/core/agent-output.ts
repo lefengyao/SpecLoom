@@ -1,20 +1,22 @@
-const secretField = /(?:api[-_]?key|password|secret|authorization|credential|cookie|^(?:access|refresh|auth)[-_]?token$)/i;
+const secretField = /(?:api[-_]?key|password|secret|authorization|credential|cookie|^token$|^(?:access|refresh|auth)[-_]?token$)/i;
 const OUTPUT_LIMIT = 16_384;
 
 export function redactSecret(value: string, secret?: string): string {
   const scrubbed = secret ? value.split(secret).join("[redacted]") : value;
-  return scrubbed.replace(/\bBearer\s+[^\s,;"'\\}\]]+/gi, "Bearer [redacted]");
+  return scrubbed.replace(/\bBearer\s+(?!\[redacted\])[^\s,;"'\\}\]]+/gi, "Bearer [redacted]");
 }
 
-export function toolOutput(ok: boolean, value: unknown, secret?: string): string {
+export function toolOutput(ok: boolean, value: unknown, secret?: string, limits?: { stringLimit: number; outputLimit: number }): string {
+  const stringLimit = limits?.stringLimit ?? 8_000;
+  const outputLimit = limits?.outputLimit ?? OUTPUT_LIMIT;
   let truncated = false;
   const seen = new WeakSet<object>();
   function compact(item: unknown, depth = 0): unknown {
     if (typeof item === "string") {
       const safe = redactSecret(item, secret);
-      if (safe.length <= 8_000) return safe;
+      if (safe.length <= stringLimit) return safe;
       truncated = true;
-      return `${safe.slice(0, 8_000)}[truncated]`;
+      return `${safe.slice(0, stringLimit)}[truncated]`;
     }
     if (item === null || typeof item === "boolean") return item;
     if (typeof item === "number") return Number.isFinite(item) ? item : null;
@@ -33,7 +35,7 @@ export function toolOutput(ok: boolean, value: unknown, secret?: string): string
   const result = compact(value);
   const envelope = ok ? { ok: true, result, truncated } : { ok: false, error: result, truncated };
   const serialized = JSON.stringify(envelope);
-  if (serialized.length <= OUTPUT_LIMIT) return serialized;
+  if (serialized.length <= outputLimit) return serialized;
   const preview = serialized.slice(0, 6_000);
   return JSON.stringify({ ok, truncated: true, preview });
 }

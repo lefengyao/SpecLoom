@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { TextPatchSchema, VersionTokenSchema } from "../../shared/contracts";
 import { ProjectError } from "./errors";
+import { godotMcpToolDefinitions, type GodotMcpToolName } from "./godot-mcp/tool-definitions";
 
 const path = z.string().min(1).max(2_048);
 const paths = z.array(path).max(256);
@@ -27,16 +28,19 @@ const definitions = [
     schema: z.object({ digest: z.string().min(1).max(256) }).strict() },
 ] as const;
 
-export type ToolName = typeof definitions[number]["name"];
+export type ToolName = typeof definitions[number]["name"] | GodotMcpToolName;
 export interface ToolDefinition { name: ToolName; providerName: string; description: string; schema: z.ZodType }
 export interface ProviderTool {
   type: "function";
   function: { name: string; description: string; parameters: Record<string, unknown> };
 }
-export interface ParsedToolCall { name: ToolName; input: Record<string, unknown> }
+export interface ParsedToolCall { name: string; input: Record<string, unknown> }
 
 export class ToolCatalog {
-  private readonly tools: ToolDefinition[] = definitions.map((tool) => ({ ...tool, providerName: tool.name.replaceAll(".", "_") }));
+  private readonly tools: ToolDefinition[] = [
+    ...definitions.map((tool) => ({ ...tool, providerName: tool.name.replaceAll(".", "_") })),
+    ...godotMcpToolDefinitions.map((tool) => ({ ...tool, providerName: tool.name })),
+  ];
 
   listTools(): ToolDefinition[] { return [...this.tools]; }
 

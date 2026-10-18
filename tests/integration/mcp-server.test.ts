@@ -4,7 +4,7 @@ import path from "node:path";
 import { request } from "node:http";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ProjectCore } from "../../src/main/core/project-core";
 import { startMcpServer } from "../../src/main/mcp-server";
 import type { ChangeReview } from "../../src/shared/desktop-api";
@@ -16,6 +16,7 @@ async function fixture() {
   cleanup.push(() => rm(root, { force: true, recursive: true }));
   await writeFile(path.join(root, "project.godot"), 'config_version=5\n[application]\nconfig/name="MCP fixture"\n');
   const core = await ProjectCore.open(root);
+  cleanup.push(() => core.close());
   await core.createTask({ id: "approved", title: "MCP task", readPaths: ["*"], writePaths: ["specs/**"], mode: "manual", allowDelete: false });
   const server = await startMcpServer(() => core);
   cleanup.push(() => server.close());
@@ -61,6 +62,27 @@ describe("Authenticated loopback MCP", () => {
     expect(output(commit)).toMatchObject({ code: "APPROVAL_REQUIRED" });
     await core.approveChanges("approved", review.changeSet.digest);
     expect(await readFile(path.join(root, "specs/new.md"), "utf8")).toBe("hello");
+  });
+  it("publishes the eight Godot tools and returns screenshots as MCP image blocks", async () => {
+    const { server, core } = await fixture();
+    const client = await clientFor(server);
+    const listed = await client.listTools();
+    const expected = ["get_diagnostics", "get_output_log", "get_editor_screenshot", "get_game_screenshot", "get_project_info", "get_scene_tree", "get_game_scene_tree", "get_game_node_properties"];
+    expect(listed.tools.map(tool => tool.name).filter(name => expected.includes(name)).sort()).toEqual(expected.sort());
+    const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jzGQAAAAASUVORK5CYII=";
+    vi.spyOn(core, "executeTool").mockImplementation(async (_taskId, name) => name.includes("screenshot")
+      ? { mimeType: "image/png", base64: png, width: 1, height: 1 }
+      : { name, ok: true });
+    const textResult = await client.callTool({ name: "get_project_info", arguments: { taskId: "approved" } });
+    expect(textResult.content).toContainEqual({ type: "text", text: JSON.stringify({ name: "get_project_info", ok: true }) });
+    for (const name of ["get_editor_screenshot", "get_game_screenshot"]) {
+      const result = await client.callTool({ name, arguments: { taskId: "approved" } });
+      const content = result.content as { type: string; mimeType?: string; data?: string; text?: string }[];
+      expect(content).toContainEqual({ type: "image", mimeType: "image/png", data: png });
+      const metadata = content.find(item => item.type === "text");
+      expect(metadata).toMatchObject({ text: JSON.stringify({ mimeType: "image/png", width: 1, height: 1 }) });
+      expect(JSON.stringify(metadata)).not.toContain(png);
+    }
   });
   it("cannot approve or broaden scope and rejects stale external edits at UI commit", async () => {
     const { server, core, root } = await fixture();

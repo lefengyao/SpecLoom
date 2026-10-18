@@ -57,6 +57,21 @@ describe("ModelVault", () => {
     expect(await vault.list()).toEqual([]);
   });
 
+  it("gives an actionable recovery message when an encrypted key can no longer be decrypted", async () => {
+    const root = await directory();
+    const vault = new ModelVault(root, adapter);
+    await vault.save(profile(), "private-key");
+    const broken = new ModelVault(root, {
+      ...adapter,
+      decrypt: () => { throw new Error("safeStorage key changed"); },
+    });
+
+    await expect(broken.resolveCredential(profile())).rejects.toMatchObject({
+      code: "BACKEND_UNAVAILABLE",
+      message: "供应商密钥已失效，请进入“供应商 → 编辑供应商”重新输入 API 密钥后保存。",
+    });
+  });
+
   it("detects a public profile edit even when its approval field is copied", async () => {
     const root = await directory();
     const vault = new ModelVault(root, adapter);

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title" style="color:#343c3e">
+  <title id="title">SpecLoom - Specification Page</title>
+  <path d="M26 16h48v32h30v64H26zm18 46v12h42V62zm0 24v12h26V86z" fill="currentColor" fill-rule="evenodd"/>
+  <path d="M82 18v22h22z" fill="#da7859"/>
+</svg>

@@ -1,14 +1,36 @@
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { app, BrowserWindow, dialog, ipcMain, safeStorage } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, safeStorage, shell } from "electron";
 import { DesktopController } from "./desktop-controller";
 import { registerIpc } from "./ipc";
 import { ModelVault } from "./core/model-vault";
+import { ProviderVault } from "./core/provider-vault";
 import { startMcpServer, type LocalMcpServer } from "./mcp-server";
+import { godotMcpHostRegistry } from "./core/godot-mcp/host-registry";
 
 let activeWindow: BrowserWindow | undefined;
 let controller: DesktopController;
 let mcp: LocalMcpServer | undefined;
+let unsubscribeSessionEvents: (() => void) | undefined;
+let shutdownStarted = false;
+let shutdownComplete = false;
+let shutdownPromise: Promise<void> | undefined;
+const applicationRoot = !app.isPackaged && process.env.SPECLOOM_DEV_APP_ROOT ? path.resolve(process.env.SPECLOOM_DEV_APP_ROOT) : app.getAppPath();
+
+function cleanupBeforeQuit(): Promise<void> {
+  shutdownPromise ??= Promise.allSettled([
+    controller?.shutdown(),
+    mcp?.close(),
+    godotMcpHostRegistry.closeAll(),
+  ]).then(() => undefined);
+  return shutdownPromise;
+}
+
+function requestQuit(): void {
+  if (shutdownStarted) return;
+  shutdownStarted = true;
+  void cleanupBeforeQuit().finally(() => { shutdownComplete = true; app.quit(); });
+}
 
 if (!app.isPackaged && process.env.SPECLOOM_USER_DATA_DIR) app.setPath("userData", path.resolve(process.env.SPECLOOM_USER_DATA_DIR));
 
@@ -20,7 +42,8 @@ function createWindow(): void {
     minHeight: 620,
     show: false,
     title: "SpecLoom",
-    backgroundColor: "#f7f9f8",
+    icon: path.join(applicationRoot, app.isPackaged ? "dist/renderer/brand/icon.png" : "src/renderer/public/brand/icon.png"),
+    backgroundColor: "#edf1e8",
     webPreferences: {
       sandbox: true,
       contextIsolation: true,
@@ -34,11 +57,33 @@ function createWindow(): void {
   const rendererFile = path.resolve(__dirname, "../renderer/index.html");
   const developmentUrl = !app.isPackaged ? process.env.SPECLOOM_DEV_SERVER_URL : undefined;
   const rendererUrl = developmentUrl ?? pathToFileURL(rendererFile).href;
+  unsubscribeSessionEvents?.();
   ipcMain.removeHandler("specloom:invoke");
-  registerIpc(ipcMain, controller, () => activeWindow, rendererUrl, async () => {
-    const selection = await dialog.showOpenDialog(window, { title: "选择 Godot 项目", properties: ["openDirectory"] });
+  const unsubscribe = registerIpc(ipcMain, controller, () => activeWindow, rendererUrl, async () => {
+    const selection = await dialog.showOpenDialog(window, { title: "选择项目工作区", properties: ["openDirectory"] });
     return selection.canceled ? undefined : selection.filePaths[0];
+  }, async () => {
+    const selection = await dialog.showOpenDialog(window, { title: "导入离线文档", properties: ["openFile", "multiSelections"] });
+    return selection.canceled ? [] : selection.filePaths;
+  }, async () => {
+    const selection = await dialog.showOpenDialog(window, { title: "导入离线文档目录", properties: ["openDirectory"] });
+    return selection.canceled ? undefined : selection.filePaths[0];
+  }, async () => {
+    const selection = await dialog.showOpenDialog(window, { title: "安装 Skill", properties: ["openDirectory"] });
+    return selection.canceled ? undefined : selection.filePaths[0];
+  }, async () => {
+    const selection = await dialog.showOpenDialog(window, { title: "安装 Skill 归档", properties: ["openFile"], filters: [{ name: "Skill archive", extensions: ["zip", "tgz", "tar"] }] });
+    return selection.canceled ? undefined : selection.filePaths[0];
+  }, {
+    clipboard,
+    revealDirectory: (target) => { shell.showItemInFolder(target); },
+    selectDiagnosticsExport: async () => {
+      const selection = await dialog.showSaveDialog(window, { title: "导出诊断日志", defaultPath: "specloom-diagnostics.jsonl", filters: [{ name: "JSON Lines", extensions: ["jsonl"] }] });
+      return selection.canceled ? undefined : selection.filePath;
+    },
   });
+  unsubscribeSessionEvents = unsubscribe;
+  window.once("closed", () => { unsubscribe(); if (activeWindow === window) { activeWindow = undefined; unsubscribeSessionEvents = undefined; } });
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   window.webContents.on("will-navigate", (event, url) => {
     if (url !== rendererUrl) event.preventDefault();
@@ -54,7 +99,8 @@ function createWindow(): void {
 
 void app.whenReady().then(async () => {
   const vault = new ModelVault(app.getPath("userData"), { isAvailable: () => safeStorage.isEncryptionAvailable(), encrypt: (value) => safeStorage.encryptString(value), decrypt: (value) => safeStorage.decryptString(value) });
-  controller = new DesktopController(vault, app.getPath("userData"), path.join(app.getAppPath(), "skills"));
+  const encryption = { isAvailable: () => safeStorage.isEncryptionAvailable(), encrypt: (value: string) => safeStorage.encryptString(value), decrypt: (value: Buffer) => safeStorage.decryptString(value) };
+  controller = new DesktopController(vault, app.getPath("userData"), path.join(applicationRoot, "skills"), new ProviderVault(app.getPath("userData"), encryption), { chatAttachmentWorkerPath: path.join(__dirname, "chat-attachment-worker.cjs") });
   mcp = await startMcpServer(() => controller.currentCore());
   controller.mcp = { url: mcp.url, token: mcp.token };
   createWindow();
@@ -64,8 +110,11 @@ void app.whenReady().then(async () => {
 });
 
 app.on("window-all-closed", () => {
-  controller?.cancelAll();
-  if (process.platform !== "darwin") app.quit();
+  if (process.platform !== "darwin") requestQuit();
 });
 
-app.on("before-quit", () => { controller?.cancelAll(); void mcp?.close(); });
+app.on("before-quit", (event) => {
+  if (shutdownComplete) return;
+  event.preventDefault();
+  requestQuit();
+});

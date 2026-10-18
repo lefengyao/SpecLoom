@@ -74,12 +74,12 @@ describe("workflow task adapter", () => {
     expect(created.id).toBe(spec?.id);
     expect(spec).toMatchObject({
       title: "implement",
-      readPaths: ["specs"],
-      writePaths: ["specs/entities"],
+      readPaths: ["specs/**"],
+      writePaths: ["specs/entities/**"],
       allowDelete: false,
       mode: "manual",
     });
-    expect(created.scope).toEqual({ title: "implement", readPaths: ["specs"], writePaths: ["specs/entities"] });
+    expect(created.scope).toEqual({ title: "implement", readPaths: ["specs/**"], writePaths: ["specs/entities/**"] });
 
     expect(await adapter.runAgent(created.id, profile, "implement it", signal)).toEqual({ summary: "implemented" });
     expect(core.agentMessage).toHaveBeenCalledWith(created.id, profile, "implement it", signal);
@@ -511,6 +511,24 @@ describe("workflow runner", () => {
     expect(adapter.validations).toHaveLength(2);
     expect(waiting.validation?.status).toBe("pass");
     expect(waiting.writeTaskId).toBe(failedRun.writeTaskId);
+    expect(waiting.error).toBeUndefined();
+  });
+
+  test("a skipped validation still reaches approval for a human decision", async () => {
+    const root = await tempRoot();
+    const adapter = new FakeWorkflowTaskAdapter();
+    adapter.validationResults.push({
+      status: "skipped",
+      checks: [],
+      diagnostics: [{ severity: "warning", message: "Godot headless requires Docker" }],
+    });
+    const runner = new WorkflowRunner({ adapter, root });
+    const run = runner.createRun(await loadOfficialWorkflow(), inputs());
+
+    await runner.start(run.runId);
+    const waiting = await runner.waitForRun(run.runId, (candidate) => candidate.status === "waiting_approval");
+    expect(waiting.validation?.status).toBe("skipped");
+    expect(stateStatus(waiting, "validate")).toBe("completed");
     expect(waiting.error).toBeUndefined();
   });
 

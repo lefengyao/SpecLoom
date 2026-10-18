@@ -1,10 +1,21 @@
 import type { ValidationDiagnostic } from "../../shared/contracts";
 import { VersionTokenSchema } from "../../shared/contracts";
-import { diagnostic, nonempty, record, validationPathIdentity, type ParsedSpec } from "./validator-markdown";
+import { componentValueMatches, diagnostic, nonempty, record, validReference, validationPathIdentity, type ParsedSpec } from "./validator-markdown";
 import { ValidationSource } from "./validator-source";
 import { normalizeProjectPath } from "./path-policy";
 
 export async function validateReferences(specs: ParsedSpec[], source: ValidationSource, diagnostics: ValidationDiagnostic[]): Promise<void> {
+  function materialKind(spec: ParsedSpec): string | undefined {
+    const relative = validationPathIdentity(spec.path);
+    if (relative.startsWith("specs/maps/") || (relative.startsWith("specs/entities/") && spec.data.type === "map")) return "map";
+    if (relative.startsWith("specs/entities/")) return "entity";
+    if (relative.startsWith("specs/components/")) return "component";
+    if (relative.startsWith("specs/settings/")) return "setting";
+    if (relative.startsWith("specs/ui/")) return "ui";
+    if (/^specs\/[^/]+\.md$/i.test(relative)) return "spec";
+    return undefined;
+  }
+  const isEntitySpec = (spec: ParsedSpec | undefined) => spec !== undefined && ["entity", "map"].includes(materialKind(spec) ?? "");
   const ids = new Map<string, ParsedSpec>();
   const paths = new Map(specs.map((spec) => [validationPathIdentity(spec.path), spec]));
   for (const spec of specs) {
@@ -14,41 +25,127 @@ export async function validateReferences(specs: ParsedSpec[], source: Validation
     else ids.set(spec.data.id, spec);
   }
 
-  async function reference(value: unknown, owner: string, code: string, relation = false): Promise<void> {
+  async function resolveReference(value: unknown, owner: string, missingCode: string, invalidCode = "REFERENCE_INVALID", componentBinding = false): Promise<{ spec?: ParsedSpec; path: string } | undefined> {
     const target = typeof value === "string" ? value : record(value) ? value.path ?? value.id : undefined;
-    if (!nonempty(target)) {
-      diagnostics.push(diagnostic(owner, "REFERENCE_INVALID", "References require a nonempty path or ID"));
-      return;
+    if (!validReference(value, componentBinding) || !nonempty(target)) {
+      diagnostics.push(diagnostic(owner, invalidCode, "References require a single nonempty path or ID and valid reference fields"));
+      return undefined;
     }
     const isPath = target.startsWith("res://") || target.includes("/") || /\.(?:md|gd|tscn|tres|godot|json|yaml|yml)$/i.test(target) || (record(value) && value.path !== undefined);
+    let relative: string;
+    let spec: ParsedSpec | undefined;
     if (isPath) {
       try {
-        const relative = normalizeProjectPath(target.replace(/^res:\/\//, ""));
-        if (!(await source.exists(relative))) diagnostics.push(diagnostic(owner, code, `Referenced file '${relative}' does not exist`));
-        const identity = validationPathIdentity(relative);
-        const referencedSpec = paths.get(identity);
-        if (relation && (!identity.startsWith("specs/entities/") || !referencedSpec)) diagnostics.push(diagnostic(owner, "RELATION_TARGET_INVALID", `Relation '${relative}' must reference an entity specification`));
-        else if (record(value) && value.type !== undefined && referencedSpec && referencedSpec.data.type !== value.type) diagnostics.push(diagnostic(owner, "RELATION_TYPE_MISMATCH", `Referenced file '${relative}' does not have type '${String(value.type)}'`));
-        if (record(value) && value.version !== undefined) {
-          if (!VersionTokenSchema.safeParse(value.version).success) diagnostics.push(diagnostic(owner, "REFERENCE_VERSION_INVALID", `Reference '${relative}' requires a file version token`));
-          else if (await source.effectiveVersion(relative) !== value.version) diagnostics.push(diagnostic(owner, "REFERENCE_VERSION_STALE", `Referenced file '${relative}' has changed`));
+        relative = normalizeProjectPath(target.replace(/^res:\/\//, ""));
+        if (!(await source.exists(relative))) {
+          diagnostics.push(diagnostic(owner, missingCode, `Referenced file '${relative}' does not exist`));
+          return undefined;
         }
+        spec = paths.get(validationPathIdentity(relative));
       } catch {
-        diagnostics.push(diagnostic(owner, "REFERENCE_PATH_INVALID", `Reference '${target}' is not a safe project path`));
+        diagnostics.push(diagnostic(owner, invalidCode === "REFERENCE_INVALID" ? "REFERENCE_PATH_INVALID" : invalidCode, `Reference '${target}' is not a safe project path`));
+        return undefined;
       }
     } else {
-      const found = ids.get(target);
-      if (!found || (relation && !validationPathIdentity(found.path).startsWith("specs/entities/"))) diagnostics.push(diagnostic(owner, code, `Referenced ID '${target}' does not exist`));
-      else if (record(value) && value.type !== undefined && found.data.type !== value.type) diagnostics.push(diagnostic(owner, "RELATION_TYPE_MISMATCH", `Referenced ID '${target}' does not have type '${String(value.type)}'`));
+      spec = ids.get(target);
+      if (!spec) {
+        diagnostics.push(diagnostic(owner, missingCode, `Referenced ID '${target}' does not exist`));
+        return undefined;
+      }
+      relative = spec.path;
+    }
+    if (record(value) && value.version !== undefined) {
+      if (!VersionTokenSchema.safeParse(value.version).success) diagnostics.push(diagnostic(owner, "REFERENCE_VERSION_INVALID", `Reference '${target}' requires a file version token`));
+      else if (await source.effectiveVersion(relative) !== value.version) diagnostics.push(diagnostic(owner, "REFERENCE_VERSION_STALE", `Referenced file '${relative}' has changed`));
+    }
+    return { path: relative, ...(spec === undefined ? {} : { spec }) };
+  }
+
+  function checkType(value: unknown, spec: ParsedSpec | undefined, owner: string, code: string): void {
+    if (record(value) && value.type !== undefined && spec && spec.data.type !== value.type) {
+      diagnostics.push(diagnostic(owner, code, `Referenced file '${spec.path}' does not have type '${String(value.type)}'`));
     }
   }
 
+  async function reference(value: unknown, owner: string, code: string, relation = false): Promise<void> {
+    const resolved = await resolveReference(value, owner, code);
+    if (!resolved) return;
+    if (relation && !isEntitySpec(resolved.spec)) {
+      diagnostics.push(diagnostic(owner, "RELATION_TARGET_INVALID", `Relation '${resolved.path}' must reference an entity specification`));
+    } else checkType(value, resolved.spec, owner, "RELATION_TYPE_MISMATCH");
+  }
+
+  async function semanticReference(value: unknown, owner: ParsedSpec, code: string, accepts: (spec: ParsedSpec) => boolean, componentBinding = false): Promise<ParsedSpec | undefined> {
+    const resolved = await resolveReference(value, owner.path, `${code}_NOT_FOUND`, `${code}_INVALID`, componentBinding);
+    if (!resolved) return undefined;
+    if (!resolved.spec || !accepts(resolved.spec)) {
+      diagnostics.push(diagnostic(owner.path, `${code}_TARGET_INVALID`, `Reference '${resolved.path}' must target a compatible specification`));
+      return undefined;
+    }
+    checkType(value, resolved.spec, owner.path, `${code}_TYPE_MISMATCH`);
+    return resolved.spec;
+  }
+
+  const parents = new Map<string, string>();
+  const inheritance = new Map<string, string[]>();
   for (const spec of specs) {
     if (Array.isArray(spec.data.relations)) for (const value of spec.data.relations) await reference(value, spec.path, "RELATION_NOT_FOUND", true);
     if (validationPathIdentity(spec.path).startsWith("specs/tasks/") && Array.isArray(spec.data.inputs)) for (const value of spec.data.inputs) await reference(value, spec.path, "TASK_INPUT_NOT_FOUND");
     if (Array.isArray(spec.data.source)) for (const value of spec.data.source) await reference(value, spec.path, "SOURCE_NOT_FOUND");
     else if (record(spec.data.source)) await reference(spec.data.source, spec.path, "SOURCE_NOT_FOUND");
+    if (!nonempty(spec.data.id)) continue;
+    const ownerId = spec.data.id;
+    const kind = materialKind(spec);
+    if (kind && spec.data.parent !== undefined) {
+      const code = kind === "entity" ? "ENTITY_PARENT" : "MATERIAL_PARENT";
+      const parent = await semanticReference(spec.data.parent, spec, code, (target) => materialKind(target) === kind);
+      if (parent && nonempty(parent.data.id)) parents.set(ownerId, parent.data.id);
+    }
+    if (!isEntitySpec(spec)) continue;
+    if (spec.data.extends !== undefined) {
+      const target = await semanticReference(spec.data.extends, spec, "ENTITY_INHERIT", (target) => materialKind(target) === "entity");
+      if (target && nonempty(target.data.id)) inheritance.set(ownerId, [target.data.id]);
+    }
+    if (spec.data.components !== undefined) {
+      const attached = new Set<string>();
+      for (const value of Array.isArray(spec.data.components) ? spec.data.components : []) {
+        const target = await semanticReference(value, spec, "ENTITY_COMPONENT", (target) => materialKind(target) === "component" && target.data.type === "component", true);
+        if (!target) continue;
+        const targetIdentity = validationPathIdentity(target.path);
+        if (attached.has(targetIdentity)) diagnostics.push(diagnostic(spec.path, "ENTITY_COMPONENT_DUPLICATE", `Component '${String(target.data.id)}' is already attached`));
+        attached.add(targetIdentity);
+        if (!record(value) || !record(value.values)) continue;
+        const fields = new Map<string, Record<string, unknown>>();
+        for (const field of Array.isArray(target.data.fields) ? target.data.fields : []) if (record(field) && nonempty(field.key)) fields.set(field.key, field);
+        for (const [key, override] of Object.entries(value.values)) {
+          const field = fields.get(key);
+          if (!field) diagnostics.push(diagnostic(spec.path, "ENTITY_COMPONENT_FIELD_UNKNOWN", `Component '${String(target.data.id)}' has no field '${key}'`));
+          else if (!componentValueMatches(field.type, override)) diagnostics.push(diagnostic(spec.path, "ENTITY_COMPONENT_VALUE_INVALID", `Component '${String(target.data.id)}' field '${key}' requires a ${String(field.type)} value`));
+        }
+      }
+    }
   }
+
+  function reportCycles(graph: Map<string, string[]>, code: string | ((spec: ParsedSpec | undefined) => string)): void {
+    const visiting = new Set<string>();
+    const visited = new Set<string>();
+    const visit = (id: string, stack: string[]) => {
+      if (visiting.has(id)) {
+        const index = stack.indexOf(id);
+        const spec = ids.get(id);
+        diagnostics.push(diagnostic(spec?.path ?? "specs/entities", typeof code === "string" ? code : code(spec), `Specification relationship cycle: ${[...stack.slice(index), id].join(" -> ")}`));
+        return;
+      }
+      if (visited.has(id)) return;
+      visiting.add(id);
+      for (const next of graph.get(id) ?? []) visit(next, [...stack, id]);
+      visiting.delete(id);
+      visited.add(id);
+    };
+    for (const id of graph.keys()) visit(id, []);
+  }
+  reportCycles(new Map([...parents].map(([id, parent]) => [id, [parent]])), (spec) => spec && materialKind(spec) === "entity" ? "ENTITY_PARENT_CYCLE" : "MATERIAL_PARENT_CYCLE");
+  reportCycles(inheritance, "ENTITY_INHERIT_CYCLE");
 
   const manifestPath = ".specloom/generated-manifest.json";
   const content = await source.readManifest();

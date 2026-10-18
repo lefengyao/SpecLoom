@@ -6,11 +6,13 @@ import { ProjectError } from "./errors";
 
 export interface ProjectLayoutOptions {
   bundledSkillsDirectory?: string;
+  installedSkillsDirectory?: string;
 }
 
 export const EDITABLE_PROJECT_DIRECTORIES = [
-  "specs/entities/characters", "specs/entities/maps", "specs/entities/systems",
-  "specs/entities/items", "specs/entities/events", "specs/tasks", "specs/decisions", "specs/prompts",
+  "specs/entities/characters", "specs/entities/enemies", "specs/entities/maps", "specs/entities/systems",
+  "specs/entities/items", "specs/entities/events", "specs/components", "specs/settings", "specs/maps", "specs/ui",
+  "specs/tasks", "specs/decisions", "specs/prompts",
   ".specloom/skills",
 ] as const;
 
@@ -125,26 +127,44 @@ export class ProjectLayout {
 
   async initialize(projectRoot: string): Promise<ProjectMetadata> {
     let root: string;
-    let godotContent: string;
+    let godotContent: string | undefined;
     try {
       root = await realpath(projectRoot);
       if (!(await lstat(root)).isDirectory()) throw new Error("Project root must be a directory");
       const godotPath = path.join(root, "project.godot");
-      const stats = await lstat(godotPath);
-      if (!stats.isFile() || stats.isSymbolicLink()) throw new Error("project.godot must be a regular file");
-      godotContent = await readFile(godotPath, "utf8");
+      try {
+        const stats = await lstat(godotPath);
+        if (!stats.isFile() || stats.isSymbolicLink()) throw new Error("project.godot must be a regular file");
+        godotContent = await readFile(godotPath, "utf8");
+      } catch (error) { if (!isMissing(error)) throw error; }
     } catch {
-      throw new ProjectError("INVALID_PROJECT", "Select an existing Godot project containing a regular project.godot file");
+      throw new ProjectError("INVALID_PROJECT", "选择现有项目目录；project.godot 如存在必须是普通文件");
     }
-    const metadata: ProjectMetadata = { schemaVersion: SCHEMA_VERSION, path: root, ...parseGodotMetadata(godotContent, root) };
+    const metadata: ProjectMetadata = { schemaVersion: SCHEMA_VERSION, path: root, ...(godotContent === undefined ? { name: path.basename(root), description: "A project workspace managed with SpecLoom.", godot: { features: [] }, engine: "generic" as const } : { ...parseGodotMetadata(godotContent, root), engine: "godot" as const }) };
     for (const directory of [...EDITABLE_PROJECT_DIRECTORIES, ...RESERVED_PROJECT_DIRECTORIES]) {
       await ensureProjectDirectory(root, directory);
     }
     await writeInitialFile(root, "specs/project.md", markdown({ schemaVersion: SCHEMA_VERSION, id: "project", title: metadata.name, description: metadata.description }, `# ${metadata.name}\n\n${metadata.description}`));
     await writeInitialFile(root, "specs/outline.md", markdown({ schemaVersion: SCHEMA_VERSION, id: "outline", title: "Project Outline", description: "High-level structure and milestones for the project." }, "# Project Outline\n\n## Overview\n\n## Milestones"));
+    await writeInitialFile(root, "specs/components/state_machine.md", markdown({
+      schemaVersion: SCHEMA_VERSION,
+      id: "state_machine",
+      title: "状态机基类",
+      type: "component",
+      scope: "system",
+      group: "基础组件",
+      description: "Reusable state-machine lifecycle data and behavior contract.",
+      fields: [
+        { key: "enabled", label: "启用", type: "boolean", default: true },
+        { key: "current_state", label: "当前状态", type: "string", default: "idle" },
+      ],
+    }, "# 状态机基类\n\n## 行为契约\n\n- `on_enter(state)`：进入状态时调用。\n- `on_update(state, delta)`：状态持续期间每帧更新。\n- `on_exit(state)`：离开状态时调用。"));
     await writeInitialFile(root, ".specloom/project.yaml", stringify({ schemaVersion: SCHEMA_VERSION, project: { name: metadata.name, description: metadata.description }, godot: metadata.godot, defaultTaskMode: "manual" }));
     await writeInitialFile(root, ".specloom/generated-manifest.json", `${JSON.stringify({ schemaVersion: SCHEMA_VERSION, files: {} }, null, 2)}\n`);
     if (this.options.bundledSkillsDirectory !== undefined) await this.copyBundledSkills(root, this.options.bundledSkillsDirectory);
+    if (this.options.installedSkillsDirectory !== undefined) {
+      try { await this.copyBundledSkills(root, this.options.installedSkillsDirectory); } catch (error) { if (!isMissing(error)) throw error; }
+    }
     return metadata;
   }
 

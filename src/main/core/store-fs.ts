@@ -4,7 +4,7 @@ import { TextDecoder } from "node:util";
 import type { VersionToken } from "../../shared/contracts";
 import { ProjectError } from "./errors";
 
-export type StoreFileSystem = Pick<typeof fs, "lstat" | "realpath" | "open" | "mkdir" | "readdir" | "rename" | "unlink">;
+export type StoreFileSystem = Pick<typeof fs, "lstat" | "realpath" | "open" | "mkdir" | "readdir" | "rename" | "unlink" | "link">;
 export const defaultFileSystem: StoreFileSystem = fs;
 export const digestBytes = (bytes: Uint8Array | string): VersionToken => `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 export const hasCode = (error: unknown, code: string): boolean => typeof error === "object" && error !== null && "code" in error && error.code === code;

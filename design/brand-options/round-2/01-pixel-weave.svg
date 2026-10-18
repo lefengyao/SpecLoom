@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-labelledby="title">
+  <title id="title">SpecLoom - Pixel Weave</title>
+  <path d="M56 20h72v24H56v24h48v12h24v36h-24v24H32v-24h72V92H56V80H32V44h24z" fill="#ec6651"/>
+  <path d="M104 80h24v36h-24v24H32v-24h72V92H80V68h24z" fill="#ffc83f"/>
+  <path d="M128 20h16v16h-16z" fill="#ec6651"/>
+</svg>

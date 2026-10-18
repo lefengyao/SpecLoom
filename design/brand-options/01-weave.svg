@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title" style="color:#137f78">
+  <title id="title">SpecLoom - Interwoven</title>
+  <defs>
+    <mask id="warp">
+      <rect width="128" height="128" fill="white"/>
+      <path d="M26 26h20v20H26zm64 0h20v20H90zM58 58h20v20H58zM26 90h20v20H26zm64 0h20v20H90z" fill="black"/>
+    </mask>
+    <mask id="weft">
+      <rect width="128" height="128" fill="white"/>
+      <path d="M58 26h20v20H58zM26 58h20v20H26zm64 0h20v20H90zM58 90h20v20H58z" fill="black"/>
+    </mask>
+  </defs>
+  <path d="M28 16h16v100H28zM60 16h16v100H60zM92 16h16v100H92z" fill="currentColor" mask="url(#warp)"/>
+  <path d="M16 28h100v16H16zM16 60h100v16H16zM16 92h100v16H16z" fill="#343c3e" mask="url(#weft)"/>
+</svg>

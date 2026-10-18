@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160" fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">SpecLoom · 软线轴伙伴</title>
+  <desc id="desc">圆润的青绿线轴精灵，用弯曲的线尾托住暖黄色实体模块。眼窗与线槽为透明留白，可用于单色标记。</desc>
+  <defs>
+    <mask id="body-cutouts">
+      <rect width="160" height="160" fill="white"/>
+      <ellipse cx="76" cy="78" rx="20" ry="17" fill="black"/>
+      <path d="M49 51H97M49 111H98" stroke="black" stroke-width="6" stroke-linecap="round"/>
+    </mask>
+  </defs>
+  <path d="M105 91C121 109 134 105 133 87" stroke="#1D3C3B" stroke-width="12" stroke-linecap="round"/>
+  <path d="M49 26C35 26 25 35 25 47C25 57 34 60 40 65C44 69 43 74 43 80V92C43 98 38 102 32 107C25 113 25 123 32 130C36 135 43 138 53 138H96C112 138 122 130 122 118C122 108 113 103 107 99C102 95 103 89 103 83V72C103 65 108 62 113 58C121 52 122 41 114 33C109 28 103 26 94 26H49Z" fill="#15867B" mask="url(#body-cutouts)"/>
+  <ellipse cx="82" cy="77" rx="7" ry="10" fill="#1D3C3B"/>
+  <path d="M61 95C65 99 70 101 76 101" stroke="#1D3C3B" stroke-width="5" stroke-linecap="round"/>
+  <rect x="113" y="63" width="31" height="31" rx="9" transform="rotate(11 128.5 78.5)" fill="#EFBF55"/>
+  <path d="M117 91C122 96 128 99 133 94" stroke="#15867B" stroke-width="9" stroke-linecap="round"/>
+</svg>

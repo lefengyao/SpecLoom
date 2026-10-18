@@ -1,0 +1,234 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "name": "GodotMCP-Standalone",
+    "version": "1.1.0",
+    "pluginVersion": "1.0.0"
+  },
+  "files": {
+    "addons/godot_mcp/command_router.gd": {
+      "upstreamSha256": "95f41281e8f4fd3acddfe12d29ee7aabe199b112fc204f55036c9f98f105b10a",
+      "packagedSha256": "95f41281e8f4fd3acddfe12d29ee7aabe199b112fc204f55036c9f98f105b10a"
+    },
+    "addons/godot_mcp/commands/addon_management_commands.gd": {
+      "upstreamSha256": "c662cfce2b8fd345c4914b7a55d055ab3ae9ab71ace8de138a4daedc7845be4f",
+      "packagedSha256": "c662cfce2b8fd345c4914b7a55d055ab3ae9ab71ace8de138a4daedc7845be4f"
+    },
+    "addons/godot_mcp/commands/analysis_commands.gd": {
+      "upstreamSha256": "ece51d6fc33cc811e9f928e9f05c10d6fc3ccf43d223edfc7aa39a0e510eec48",
+      "packagedSha256": "ece51d6fc33cc811e9f928e9f05c10d6fc3ccf43d223edfc7aa39a0e510eec48"
+    },
+    "addons/godot_mcp/commands/animation_commands.gd": {
+      "upstreamSha256": "7afc1d971457889c11ed4cb553a8d9594879db88561b3da1cdf3fc6613fb01f6",
+      "packagedSha256": "7afc1d971457889c11ed4cb553a8d9594879db88561b3da1cdf3fc6613fb01f6"
+    },
+    "addons/godot_mcp/commands/audio_commands.gd": {
+      "upstreamSha256": "bb2b993f51075fd09b99dc4cc787cd286a75771b8860befca0c1dc275ae558fd",
+      "packagedSha256": "bb2b993f51075fd09b99dc4cc787cd286a75771b8860befca0c1dc275ae558fd"
+    },
+    "addons/godot_mcp/commands/audio_config_commands.gd": {
+      "upstreamSha256": "0eb068aa5ae29c07e9521f5c7a366e7efd1c41430525fd5b551ab66025868bcc",
+      "packagedSha256": "0eb068aa5ae29c07e9521f5c7a366e7efd1c41430525fd5b551ab66025868bcc"
+    },
+    "addons/godot_mcp/commands/batch_commands.gd": {
+      "upstreamSha256": "691ddd50d2071e67c559fba10766a784e542200e2e439ace0381cd403139ac47",
+      "packagedSha256": "691ddd50d2071e67c559fba10766a784e542200e2e439ace0381cd403139ac47"
+    },
+    "addons/godot_mcp/commands/build_config_commands.gd": {
+      "upstreamSha256": "41389093f8043875d64e3d64c89ce8beee44d3e10e8bc14d7c13a6b674fb7524",
+      "packagedSha256": "41389093f8043875d64e3d64c89ce8beee44d3e10e8bc14d7c13a6b674fb7524"
+    },
+    "addons/godot_mcp/commands/debug_config_commands.gd": {
+      "upstreamSha256": "db6c2fd82a681ec422268ca218772abfee4da5dd42a834c3523b8877407dd182",
+      "packagedSha256": "db6c2fd82a681ec422268ca218772abfee4da5dd42a834c3523b8877407dd182"
+    },
+    "addons/godot_mcp/commands/debugging_commands.gd": {
+      "upstreamSha256": "2aacbeefa639bf86094de401ced6b48e7a1050e283d5f5e0720fe70f70998590",
+      "packagedSha256": "2aacbeefa639bf86094de401ced6b48e7a1050e283d5f5e0720fe70f70998590"
+    },
+    "addons/godot_mcp/commands/editor_commands.gd": {
+      "upstreamSha256": "bc1563c0fb066f36fa94faece4d52563f67174cc3967667b953d01e61c5de50c",
+      "packagedSha256": "bc1563c0fb066f36fa94faece4d52563f67174cc3967667b953d01e61c5de50c"
+    },
+    "addons/godot_mcp/commands/editor_config_commands.gd": {
+      "upstreamSha256": "c3fd5d7d95fad2a38d45161172efebad0ad2445d61ce1283a610a213c9eabe20",
+      "packagedSha256": "c3fd5d7d95fad2a38d45161172efebad0ad2445d61ce1283a610a213c9eabe20"
+    },
+    "addons/godot_mcp/commands/export_commands.gd": {
+      "upstreamSha256": "f9de86ef8538f096b3996b8f544f21972abe5ac19c52482bd91d1456da0a22e5",
+      "packagedSha256": "f9de86ef8538f096b3996b8f544f21972abe5ac19c52482bd91d1456da0a22e5"
+    },
+    "addons/godot_mcp/commands/gameplay_automation_commands.gd": {
+      "upstreamSha256": "8bb2d9c706ddf39b8ea8df12aba53a18afa5020d84794971553041d870d6a1af",
+      "packagedSha256": "8bb2d9c706ddf39b8ea8df12aba53a18afa5020d84794971553041d870d6a1af"
+    },
+    "addons/godot_mcp/commands/input_commands.gd": {
+      "upstreamSha256": "8ae54abfb95d1d8f5fc6de1f9f8834865efb00974ea94637fc462f1a80dfdf2b",
+      "packagedSha256": "8ae54abfb95d1d8f5fc6de1f9f8834865efb00974ea94637fc462f1a80dfdf2b"
+    },
+    "addons/godot_mcp/commands/master_checklist.md": {
+      "upstreamSha256": "557a5d598dd5eac5f78d8e19164919ab57b77c1a454b186f4bd0ada0ea0e392e",
+      "packagedSha256": "557a5d598dd5eac5f78d8e19164919ab57b77c1a454b186f4bd0ada0ea0e392e"
+    },
+    "addons/godot_mcp/commands/memory_profiling_commands.gd": {
+      "upstreamSha256": "9c09a88cb1f304dc50c1e50e9de8325296b68804467d68b689b508cc22d830e8",
+      "packagedSha256": "9c09a88cb1f304dc50c1e50e9de8325296b68804467d68b689b508cc22d830e8"
+    },
+    "addons/godot_mcp/commands/navigation_commands.gd": {
+      "upstreamSha256": "7174eb9bf501e422b0462425bceffb4415312fff384f9e7f20795eb977e8527c",
+      "packagedSha256": "7174eb9bf501e422b0462425bceffb4415312fff384f9e7f20795eb977e8527c"
+    },
+    "addons/godot_mcp/commands/node_commands.gd": {
+      "upstreamSha256": "2d5ece2f08c5d1369b715cc0f0318220babeae0ba0aeceefb54b2c534c70688f",
+      "packagedSha256": "2d5ece2f08c5d1369b715cc0f0318220babeae0ba0aeceefb54b2c534c70688f"
+    },
+    "addons/godot_mcp/commands/node_config_commands.gd": {
+      "upstreamSha256": "a677289ebb339dafbf51c4ac1a837bf086794aafa86db6dc8bc0c4ea89452aca",
+      "packagedSha256": "a677289ebb339dafbf51c4ac1a837bf086794aafa86db6dc8bc0c4ea89452aca"
+    },
+    "addons/godot_mcp/commands/particles_commands.gd": {
+      "upstreamSha256": "a9163876a984703dbae52c9c6f472342f5460c1650224ddefcc6cb22b0818924",
+      "packagedSha256": "a9163876a984703dbae52c9c6f472342f5460c1650224ddefcc6cb22b0818924"
+    },
+    "addons/godot_mcp/commands/physics_commands.gd": {
+      "upstreamSha256": "e67c5241e2681209d977e3059915297ceb538d524f961f1146d519f7fd729014",
+      "packagedSha256": "e67c5241e2681209d977e3059915297ceb538d524f961f1146d519f7fd729014"
+    },
+    "addons/godot_mcp/commands/physics_config_commands.gd": {
+      "upstreamSha256": "791455ab7e187ef1dcdc2554da5953c451f2924e7757055538161004a27f8f9b",
+      "packagedSha256": "791455ab7e187ef1dcdc2554da5953c451f2924e7757055538161004a27f8f9b"
+    },
+    "addons/godot_mcp/commands/platform_export_commands.gd": {
+      "upstreamSha256": "83ade17819536421846fda562d91d4b56cdd3c7ca20b3becfabde371d63dcebd",
+      "packagedSha256": "83ade17819536421846fda562d91d4b56cdd3c7ca20b3becfabde371d63dcebd"
+    },
+    "addons/godot_mcp/commands/platform_specific_commands.gd": {
+      "upstreamSha256": "ba3cd2a79e4d96c235136fc92568fc905a8472b5bc512334ecd697bcfda88088",
+      "packagedSha256": "ba3cd2a79e4d96c235136fc92568fc905a8472b5bc512334ecd697bcfda88088"
+    },
+    "addons/godot_mcp/commands/profiling_commands.gd": {
+      "upstreamSha256": "246dd0311f07fbeae396671b0d4d0ca1e69597b5c25e7908345bc25ca0b9ec2f",
+      "packagedSha256": "246dd0311f07fbeae396671b0d4d0ca1e69597b5c25e7908345bc25ca0b9ec2f"
+    },
+    "addons/godot_mcp/commands/project_commands.gd": {
+      "upstreamSha256": "00a96a5bad399a987a0ac5e82b0cf9f86f1624ca0a8e05880056a9e2a57257f2",
+      "packagedSha256": "00a96a5bad399a987a0ac5e82b0cf9f86f1624ca0a8e05880056a9e2a57257f2"
+    },
+    "addons/godot_mcp/commands/project_config_commands.gd": {
+      "upstreamSha256": "5c76b1858406f3f4a3ad6eae0ebd59cfbc113d6c28b1dca97c01cd7d8f4a1e90",
+      "packagedSha256": "5c76b1858406f3f4a3ad6eae0ebd59cfbc113d6c28b1dca97c01cd7d8f4a1e90"
+    },
+    "addons/godot_mcp/commands/project_creation_commands.gd": {
+      "upstreamSha256": "4ae8d961e1aea4fc171606f4cb8184e26cb42d8477d2c1c3c345879dff1fd89e",
+      "packagedSha256": "4ae8d961e1aea4fc171606f4cb8184e26cb42d8477d2c1c3c345879dff1fd89e"
+    },
+    "addons/godot_mcp/commands/rendering_config_commands.gd": {
+      "upstreamSha256": "3278cd11f8470be04458e827d2aff441dbe432c248a2687adf7f86f9545aefdb",
+      "packagedSha256": "3278cd11f8470be04458e827d2aff441dbe432c248a2687adf7f86f9545aefdb"
+    },
+    "addons/godot_mcp/commands/resource_commands.gd": {
+      "upstreamSha256": "59c324d10235e2764c8e8001f4d2d432adf74a9d7d22bf3361fae4500eb100e8",
+      "packagedSha256": "59c324d10235e2764c8e8001f4d2d432adf74a9d7d22bf3361fae4500eb100e8"
+    },
+    "addons/godot_mcp/commands/resource_config_commands.gd": {
+      "upstreamSha256": "0484aa65620f121d57c48935ee046db2e3853dd914fa5b409aebf608cdfb9f75",
+      "packagedSha256": "0484aa65620f121d57c48935ee046db2e3853dd914fa5b409aebf608cdfb9f75"
+    },
+    "addons/godot_mcp/commands/runtime_commands.gd": {
+      "upstreamSha256": "a0fccc24136645c8cdb2f0f52878bdc612d1bc16f29b38d9aa1f5910e9660469",
+      "packagedSha256": "a0fccc24136645c8cdb2f0f52878bdc612d1bc16f29b38d9aa1f5910e9660469"
+    },
+    "addons/godot_mcp/commands/save_load_commands.gd": {
+      "upstreamSha256": "e5aa86fb7a896cdbbfe278952ca6ac1fb79a7b3b1d8e39c4ef416fcf3ecb7177",
+      "packagedSha256": "e5aa86fb7a896cdbbfe278952ca6ac1fb79a7b3b1d8e39c4ef416fcf3ecb7177"
+    },
+    "addons/godot_mcp/commands/scene3d_commands.gd": {
+      "upstreamSha256": "068e5db669cde8ecd0aac8cbd285bf8b936c6f26a3d9719b5e0c9270e3f9aea8",
+      "packagedSha256": "068e5db669cde8ecd0aac8cbd285bf8b936c6f26a3d9719b5e0c9270e3f9aea8"
+    },
+    "addons/godot_mcp/commands/scene_commands.gd": {
+      "upstreamSha256": "028085dfa4216a28608e7cb66b83812e8084b83092303d281b0a414884c2cde1",
+      "packagedSha256": "028085dfa4216a28608e7cb66b83812e8084b83092303d281b0a414884c2cde1"
+    },
+    "addons/godot_mcp/commands/scene_config_commands.gd": {
+      "upstreamSha256": "60a1f66e87d8d704db6b69a48e88499b4b9e153e080cb67b27a06c601b3e1874",
+      "packagedSha256": "60a1f66e87d8d704db6b69a48e88499b4b9e153e080cb67b27a06c601b3e1874"
+    },
+    "addons/godot_mcp/commands/script_commands.gd": {
+      "upstreamSha256": "b29a02b329fd31042365a551b8834fcbcbca57af54895d597a1d17d0cf0ec138",
+      "packagedSha256": "b29a02b329fd31042365a551b8834fcbcbca57af54895d597a1d17d0cf0ec138"
+    },
+    "addons/godot_mcp/commands/shader_commands.gd": {
+      "upstreamSha256": "1c9730a62a9f08917dad950d3311a9830911e85b7be4ed89054bc92fee8982b8",
+      "packagedSha256": "1c9730a62a9f08917dad950d3311a9830911e85b7be4ed89054bc92fee8982b8"
+    },
+    "addons/godot_mcp/commands/testing_commands.gd": {
+      "upstreamSha256": "d976c64fd6c56baef185a5f8793ff0a7cd67b7d2642250f4107da6abe5dc863c",
+      "packagedSha256": "d976c64fd6c56baef185a5f8793ff0a7cd67b7d2642250f4107da6abe5dc863c"
+    },
+    "addons/godot_mcp/commands/theme_commands.gd": {
+      "upstreamSha256": "c78c4693eea1afe26d06709283972d86493d9272784bbfa30afe2989a8a47d84",
+      "packagedSha256": "c78c4693eea1afe26d06709283972d86493d9272784bbfa30afe2989a8a47d84"
+    },
+    "addons/godot_mcp/commands/tilemap_commands.gd": {
+      "upstreamSha256": "5685a069e9b65687dd186c46aae292b7e2788b95f80128f7712c9085f91bcfaa",
+      "packagedSha256": "5685a069e9b65687dd186c46aae292b7e2788b95f80128f7712c9085f91bcfaa"
+    },
+    "addons/godot_mcp/commands/utils/command_helpers.gd": {
+      "upstreamSha256": "4ccd20dbac98cf79b4cb94ef7f982d3a2667b34eda64e60f90f0c3e2765a490d",
+      "packagedSha256": "4ccd20dbac98cf79b4cb94ef7f982d3a2667b34eda64e60f90f0c3e2765a490d"
+    },
+    "addons/godot_mcp/commands/utils/node_factory.gd": {
+      "upstreamSha256": "a6bb3d0296f24b102e9ccd66482e16d25d0a59b917ffd5b96e80cf6737d15665",
+      "packagedSha256": "a6bb3d0296f24b102e9ccd66482e16d25d0a59b917ffd5b96e80cf6737d15665"
+    },
+    "addons/godot_mcp/commands/visual_testing_commands.gd": {
+      "upstreamSha256": "4f46882bcfd167cde77ed17c9cc42114d3b9c49e084c43dadd2beb91d2efb50a",
+      "packagedSha256": "4f46882bcfd167cde77ed17c9cc42114d3b9c49e084c43dadd2beb91d2efb50a"
+    },
+    "addons/godot_mcp/config.gd": {
+      "upstreamSha256": "6df7b5d4d716cbace1f02d2e756d1f622ee4d292f71f00be7ac9080973bd9ff8",
+      "packagedSha256": "6df7b5d4d716cbace1f02d2e756d1f622ee4d292f71f00be7ac9080973bd9ff8"
+    },
+    "addons/godot_mcp/debugger/mcp_debugger_plugin.gd": {
+      "upstreamSha256": "84d4ae8e6af49c5faa72add4b22926b207164dce65d6553f72882468b686c87c",
+      "packagedSha256": "84d4ae8e6af49c5faa72add4b22926b207164dce65d6553f72882468b686c87c"
+    },
+    "addons/godot_mcp/plugin.cfg": {
+      "upstreamSha256": "86e732c5452ba9e415312b0d052c91aba8421ac7f28fb95f990392e6e33274f8",
+      "packagedSha256": "86e732c5452ba9e415312b0d052c91aba8421ac7f28fb95f990392e6e33274f8"
+    },
+    "addons/godot_mcp/plugin.gd": {
+      "upstreamSha256": "f3639ced82a02230d2a74f0ebf98d800f967d4452291f3a6e740a2941bfbe0cd",
+      "packagedSha256": "fa4eacabed2baf146219bb3dc2ca4673a6b3784fbf205e1043db3e6fe21f42b2"
+    },
+    "addons/godot_mcp/services/mcp_runtime.gd": {
+      "upstreamSha256": "3112acfe84f50648087bbb5e87d2189d155e72b68ef086acefab7eb2c7704b1f",
+      "packagedSha256": "3112acfe84f50648087bbb5e87d2189d155e72b68ef086acefab7eb2c7704b1f"
+    },
+    "addons/godot_mcp/ui/status_panel.gd": {
+      "upstreamSha256": "6bac17286c8980c267f5108c3ccec1e8cfa8d1613cddbc091e93bd986ced56df",
+      "packagedSha256": "6bac17286c8980c267f5108c3ccec1e8cfa8d1613cddbc091e93bd986ced56df"
+    },
+    "addons/godot_mcp/utils/undo_helper.gd": {
+      "upstreamSha256": "f2a4bad9a6c5fa306b8fe324414ec574bf8676d1440ec3bbd37fa24a184411c6",
+      "packagedSha256": "f2a4bad9a6c5fa306b8fe324414ec574bf8676d1440ec3bbd37fa24a184411c6"
+    },
+    "addons/godot_mcp/utils/variant_codec.gd": {
+      "upstreamSha256": "92c35a7c59364418de4d77fbe6b0e79ee1a8e15e4402d6efcd448902daec7d35",
+      "packagedSha256": "92c35a7c59364418de4d77fbe6b0e79ee1a8e15e4402d6efcd448902daec7d35"
+    },
+    "addons/godot_mcp/websocket_client.gd": {
+      "upstreamSha256": "3b9a62dd09840124bc8cbb4a96924eb317b714a3f40fb84c8c4fdd7757490efe",
+      "packagedSha256": "0f8cd16779a08651ffa785b814defabeee143abf10c6bfa576434528fcf3a836"
+    },
+    "LICENSE": {
+      "upstreamSha256": "70585c33e79b0982c3dda6ae55b2ca3836ccbe5a8f67ec83e2afd7d38839e3c4",
+      "packagedSha256": "70585c33e79b0982c3dda6ae55b2ca3836ccbe5a8f67ec83e2afd7d38839e3c4"
+    },
+    "NOTICE.md": {
+      "upstreamSha256": null,
+      "packagedSha256": "2e974345bea6fa8fec5733c52d30dfadd4eee9d997b569de9b9b69bd11c3ce44"
+    }
+  }
+}

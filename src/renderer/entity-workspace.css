@@ -1,0 +1,65 @@
+.entity-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  height: 100%;
+}
+
+.entity-workspace-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 2px;
+}
+
+.entity-workspace-header h1 {
+  margin: 0;
+  font-size: 22px;
+  letter-spacing: -0.02em;
+}
+
+.entity-workspace-header p {
+  margin: 3px 0 0;
+}
+
+.entity-workspace-modes {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border-faint);
+  border-radius: 8px;
+  background: var(--bg-surface);
+}
+
+.entity-workspace-modes button {
+  padding: 5px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-subtle);
+  font-size: 12px;
+}
+
+.entity-workspace-modes button[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 650;
+}
+
+.entity-workspace-pane {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.entity-workspace-pane[hidden] {
+  display: none;
+}
+
+.entity-workspace-pane > * {
+  flex: 1 1 auto;
+  min-width: 0;
+}

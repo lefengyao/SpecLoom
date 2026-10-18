@@ -437,7 +437,7 @@ Keep the first screen task-oriented: project path and Godot status at the top, t
 
 - [x] **Step 3: Run renderer tests and build**
 
-Run `npm test -- tests/renderer`, `npm run typecheck`, and `npm run build`; expect all to pass and the Electron unpacked build to exist under `release/win-unpacked/`.
+Run `npm test -- tests/renderer`, `npm run typecheck`, and `npm run build`; expect all to pass and the Electron unpacked build to exist under `release/<package.json version>/win-unpacked/`.
 
 - [x] **Step 4: Checkpoint the UI**
 

@@ -1,0 +1,554 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SpecLoom — 方向 02 / Product Light</title>
+<style>
+  :root {
+    --bg: #f4f7f2;
+    --surface: #ffffff;
+    --ink: #10251d;
+    --ink-soft: #334c40;
+    --muted: #60756a;
+    --green: #178a65;
+    --green-deep: #0d5c44;
+    --mint: #dff3e8;
+    --mint-2: #eef8f2;
+    --peach: #f8e6cf;
+    --line: #e1eae3;
+    --line-strong: #cfded4;
+    --sans: "Inter", "PingFang SC", "Microsoft YaHei", "Segoe UI", system-ui, sans-serif;
+    --mono: "Cascadia Code", Consolas, "Microsoft YaHei", monospace;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    -webkit-font-smoothing: antialiased;
+    overflow-x: clip;
+  }
+  a { color: inherit; text-decoration: none; }
+  img { display: block; }
+  .wrap { width: min(1180px, 100% - 64px); margin-inline: auto; }
+  .orb { position: absolute; z-index: 0; border-radius: 50%; filter: blur(70px); pointer-events: none; }
+  .orb-a { top: -140px; left: 8%; width: 520px; height: 360px; background: rgba(154, 222, 190, .42); }
+  .orb-b { top: 60px; right: 2%; width: 460px; height: 340px; background: rgba(248, 222, 186, .5); }
+  .grain {
+    position: absolute;
+    inset: 0 0 auto;
+    height: 980px;
+    z-index: 0;
+    pointer-events: none;
+    background-image: radial-gradient(rgba(23, 138, 101, .12) .6px, transparent .6px);
+    background-size: 20px 20px;
+    mask-image: radial-gradient(ellipse at 50% 8%, #000 0%, transparent 62%);
+  }
+
+  .nav { position: sticky; top: 0; z-index: 30; border-bottom: 1px solid rgba(16, 37, 29, .06); background: rgba(244, 247, 242, .82); backdrop-filter: blur(18px); }
+  .nav-inner { display: flex; align-items: center; gap: 32px; min-height: 72px; }
+  .brand { display: flex; align-items: center; gap: 10px; margin-right: auto; }
+  .brand img { width: 30px; height: 30px; }
+  .brand b { font-size: 18px; font-weight: 720; letter-spacing: -.04em; }
+  .brand span { padding: 3px 7px; border: 1px solid var(--line-strong); border-radius: 999px; color: var(--muted); font-family: var(--mono); font-size: 8px; letter-spacing: .06em; }
+  .nav-links { display: flex; gap: 28px; }
+  .nav-links a { color: var(--ink-soft); font-size: 12.5px; font-weight: 550; }
+  .nav-links a:hover { color: var(--green); }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 9px; min-height: 48px; padding: 0 22px; border: 1px solid transparent; border-radius: 999px; background: var(--green); color: #fff; font-size: 13px; font-weight: 650; transition: transform .16s ease, box-shadow .16s ease, background .16s ease; }
+  .btn:hover { transform: translateY(-1px); background: var(--green-deep); box-shadow: 0 12px 26px rgba(13, 92, 68, .18); }
+  .btn-ghost { border-color: var(--line-strong); background: rgba(255, 255, 255, .7); color: var(--ink); }
+  .btn-ghost:hover { border-color: var(--green); background: #fff; color: var(--green-deep); box-shadow: 0 10px 24px rgba(13, 92, 68, .08); }
+  .btn-sm { min-height: 38px; padding: 0 16px; font-size: 11.5px; }
+  .btn span { font-family: var(--mono); font-weight: 500; }
+
+  .hero { position: relative; z-index: 1; padding: 58px 0 0; text-align: center; }
+  .pill { display: inline-flex; align-items: center; gap: 8px; padding: 7px 13px 7px 9px; border: 1px solid #cfe4d7; border-radius: 999px; background: rgba(255, 255, 255, .75); color: var(--green-deep); font-size: 11px; font-weight: 600; box-shadow: 0 4px 14px rgba(13, 92, 68, .05); }
+  .pill i { display: grid; width: 18px; height: 18px; place-items: center; border-radius: 50%; background: var(--mint); color: var(--green); font-family: var(--mono); font-size: 9px; font-style: normal; }
+  .hero h1 { max-width: 1000px; margin: 26px auto 0; font-size: clamp(46px, 5.8vw, 76px); font-weight: 730; letter-spacing: -.06em; line-height: 1.06; }
+  .hero h1 .grad { background: linear-gradient(100deg, #0e7a5a 0%, #24b889 56%, #6ed3ad 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .h1-line { display: inline; }
+  .hero .sub { max-width: 680px; margin: 22px auto 0; color: var(--muted); font-size: 15px; line-height: 1.95; }
+  .hero .sub b { color: var(--ink-soft); font-weight: 650; }
+  .cta { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 30px; }
+  .micro { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px 14px; margin-top: 18px; color: #7b8d82; font-size: 10.5px; }
+  .micro i { width: 3px; height: 3px; border-radius: 50%; background: #a9bbb0; }
+
+  .stage { position: relative; z-index: 1; margin: 44px auto 0; max-width: 1120px; }
+  .stage-glow { position: absolute; inset: 60px 50px 10px; z-index: -1; border-radius: 50%; background: radial-gradient(ellipse, rgba(38, 170, 123, .28), rgba(38, 170, 123, 0) 70%); filter: blur(40px); }
+  .app { overflow: hidden; border: 1px solid #d9e6dd; border-radius: 20px; background: #fbfdfb; text-align: left; box-shadow: 0 50px 120px rgba(13, 64, 45, .18), 0 2px 0 rgba(255, 255, 255, .9) inset; }
+  .app-bar { display: flex; align-items: center; gap: 13px; height: 46px; padding: 0 14px; border-bottom: 1px solid #e5eee7; background: #f8fbf8; }
+  .app-dots { display: flex; gap: 5px; }
+  .app-dots i { width: 8px; height: 8px; border-radius: 50%; background: #d8e3da; }
+  .app-dots i:nth-child(1) { background: #efc4bb; }
+  .app-dots i:nth-child(2) { background: #efd9b0; }
+  .app-dots i:nth-child(3) { background: #b9dcc6; }
+  .app-title { margin-inline: auto; color: #73877b; font-size: 9.5px; letter-spacing: .02em; }
+  .app-title b { color: #40584b; font-weight: 650; }
+  .app-actions { display: flex; gap: 6px; }
+  .app-actions span { padding: 4px 8px; border: 1px solid #dce8df; border-radius: 6px; color: #52705f; font-size: 8.5px; }
+  .app-actions .primary { border-color: #1d8f6a; background: #1d8f6a; color: #fff; }
+  .app-body { display: grid; grid-template-columns: 194px minmax(0, 1fr) 212px; min-height: 498px; }
+  .side { padding: 14px 10px; border-right: 1px solid #e9f0ea; background: #f7faf7; }
+  .proj { display: flex; align-items: center; gap: 9px; padding: 8px 6px 14px; }
+  .proj-icon { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 8px; background: #dff3e8; color: #137a57; font-size: 13px; font-weight: 700; }
+  .proj b { display: block; font-size: 11px; font-weight: 680; }
+  .proj small { display: block; margin-top: 2px; color: #82968a; font-size: 8px; }
+  .side-label { margin: 8px 6px 6px; color: #93a69a; font-size: 8px; letter-spacing: .08em; }
+  .side-item { display: flex; align-items: center; gap: 8px; min-height: 27px; padding: 0 8px; border-radius: 7px; color: #5d7467; font-size: 10px; }
+  .side-item em { width: 13px; color: #8fa498; font-style: normal; font-family: var(--mono); font-size: 9px; text-align: center; }
+  .side-item.is-active { background: #e4f2ea; color: #0f6b4f; font-weight: 650; }
+  .side-item.is-active em { color: #178a65; }
+  .side-gap { height: 10px; }
+  .side-session { padding: 8px 8px 7px; border-radius: 8px; background: #fff; border: 1px solid #e5eee7; margin-top: 6px; }
+  .side-session b { display: block; color: #3c5447; font-size: 9.5px; font-weight: 600; }
+  .side-session small { display: block; margin-top: 2px; color: #94a69b; font-size: 7.5px; }
+  .chat { display: flex; min-width: 0; flex-direction: column; gap: 10px; padding: 16px 18px; background: #fff; }
+  .chat-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px; }
+  .chat-head b { font-size: 12px; font-weight: 680; }
+  .chat-head span { padding: 3px 7px; border-radius: 5px; background: #e7f5ed; color: #178a65; font-size: 7.5px; }
+  .bubble { display: flex; gap: 8px; }
+  .bubble .who { display: grid; width: 22px; height: 22px; flex: 0 0 22px; place-items: center; border-radius: 7px; background: #e6f4ec; color: #178a65; font-size: 8px; font-weight: 700; }
+  .bubble .who.you { background: #f3ece1; color: #9a7442; }
+  .bubble .body { max-width: 82%; }
+  .bubble .body small { display: block; margin-bottom: 3px; color: #93a69a; font-size: 7.5px; }
+  .bubble p { margin: 0; padding: 9px 11px; border-radius: 4px 11px 11px 11px; background: #f3f8f4; color: #3f5749; font-size: 9.5px; line-height: 1.7; }
+  .bubble.you { flex-direction: row-reverse; }
+  .bubble.you .body { text-align: right; }
+  .bubble.you p { border-radius: 11px 4px 11px 11px; background: #dff2e7; color: #1c4939; text-align: left; }
+  .tool-card { margin-left: 30px; border: 1px solid #e4eee6; border-radius: 9px; overflow: hidden; background: #fbfdfb; }
+  .tool-top { display: flex; justify-content: space-between; padding: 7px 9px; border-bottom: 1px solid #edf3ee; color: #74897b; font-size: 7.5px; }
+  .tool-top b { color: #2f7e60; font-weight: 650; }
+  .tool-line { display: flex; align-items: center; gap: 7px; padding: 6px 9px; color: #657b6d; font-family: var(--mono); font-size: 8px; }
+  .tool-line span:first-child { color: #72a38b; }
+  .tool-line em { margin-left: auto; color: #9aac9f; font-style: normal; }
+  .tool-line.done em { color: #2f8b67; }
+  .progress { margin-left: 30px; padding: 9px 11px; border: 1px solid #cfe8d9; border-radius: 9px; background: #f1faf5; color: #3b6956; font-size: 8.5px; line-height: 1.6; }
+  .progress b { color: #187a59; font-weight: 650; }
+  .composer { display: flex; align-items: center; gap: 8px; margin-top: auto; padding: 8px 10px; border: 1px solid #dfeae2; border-radius: 10px; background: #fff; color: #9bada1; font-size: 9px; }
+  .composer .send { margin-left: auto; padding: 5px 10px; border-radius: 6px; background: #178a65; color: #fff; font-size: 8px; }
+  .ctx { padding: 14px 12px; border-left: 1px solid #e9f0ea; background: #f8fbf8; }
+  .ctx-head { display: flex; justify-content: space-between; align-items: center; color: #8fa397; font-size: 7.5px; letter-spacing: .06em; }
+  .ctx-head b { color: #3c594a; font-size: 8.5px; font-weight: 650; }
+  .meter { height: 5px; margin-top: 8px; border-radius: 99px; background: #e3ede5; overflow: hidden; }
+  .meter i { display: block; width: 42%; height: 100%; border-radius: 99px; background: linear-gradient(90deg, #2aa878, #6cd0a8); }
+  .ctx-block { margin-top: 15px; padding-top: 12px; border-top: 1px solid #e5eee7; }
+  .ctx-block b { display: block; margin-bottom: 7px; color: #7f9487; font-size: 7.5px; font-weight: 600; letter-spacing: .05em; }
+  .ctx-row { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; color: #5d7266; font-size: 8px; }
+  .ctx-row span:last-child { color: #8fa397; font-family: var(--mono); font-size: 7.5px; }
+  .ctx-file { display: flex; gap: 6px; padding: 4px 0; color: #5d7266; font-size: 8px; }
+  .ctx-file span:first-child { color: #2f8b67; }
+  .chip { position: absolute; z-index: 3; display: flex; align-items: center; gap: 7px; padding: 8px 11px; border: 1px solid #dce8df; border-radius: 999px; background: rgba(255, 255, 255, .92); color: #456153; font-size: 9px; box-shadow: 0 10px 28px rgba(13, 64, 45, .1); backdrop-filter: blur(8px); }
+  .chip i { width: 6px; height: 6px; border-radius: 50%; background: #2aa878; }
+  .chip-a { top: 84px; left: -34px; }
+  .chip-b { top: 246px; right: -52px; }
+  .chip-c { bottom: 86px; left: -22px; }
+  .stage-note { margin-top: 14px; color: #93a69a; font-size: 9px; text-align: center; }
+
+  .features { position: relative; z-index: 1; padding: 110px 0 84px; }
+  .feat-head { max-width: 760px; margin: 0 auto; text-align: center; }
+  .eyebrow { display: inline-flex; align-items: center; gap: 8px; margin: 0 0 16px; color: var(--green); font-size: 10px; font-weight: 700; letter-spacing: .12em; }
+  .eyebrow i { width: 16px; height: 1px; background: var(--green); }
+  .feat-head h2 { margin: 0; font-size: clamp(32px, 3.7vw, 48px); font-weight: 720; letter-spacing: -.05em; line-height: 1.16; }
+  .feat-head p { max-width: 580px; margin: 16px auto 0; color: var(--muted); font-size: 13px; line-height: 1.9; }
+  .bento { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 15px; margin-top: 44px; }
+  .card { position: relative; overflow: hidden; padding: 27px; border: 1px solid #e2ebe4; border-radius: 22px; background: #fff; box-shadow: 0 16px 44px rgba(16, 61, 44, .035); }
+  .card-a { grid-column: span 7; background: linear-gradient(150deg, #eaf7ef 0%, #f8fcfa 60%, #fff 100%); border-color: #d5eadc; }
+  .card-b { grid-column: span 5; }
+  .card-c, .card-d, .card-e { grid-column: span 4; }
+  .card .kicker { color: #7d9486; font-size: 8.5px; font-weight: 650; letter-spacing: .1em; }
+  .card h3 { margin: 14px 0 8px; font-size: 19px; font-weight: 690; letter-spacing: -.03em; }
+  .card p { margin: 0; color: var(--muted); font-size: 11.5px; line-height: 1.8; }
+  .filetree { margin-top: 22px; padding: 12px; border: 1px solid #dcebe1; border-radius: 12px; background: rgba(255, 255, 255, .72); }
+  .ft { display: flex; align-items: center; gap: 7px; min-height: 23px; padding: 0 7px; border-radius: 5px; color: #577163; font-family: var(--mono); font-size: 8.5px; }
+  .ft em { color: #8ba295; font-style: normal; }
+  .ft.is-on { background: #dff2e7; color: #176f53; }
+  .ft .tag { margin-left: auto; padding: 1px 5px; border-radius: 3px; background: #eef5f0; color: #7b9084; font-family: var(--sans); font-size: 7px; }
+  .chiprow { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
+  .chiprow span { padding: 4px 8px; border: 1px solid #dbe8df; border-radius: 999px; background: #fff; color: #6a8173; font-size: 8px; }
+  .mini-chat { margin-top: 20px; padding: 12px; border: 1px solid #e6eee8; border-radius: 12px; background: #fafdfb; }
+  .mini-chat .m { max-width: 88%; margin-bottom: 8px; padding: 8px 10px; border-radius: 4px 10px 10px 10px; background: #eef7f1; color: #436052; font-size: 9px; line-height: 1.6; }
+  .mini-chat .m.me { margin-left: auto; border-radius: 10px 4px 10px 10px; background: #dff2e7; color: #1e4c3a; }
+  .mini-chat .m span { display: block; margin-bottom: 2px; color: #7b9184; font-size: 7px; }
+  .icon-tile { display: grid; width: 38px; height: 38px; place-items: center; border-radius: 11px; background: #e8f5ee; color: #1b8a66; font-family: var(--mono); font-size: 15px; }
+  .card-c .icon-tile { background: #eef3f8; color: #557a95; }
+  .card-d .icon-tile { background: #f8f1e6; color: #9a7442; }
+  .card-e .icon-tile { background: #f1eef8; color: #77649a; }
+  .card h3 { margin-top: 17px; }
+  .arrowlink { display: inline-flex; align-items: center; gap: 6px; margin-top: 18px; color: var(--green); font-size: 9.5px; font-weight: 650; }
+  .arrowlink span { font-family: var(--mono); }
+
+  .workflow { position: relative; z-index: 1; padding: 86px 0; background: #e8f2ea; border-block: 1px solid #dce9df; }
+  .wf-head { display: flex; align-items: end; justify-content: space-between; gap: 30px; }
+  .wf-head h2 { margin: 0; font-size: clamp(30px, 3.4vw, 44px); font-weight: 720; letter-spacing: -.05em; }
+  .wf-head p { max-width: 380px; margin: 0 0 5px; color: #5d7467; font-size: 12px; line-height: 1.8; }
+  .wf-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 15px; margin-top: 38px; }
+  .wf-step { position: relative; padding: 22px; border: 1px solid #d7e7dc; border-radius: 18px; background: rgba(255, 255, 255, .7); }
+  .wf-num { display: flex; align-items: center; gap: 9px; color: #2a9a73; font-family: var(--mono); font-size: 10px; letter-spacing: .08em; }
+  .wf-num i { display: grid; width: 26px; height: 26px; place-items: center; border: 1px solid #bfe0cc; border-radius: 50%; background: #fff; font-style: normal; }
+  .wf-step h3 { margin: 17px 0 7px; font-size: 16px; font-weight: 680; }
+  .wf-step p { margin: 0; color: #60766a; font-size: 11px; line-height: 1.8; }
+  .wf-step::after { position: absolute; top: 34px; right: -16px; z-index: 2; color: #9ab9a7; font-family: var(--mono); font-size: 12px; content: "→"; }
+  .wf-step:last-child::after { content: none; }
+
+  .download { position: relative; z-index: 1; padding: 92px 0; }
+  .dl-panel { position: relative; overflow: hidden; display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, .8fr); gap: 50px; align-items: center; padding: 58px; border-radius: 30px; background: linear-gradient(135deg, #0b3025 0%, #0f4433 58%, #12523d 100%); color: #f0f8f2; }
+  .dl-panel::before { position: absolute; top: -180px; right: -80px; width: 460px; height: 460px; border: 1px solid rgba(124, 230, 184, .2); border-radius: 50%; box-shadow: 0 0 0 50px rgba(124, 230, 184, .03), 0 0 0 100px rgba(124, 230, 184, .02); content: ""; }
+  .dl-panel .eyebrow { color: #8ee0ba; }
+  .dl-panel .eyebrow i { background: #8ee0ba; }
+  .dl-panel h2 { margin: 0; font-size: clamp(34px, 4vw, 52px); font-weight: 720; letter-spacing: -.05em; line-height: 1.1; }
+  .dl-panel .note { max-width: 440px; margin: 17px 0 0; color: #b8d3c5; font-size: 12px; line-height: 1.85; }
+  .dl-meta { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 24px; color: #91b5a3; font-size: 9px; }
+  .dl-meta b { color: #d9efe2; font-weight: 600; }
+  .dl-list { display: grid; gap: 10px; }
+  .dl-item { display: flex; align-items: center; gap: 13px; min-height: 74px; padding: 13px 15px; border: 1px solid rgba(202, 236, 219, .24); border-radius: 16px; background: rgba(255, 255, 255, .07); transition: background .16s ease, transform .16s ease; }
+  .dl-item:hover { transform: translateX(3px); background: rgba(255, 255, 255, .12); }
+  .dl-item .ico { display: grid; width: 38px; height: 38px; flex: 0 0 38px; place-items: center; border-radius: 50%; background: #8ee0ba; color: #0c3226; font-family: var(--mono); font-size: 14px; }
+  .dl-item b { display: block; font-size: 12px; font-weight: 650; }
+  .dl-item small { display: block; margin-top: 3px; color: #a9c9b8; font-size: 8.5px; }
+  .dl-item .go { margin-left: auto; color: #d9efe2; font-family: var(--mono); font-size: 13px; }
+  .dl-foot { margin-top: 13px; color: #8fb5a1; font-size: 8.5px; line-height: 1.7; }
+
+  .faq { position: relative; z-index: 1; padding: 20px 0 100px; }
+  .faq-inner { display: grid; grid-template-columns: .8fr 1.2fr; gap: 70px; }
+  .faq h2 { margin: 0; font-size: clamp(30px, 3.3vw, 42px); font-weight: 720; letter-spacing: -.05em; }
+  .faq .lead { max-width: 300px; margin: 13px 0 0; color: var(--muted); font-size: 12px; line-height: 1.8; }
+  .faq-list { border-top: 1px solid #d9e5dd; }
+  .faq-list details { border-bottom: 1px solid #d9e5dd; }
+  .faq-list summary { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 19px 0; cursor: pointer; list-style: none; font-size: 13px; font-weight: 620; }
+  .faq-list summary::-webkit-details-marker { display: none; }
+  .faq-list summary span { position: relative; width: 18px; height: 18px; flex: 0 0 18px; color: var(--green); }
+  .faq-list summary span::before, .faq-list summary span::after { position: absolute; top: 8px; left: 4px; width: 10px; height: 1px; background: currentColor; content: ""; }
+  .faq-list summary span::after { transform: rotate(90deg); transition: transform .18s ease; }
+  .faq-list details[open] summary span::after { transform: rotate(0); }
+  .faq-list details p { max-width: 620px; margin: -4px 30px 18px 0; color: var(--muted); font-size: 11.5px; line-height: 1.85; }
+  .faq-list code { padding: 1px 4px; border-radius: 4px; background: #e9f2ec; color: #2e6d55; font-family: var(--mono); font-size: 9.5px; }
+
+  .footer { border-top: 1px solid #dde8e0; }
+  .footer-inner { display: flex; flex-wrap: wrap; align-items: center; gap: 20px 30px; min-height: 92px; color: #84988c; font-size: 9.5px; }
+  .footer .brand { margin-right: auto; }
+  .footer .brand img { width: 23px; height: 23px; }
+  .footer .brand b { font-size: 14px; }
+  .footer a:hover { color: var(--green); }
+
+  @media (max-width: 1240px) {
+    .chip { display: none; }
+  }
+  @media (max-width: 1080px) {
+    .app-body { grid-template-columns: 184px minmax(0, 1fr); }
+    .ctx { display: none; }
+    .chip-b { display: none; }
+  }
+  @media (max-width: 860px) {
+    .wrap { width: calc(100% - 40px); }
+    .orb { width: 360px; height: 260px; }
+    .orb-a { left: -80px; }
+    .orb-b { right: 0; }
+    .nav-links { display: none; }
+    .hero { padding-top: 44px; }
+    .hero h1 { font-size: clamp(42px, 8.6vw, 60px); }
+    .app-body { grid-template-columns: minmax(0, 1fr); min-height: 430px; }
+    .side { display: none; }
+    .card-a, .card-b, .card-c, .card-d, .card-e { grid-column: 1 / -1; }
+    .wf-head { display: block; }
+    .wf-head p { margin-top: 12px; }
+    .wf-steps { grid-template-columns: 1fr; }
+    .wf-step::after { content: none; }
+    .dl-panel { grid-template-columns: 1fr; padding: 34px; gap: 30px; }
+    .faq-inner { grid-template-columns: 1fr; gap: 26px; }
+    .chip { display: none; }
+    .features { padding-top: 80px; }
+    .download { padding-block: 60px; }
+  }
+  @media (max-width: 560px) {
+    .h1-line { display: block; }
+    .brand span { display: none; }
+    .nav-inner { gap: 10px; }
+    .btn-sm { padding-inline: 12px; }
+    .hero .sub { font-size: 13px; }
+    .app-bar { gap: 7px; }
+    .app-actions { display: none; }
+    .app-title { margin-left: 4px; }
+    .chat { padding: 12px; }
+    .dl-panel h2 { font-size: 34px; }
+    .dl-panel { padding: 26px; border-radius: 24px; }
+    .bento { gap: 11px; }
+    .card { padding: 22px; border-radius: 18px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="orb orb-a" aria-hidden="true"></div>
+<div class="orb orb-b" aria-hidden="true"></div>
+<div class="grain" aria-hidden="true"></div>
+
+<header class="nav">
+  <div class="wrap nav-inner">
+    <a class="brand" href="#top" aria-label="SpecLoom 首页">
+      <img src="./assets/specloom.svg" alt="" width="30" height="30">
+      <b>SpecLoom</b>
+      <span>0.1.9</span>
+    </a>
+    <nav class="nav-links" aria-label="站内导航">
+      <a href="#features">产品能力</a>
+      <a href="#workflow">工作方式</a>
+      <a href="#download">下载</a>
+      <a href="#faq">常见问题</a>
+    </nav>
+    <a class="btn btn-sm" href="#download">下载 Windows 版 <span>↓</span></a>
+  </div>
+</header>
+
+<main id="top">
+  <section class="hero">
+    <div class="wrap">
+      <span class="pill"><i>✦</i> SpecLoom 0.1.9 · Windows x64 · 本地工作区</span>
+      <h1>让项目知识，<br><span class="h1-line">成为智能体的</span><span class="h1-line grad">上下文。</span></h1>
+      <p class="sub">SpecLoom 把规范、实体、组件和 Skills 收进一个本地工作区。智能体读取同一份项目资料，<b>先理解，再动手</b>。</p>
+      <div class="cta">
+        <a class="btn" href="#download">下载 Windows 版 <span>↓</span></a>
+        <a class="btn btn-ghost" href="#features">看看它能做什么 <span>→</span></a>
+      </div>
+      <p class="micro"><span>本地工作区</span><i></i><span>项目资料保存在 <code>specs/</code></span><i></i><span>Godot 优先</span></p>
+    </div>
+
+    <div class="stage wrap">
+      <div class="stage-glow" aria-hidden="true"></div>
+      <div class="app" aria-label="SpecLoom 工作区界面示意">
+        <div class="app-bar">
+          <span class="app-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span class="app-title"><b>SpecLoom</b> / 松林计划 / 森林场景检查</span>
+          <span class="app-actions"><span>打开 Godot</span><span class="primary">新建任务</span></span>
+        </div>
+        <div class="app-body">
+          <aside class="side" aria-label="项目与资料">
+            <div class="proj"><span class="proj-icon">S</span><span><b>松林计划</b><small>Godot 项目 · 本地</small></span></div>
+            <div class="side-label">项目资料</div>
+            <div class="side-item"><em>◫</em>项目规范</div>
+            <div class="side-item"><em>◇</em>实体目录</div>
+            <div class="side-item"><em>▦</em>组件目录</div>
+            <div class="side-item"><em>◌</em>设定 / 地图</div>
+            <div class="side-gap"></div>
+            <div class="side-label">协作</div>
+            <div class="side-item is-active"><em>✦</em>工作区</div>
+            <div class="side-item"><em>⌘</em>Skills</div>
+            <div class="side-item"><em>✳</em>MCP</div>
+            <div class="side-gap"></div>
+            <div class="side-label">最近会话</div>
+            <div class="side-session"><b>森林场景检查</b><small>运行中 · 3 个工具</small></div>
+            <div class="side-session"><b>敌人配置梳理</b><small>昨天 · 已保存</small></div>
+          </aside>
+
+          <section class="chat" aria-label="智能体会话示意">
+            <div class="chat-head"><b>森林场景检查</b><span>运行中</span></div>
+            <div class="bubble you">
+              <span class="who you">你</span>
+              <div class="body"><small>09:41</small><p>请检查森林场景的节点组织，顺便看看敌人配置有没有断引用。</p></div>
+            </div>
+            <div class="bubble">
+              <span class="who">S</span>
+              <div class="body"><small>09:41 · 项目上下文已加载</small><p>先读项目规范和场景结构，再对比实体引用。</p></div>
+            </div>
+            <div class="tool-card">
+              <div class="tool-top"><span>工具链 · 3 步</span><b>全部完成</b></div>
+              <div class="tool-line"><span>01</span>Read specs/project.md<em class="done">完成</em></div>
+              <div class="tool-line"><span>02</span>Inspect res://scenes/main.tscn<em class="done">完成</em></div>
+              <div class="tool-line"><span>03</span>Check entity references<em class="done">完成</em></div>
+            </div>
+            <div class="progress"><b>已读取 4 份资料 · 检查 2 个场景</b><br>发现 2 个实体引用未挂载组件，1 个场景节点命名不一致。</div>
+            <div class="bubble">
+              <span class="who">S</span>
+              <div class="body"><small>09:42</small><p>建议先处理引用，再重命名节点。需要我把修改列成清单吗？</p></div>
+            </div>
+            <div class="composer"><span>＋</span><span>输入消息，或引用一份项目资料…</span><span class="send">发送</span></div>
+          </section>
+
+          <aside class="ctx" aria-label="上下文与运行信息">
+            <div class="ctx-head"><span>上下文</span><b>42%</b></div>
+            <div class="meter"><i></i></div>
+            <div class="ctx-block">
+              <b>当前模型</b>
+              <div class="ctx-row"><span>DeepSeek V3</span><span>128K</span></div>
+              <div class="ctx-row"><span>思考偏好</span><span>继承默认</span></div>
+            </div>
+            <div class="ctx-block">
+              <b>本轮文件</b>
+              <div class="ctx-file"><span>M</span>specs/entities/fire_goblin.md</div>
+              <div class="ctx-file"><span>M</span>res://scenes/main.tscn</div>
+              <div class="ctx-file"><span>+</span>specs/components/health.md</div>
+            </div>
+            <div class="ctx-block">
+              <b>可用工具</b>
+              <div class="ctx-row"><span>编码工作集</span><span>12</span></div>
+              <div class="ctx-row"><span>项目 Skills</span><span>4</span></div>
+              <div class="ctx-row"><span>MCP</span><span>2</span></div>
+            </div>
+          </aside>
+        </div>
+      </div>
+      <span class="chip chip-a"><i></i>specs/entities</span>
+      <span class="chip chip-b"><i></i>Skills · 4</span>
+      <span class="chip chip-c"><i></i>Godot 截图桥</span>
+      <p class="stage-note">界面示意 · 对话与文件均为示例</p>
+    </div>
+  </section>
+
+  <section class="features" id="features">
+    <div class="wrap">
+      <div class="feat-head">
+        <p class="eyebrow"><i></i> WHY SPECLOOM</p>
+        <h2>不是一个聊天框，<br>是项目的另一层工作台。</h2>
+        <p>资料、智能体和编辑器连接围绕同一个项目展开。你不需要每次重新解释背景，也不必在几份文档之间来回对照。</p>
+      </div>
+      <div class="bento">
+        <article class="card card-a">
+          <span class="kicker">01 / PROJECT MATERIALS</span>
+          <h3>项目资料，有结构。</h3>
+          <p>规范、实体、组件各自成文，保留父级、继承和字段。文件就是数据源，页面和智能体读取同一份内容。</p>
+          <div class="filetree" aria-label="项目资料目录示意">
+            <div class="ft"><em>▾</em>specs/<span class="tag">项目资料</span></div>
+            <div class="ft"><em>├</em>project.md</div>
+            <div class="ft is-on"><em>├</em>entities/fire_goblin.md<span class="tag">已打开</span></div>
+            <div class="ft"><em>├</em>entities/enemies.md</div>
+            <div class="ft"><em>└</em>components/health.md</div>
+          </div>
+          <div class="chiprow"><span>Markdown / YAML</span><span>父级与继承</span><span>组件绑定</span><span>引用校验</span></div>
+        </article>
+
+        <article class="card card-b">
+          <span class="kicker">02 / AGENT</span>
+          <h3>智能体，带着上下文来。</h3>
+          <p>项目资料、Skills、MCP 和编码工具进入同一场会话。读取、修改与检查都围绕当前项目发生。</p>
+          <div class="mini-chat" aria-label="智能体会话示意">
+            <div class="m me"><span>你</span>检查敌人配置的引用。</div>
+            <div class="m"><span>SpecLoom</span>已读取 3 份实体资料，发现 2 处断引用。</div>
+          </div>
+          <div class="chiprow"><span>项目上下文</span><span>工具审批</span><span>文件清单</span></div>
+        </article>
+
+        <article class="card card-c">
+          <div class="icon-tile">⌘</div>
+          <h3>Godot，在回路里。</h3>
+          <p>集中查看与启停项目内的 EditorPlugin。启用截图桥后，智能体可以读取运行中的游戏视口。</p>
+          <a class="arrowlink" href="#workflow">了解工作方式 <span>→</span></a>
+        </article>
+
+        <article class="card card-d">
+          <div class="icon-tile">◷</div>
+          <h3>过程，看得见。</h3>
+          <p>公开进度气泡、工具步骤和每轮文件变化按顺序展开。改了什么、为什么改，都能回看。</p>
+          <a class="arrowlink" href="#faq">查看能力说明 <span>→</span></a>
+        </article>
+
+        <article class="card card-e">
+          <div class="icon-tile">▤</div>
+          <h3>多开，各做各的。</h3>
+          <p>通过 Trailblazer Hub 同时打开多个工作区。不同项目的会话、草稿和运行状态互不打扰。</p>
+          <a class="arrowlink" href="#download">获取 Windows 版 <span>→</span></a>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="workflow" id="workflow">
+    <div class="wrap">
+      <div class="wf-head">
+        <div><p class="eyebrow"><i></i> HOW IT WORKS</p><h2>三步，接上项目现场。</h2></div>
+        <p>从打开现有项目开始，不需要先准备一份完美文档。SpecLoom 会沿着资料和代码把上下文串起来。</p>
+      </div>
+      <div class="wf-steps">
+        <div class="wf-step">
+          <span class="wf-num"><i>01</i> SELECT</span>
+          <h3>选择项目</h3>
+          <p>打开 Godot 项目或普通代码项目，读取项目结构、资料目录与已配置的工具。</p>
+        </div>
+        <div class="wf-step">
+          <span class="wf-num"><i>02</i> READ</span>
+          <h3>读取项目上下文</h3>
+          <p>规范、实体、组件、Skills 和 MCP 进入同一份上下文，智能体先理解再提出建议。</p>
+        </div>
+        <div class="wf-step">
+          <span class="wf-num"><i>03</i> REVIEW</span>
+          <h3>执行并检查改动</h3>
+          <p>推进任务、查看工具步骤与本轮文件变化。需要审批的写入仍然由你确认。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="download" id="download">
+    <div class="wrap">
+      <div class="dl-panel">
+        <div>
+          <p class="eyebrow"><i></i> DOWNLOAD FOR WINDOWS</p>
+          <h2>把工作区，<br>装进本机。</h2>
+          <p class="note">当前版本 0.1.9，提供安装程序与便携版，均面向 Windows x64。项目资料保存在你的项目目录，模型请求由你配置的供应商处理。</p>
+          <div class="dl-meta"><span>VERSION <b>0.1.9</b></span><span>PLATFORM <b>WINDOWS X64</b></span><span>CHANNEL <b>STABLE</b></span></div>
+        </div>
+        <div>
+          <div class="dl-list">
+            <a class="dl-item" href="../../release/0.1.9/SpecLoom-0.1.9-Setup-x64.exe">
+              <span class="ico">↓</span>
+              <span><b>安装程序</b><small>Setup · 适合常规安装</small></span>
+              <span class="go">↗</span>
+            </a>
+            <a class="dl-item" href="../../release/0.1.9/SpecLoom-0.1.9-Portable-x64.zip">
+              <span class="ico">↗</span>
+              <span><b>便携版</b><small>Portable · 解压后运行</small></span>
+              <span class="go">↗</span>
+            </a>
+          </div>
+          <p class="dl-foot">本地预览：链接指向 release/0.1.9/ 中的实际文件。SpecLoom 目前仅支持 Windows x64。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="faq" id="faq">
+    <div class="wrap faq-inner">
+      <div>
+        <p class="eyebrow"><i></i> FAQ</p>
+        <h2>开始之前。</h2>
+        <p class="lead">关于支持范围、资料位置和智能体协作方式的简要说明。</p>
+      </div>
+      <div class="faq-list">
+        <details>
+          <summary>SpecLoom 支持哪些系统？<span></span></summary>
+          <p>目前仅支持 Windows x64，提供安装程序与便携版两种发行包。</p>
+        </details>
+        <details>
+          <summary>除了 Godot，也适用于普通代码项目吗？<span></span></summary>
+          <p>Godot 是优先场景，也可以用于普通代码项目。Godot EditorPlugin 和截图桥能力只适用于 Godot 项目。</p>
+        </details>
+        <details>
+          <summary>项目资料保存在哪里？<span></span></summary>
+          <p>规范、实体、组件等资料保存在项目的 <code>specs/</code> 目录；项目 Skills 位于 <code>.specloom/skills/</code>，内部历史位于 <code>.specloom/history/</code>。</p>
+        </details>
+        <details>
+          <summary>智能体会自动修改项目文件吗？<span></span></summary>
+          <p>写入按工具审批策略执行，需要确认的操作会先询问。每轮结束会列出本轮文件变化，方便你回看和检查。</p>
+        </details>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <div class="wrap footer-inner">
+    <a class="brand" href="#top">
+      <img src="./assets/specloom.svg" alt="" width="23" height="23">
+      <b>SpecLoom</b>
+    </a>
+    <span>本地优先 · Godot 项目工作区</span>
+    <span>0.1.9 / Windows x64</span>
+    <a href="#top">返回顶部 ↑</a>
+  </div>
+</footer>
+</body>
+</html>

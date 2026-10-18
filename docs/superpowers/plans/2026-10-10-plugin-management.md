@@ -1,6 +1,6 @@
 # SpecLoom Plugin Management Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Add a first-class plugin page that safely manages the SpecLoom screenshot bridge and lists, filters, enables/disables, and reveals installed Godot project plugins.
 
@@ -35,7 +35,7 @@ The checkout already contains extensive unrelated dirty and untracked files, inc
 - Create: `src/main/core/plugins/godot-project-plugins.ts`
 - Test: `tests/core/godot-project-plugins.test.ts`
 
-- [ ] **Step 1: Add failing inventory and parser tests.** Create temporary Godot fixtures containing `project.godot`, standard and malformed `plugin.cfg` files, a disabled addon, an enabled addon, and an enabled reference to a missing config. Verify only addon directories with a config or an enabled reference are returned.
+- [x] **Step 1: Add failing inventory and parser tests.** Create temporary Godot fixtures containing `project.godot`, standard and malformed `plugin.cfg` files, a disabled addon, an enabled addon, and an enabled reference to a missing config. Verify only addon directories with a config or an enabled reference are returned.
 
 ```ts
 it("lists project plugins and retains an enabled reference whose config disappeared", async () => {
@@ -52,15 +52,15 @@ it("lists project plugins and retains an enabled reference whose config disappea
 });
 ```
 
-- [ ] **Step 2: Run the focused test and confirm it fails before implementation.**
+- [x] **Step 2: Run the focused test and confirm it fails before implementation.**
 
 Run: `npx vitest run tests/core/godot-project-plugins.test.ts`
 
 Expected: FAIL because the manager and schemas do not exist.
 
-- [ ] **Step 3: Add strict shared schemas and scanner types.** Define `GodotPluginEntrySchema`, `ScreenshotBridgeEntrySchema`, `PluginInventorySchema`, and bounded request schemas. The inventory contains `screenshotBridge`, `plugins`, and `scanLimitReached`; plugin IDs are project-relative `addons/<one direct child>/plugin.cfg` identifiers. Do not include project absolute paths or raw config text.
+- [x] **Step 3: Add strict shared schemas and scanner types.** Define `GodotPluginEntrySchema`, `ScreenshotBridgeEntrySchema`, `PluginInventorySchema`, and bounded request schemas. The inventory contains `screenshotBridge`, `plugins`, and `scanLimitReached`; plugin IDs are project-relative `addons/<one direct child>/plugin.cfg` identifiers. Do not include project absolute paths or raw config text.
 
-- [ ] **Step 4: Implement the scanner and safe metadata parser.** `GodotProjectPluginManager.list()` must:
+- [x] **Step 4: Implement the scanner and safe metadata parser.** `GodotProjectPluginManager.list()` must:
   - verify `project.godot` is a supported Godot project;
   - read at most 1 MiB of project settings and parse at most 1,024 enabled entries;
   - inspect at most 512 direct children of `addons/` and at most 64 KiB per `plugin.cfg`;
@@ -69,9 +69,9 @@ Expected: FAIL because the manager and schemas do not exist.
   - return a malformed or missing-config warning row without failing the rest of the inventory;
   - keep the screenshot bridge out of the ordinary plugin list and report its file and project-setting status separately.
 
-- [ ] **Step 5: Add scanner tests for malformed, over-limit, and unsafe project inputs.** Assert a malformed plugin does not hide valid siblings, oversized files and scan overflow are surfaced safely, non-Godot projects fail clearly, and traversal/reparse points are never returned as usable plugin IDs.
+- [x] **Step 5: Add scanner tests for malformed, over-limit, and unsafe project inputs.** Assert a malformed plugin does not hide valid siblings, oversized files and scan overflow are surfaced safely, non-Godot projects fail clearly, and traversal/reparse points are never returned as usable plugin IDs.
 
-- [ ] **Step 6: Run the focused scanner suite.**
+- [x] **Step 6: Run the focused scanner suite.**
 
 Run: `npx vitest run tests/core/godot-project-plugins.test.ts`
 
@@ -85,7 +85,7 @@ Expected: PASS with bounded metadata only.
 - Test: `tests/core/godot-project-plugins.test.ts`
 - Test: `tests/core/godot-screenshot.test.ts`
 
-- [ ] **Step 1: Add failing settings mutation tests.** Cover enabling/disabling one addon while preserving other entries and unrelated settings, duplicate idempotence, malformed `PackedStringArray` rejection, and a concurrent project-file change between read and write.
+- [x] **Step 1: Add failing settings mutation tests.** Cover enabling/disabling one addon while preserving other entries and unrelated settings, duplicate idempotence, malformed `PackedStringArray` rejection, and a concurrent project-file change between read and write.
 
 ```ts
 it("toggles only the selected addon and preserves the other enabled entries", async () => {
@@ -98,19 +98,19 @@ it("toggles only the selected addon and preserves the other enabled entries", as
 });
 ```
 
-- [ ] **Step 2: Run the focused tests and verify they fail.**
+- [x] **Step 2: Run the focused tests and verify they fail.**
 
 Run: `npx vitest run tests/core/godot-project-plugins.test.ts tests/core/godot-screenshot.test.ts`
 
 Expected: FAIL because safe toggle operations are missing.
 
-- [ ] **Step 3: Implement safe `PackedStringArray` updates.** Parse a bounded, supported Godot array syntax into string entries; reject unknown syntax rather than overwriting it. Change only the selected exact `res://addons/.../plugin.cfg` entry. Compare the original file bytes before atomic replacement; return a conflict error if another writer changed the file. Preserve all other plugin entries and unrelated settings.
+- [x] **Step 3: Implement safe `PackedStringArray` updates.** Parse a bounded, supported Godot array syntax into string entries; reject unknown syntax rather than overwriting it. Change only the selected exact `res://addons/.../plugin.cfg` entry. Compare the original file bytes before atomic replacement; return a conflict error if another writer changed the file. Preserve all other plugin entries and unrelated settings.
 
-- [ ] **Step 4: Add screenshot bridge enable/disable and missing install behavior.** Reuse `GodotScreenshotPlugin.install()` for the bundled bridge. Enabling registers its editor plugin and owned `SpecLoomCapture` autoload; disabling removes only the bridge entry and the autoload value that exactly matches the bridge-owned value. Never delete plugin files. Distinguish missing, ready, incomplete, and conflicting resources; do not overwrite changed files or a conflicting autoload.
+- [x] **Step 4: Add screenshot bridge enable/disable and missing install behavior.** Reuse `GodotScreenshotPlugin.install()` for the bundled bridge. Enabling registers its editor plugin and owned `SpecLoomCapture` autoload; disabling removes only the bridge entry and the autoload value that exactly matches the bridge-owned value. Never delete plugin files. Distinguish missing, ready, incomplete, and conflicting resources; do not overwrite changed files or a conflicting autoload.
 
-- [ ] **Step 5: Test bridge status, toggles, idempotence, conflicts, and ownership.** Verify another autoload survives disable, modified bridge files block install, missing bridge files can be installed without overwriting existing entries, and failed writes leave project settings unchanged.
+- [x] **Step 5: Test bridge status, toggles, idempotence, conflicts, and ownership.** Verify another autoload survives disable, modified bridge files block install, missing bridge files can be installed without overwriting existing entries, and failed writes leave project settings unchanged.
 
-- [ ] **Step 6: Run the focused core suites.**
+- [x] **Step 6: Run the focused core suites.**
 
 Run: `npx vitest run tests/core/godot-project-plugins.test.ts tests/core/godot-screenshot.test.ts`
 
@@ -129,7 +129,7 @@ Expected: PASS.
 - Create: `tests/integration/plugin-management.test.ts`
 - Modify: `tests/integration/hub-module.test.ts`
 
-- [ ] **Step 1: Add failing controller and IPC tests.** Assert each call targets `currentCore().metadata.path`, generic projects are rejected, unknown IDs and arbitrary path payloads are rejected, and reveal uses only a backend-resolved path.
+- [x] **Step 1: Add failing controller and IPC tests.** Assert each call targets `currentCore().metadata.path`, generic projects are rejected, unknown IDs and arbitrary path payloads are rejected, and reveal uses only a backend-resolved path.
 
 ```ts
 it("rejects absolute paths instead of accepting renderer-selected reveal targets", async () => {
@@ -139,21 +139,21 @@ it("rejects absolute paths instead of accepting renderer-selected reveal targets
 });
 ```
 
-- [ ] **Step 2: Run focused IPC/controller tests and confirm they fail.**
+- [x] **Step 2: Run focused IPC/controller tests and confirm they fail.**
 
 Run: `npx vitest run tests/unit/ipc.test.ts tests/integration/plugin-management.test.ts`
 
 Expected: FAIL because the operations and controller methods are absent.
 
-- [ ] **Step 3: Add desktop API and validated IPC operations.** Add a `pluginManagement` API with `list`, `setGodotPluginEnabled`, `setScreenshotBridgeEnabled`, `installScreenshotBridge`, and `revealDirectory`, backed by IPC operations `pluginsList`, `pluginsSetGodotPluginEnabled`, `pluginsSetScreenshotBridgeEnabled`, `pluginsInstallScreenshotBridge`, and `pluginsRevealDirectory`. Use strict schemas with bounded plugin IDs and booleans. Reveal targets are exactly `project`, `screenshot-bridge`, or a scanned plugin ID. Keep the active project root in the controller; do not accept a project path from the renderer.
+- [x] **Step 3: Add desktop API and validated IPC operations.** Add a `pluginManagement` API with `list`, `setGodotPluginEnabled`, `setScreenshotBridgeEnabled`, `installScreenshotBridge`, and `revealDirectory`, backed by IPC operations `pluginsList`, `pluginsSetGodotPluginEnabled`, `pluginsSetScreenshotBridgeEnabled`, `pluginsInstallScreenshotBridge`, and `pluginsRevealDirectory`. Use strict schemas with bounded plugin IDs and booleans. Reveal targets are exactly `project`, `screenshot-bridge`, or a scanned plugin ID. Keep the active project root in the controller; do not accept a project path from the renderer.
 
-- [ ] **Step 4: Wire safe directory reveal in standalone and Hub.** Have the controller resolve an ID to the project root or a verified addon directory. Extend `IpcOptions` with a main-process reveal callback and pass `shell.showItemInFolder` from `main.ts` and `hub-module.ts`. The callback receives only the verified path and the path is never returned across IPC.
+- [x] **Step 4: Wire safe directory reveal in standalone and Hub.** Have the controller resolve an ID to the project root or a verified addon directory. Extend `IpcOptions` with a main-process reveal callback and pass `shell.showItemInFolder` from `main.ts` and `hub-module.ts`. The callback receives only the verified path and the path is never returned across IPC.
 
-- [ ] **Step 5: Implement dispatch and controller methods.** Recreate the manager from the current core path for each operation, reject generic projects, dispatch each strict request, and return only the inventory/mutation result. Keep Hub per-window request-controller behavior and operation serialization intact.
+- [x] **Step 5: Implement dispatch and controller methods.** Recreate the manager from the current core path for each operation, reject generic projects, dispatch each strict request, and return only the inventory/mutation result. Keep Hub per-window request-controller behavior and operation serialization intact.
 
-- [ ] **Step 6: Add Hub parity tests.** Exercise listing, one project plugin toggle, screenshot bridge status, and reveal callback in the Hub runtime test harness; assert no request accepts an arbitrary path.
+- [x] **Step 6: Add Hub parity tests.** Exercise listing, one project plugin toggle, screenshot bridge status, and reveal callback in the Hub runtime test harness; assert no request accepts an arbitrary path.
 
-- [ ] **Step 7: Run focused integration checks.**
+- [x] **Step 7: Run focused integration checks.**
 
 Run: `npx vitest run tests/unit/ipc.test.ts tests/integration/plugin-management.test.ts tests/integration/hub-module.test.ts`
 
@@ -168,7 +168,7 @@ Expected: PASS for standalone controller and Hub module APIs.
 - Test: `tests/renderer/PluginManagementView.test.tsx`
 - Test: `tests/renderer/App.test.tsx`
 
-- [ ] **Step 1: Add failing renderer tests.** Cover the separate screenshot bridge card, project plugin rows, search over name/description/author/path, all/enabled/disabled/attention filters, disabled invalid entries, missing-project and empty states, refresh, locate, and mutation feedback.
+- [x] **Step 1: Add failing renderer tests.** Cover the separate screenshot bridge card, project plugin rows, search over name/description/author/path, all/enabled/disabled/attention filters, disabled invalid entries, missing-project and empty states, refresh, locate, and mutation feedback.
 
 ```tsx
 it("filters by metadata and status without changing plugin files", async () => {
@@ -181,19 +181,19 @@ it("filters by metadata and status without changing plugin files", async () => {
 });
 ```
 
-- [ ] **Step 2: Run the renderer test and verify it fails.**
+- [x] **Step 2: Run the renderer test and verify it fails.**
 
 Run: `npx vitest run tests/renderer/PluginManagementView.test.tsx`
 
 Expected: FAIL because the page does not exist.
 
-- [ ] **Step 3: Implement the retained navigation route.** Add a `plugins` tab entry to `App.tsx`, position it in the existing “工具” navigation group, and mount it through `NavigationPage`. Key page data by the current project path so switching projects invalidates prior state.
+- [x] **Step 3: Implement the retained navigation route.** Add a `plugins` tab entry to `App.tsx`, position it in the existing “工具” navigation group, and mount it through `NavigationPage`. Key page data by the current project path so switching projects invalidates prior state.
 
-- [ ] **Step 4: Implement plugin controls and display states.** Load the inventory on first visit, project change, and manual refresh. Filter/sort the safe list locally. Disable mutation controls while an action is pending; after a successful action reload inventory and show the required Godot reload notice. Use `aria-label`/`aria-pressed` on status controls and toggles.
+- [x] **Step 4: Implement plugin controls and display states.** Load the inventory on first visit, project change, and manual refresh. Filter/sort the safe list locally. Disable mutation controls while an action is pending; after a successful action reload inventory and show the required Godot reload notice. Use `aria-label`/`aria-pressed` on status controls and toggles.
 
-- [ ] **Step 5: Add matching light/dark styles and responsive list behavior.** Use existing theme tokens (`--bg-surface`, `--border`, `--accent`, `--text-muted`) and ensure the columns wrap or become stacked at narrow content widths.
+- [x] **Step 5: Add matching light/dark styles and responsive list behavior.** Use existing theme tokens (`--bg-surface`, `--border`, `--accent`, `--text-muted`) and ensure the columns wrap or become stacked at narrow content widths.
 
-- [ ] **Step 6: Run focused renderer tests.**
+- [x] **Step 6: Run focused renderer tests.**
 
 Run: `npx vitest run tests/renderer/PluginManagementView.test.tsx tests/renderer/App.test.tsx`
 
@@ -208,13 +208,13 @@ Expected: PASS, including collapsed navigation labels and route activation.
 - Modify: `package-lock.json`
 - Create: `docs/release-0.1.6.md`
 
-- [ ] **Step 1: Document the feature and its limits.** Explain the screenshot bridge's built-in setup, how project plugin metadata is read, the search/status controls, where enable state is written, the Godot reload requirement, and that third-party installation/uninstallation is not supported.
+- [x] **Step 1: Document the feature and its limits.** Explain the screenshot bridge's built-in setup, how project plugin metadata is read, the search/status controls, where enable state is written, the Godot reload requirement, and that third-party installation/uninstallation is not supported.
 
-- [ ] **Step 2: Bump both root package version fields to 0.1.6.** Update only the `version` field in `package.json` and the root package record in `package-lock.json`; preserve existing dependency selections.
+- [x] **Step 2: Bump both root package version fields to 0.1.6.** Update only the `version` field in `package.json` and the root package record in `package-lock.json`; preserve existing dependency selections.
 
-- [ ] **Step 3: Update the Hub module release documentation.** Record module version 0.1.6, the existing host API/minimum-host requirements, multi-instance support, and the plugin manager's use of the verified Electron shell action.
+- [x] **Step 3: Update the Hub module release documentation.** Record module version 0.1.6, the existing host API/minimum-host requirements, multi-instance support, and the plugin manager's use of the verified Electron shell action.
 
-- [ ] **Step 4: Run schema, docs, and build-input checks.**
+- [x] **Step 4: Run schema, docs, and build-input checks.**
 
 Run: `npm run typecheck`
 
@@ -227,7 +227,7 @@ Expected: PASS before packaging.
 - Build output: `release/0.1.6/`
 - Build output: `../TraiblazerHub/exports/specloom-module-0.1.6.zip`
 
-- [ ] **Step 1: Run focused tests for core, IPC, Hub and renderer.**
+- [x] **Step 1: Run focused tests for core, IPC, Hub and renderer.**
 
 Run: `npx vitest run tests/core/godot-project-plugins.test.ts tests/core/godot-screenshot.test.ts tests/unit/ipc.test.ts tests/integration/plugin-management.test.ts tests/integration/hub-module.test.ts tests/renderer/PluginManagementView.test.tsx tests/renderer/App.test.tsx`
 
@@ -245,9 +245,9 @@ Expected: no lint errors.
 
 Run: `npm test`
 
-Expected: all existing and new tests pass; if the known pre-existing flaky approval tests or ambiguous `tree` role selectors recur, record exact isolated and full-suite results in the release note without changing unrelated tests.
+Result: typecheck and lint pass. The full suite ran with 89 files passing, 19 failing, 5 skipped; 1,185 tests passed, 56 failed, 14 skipped, with 2 unhandled errors. The failure areas are recorded in `docs/release-0.1.6.md`; plugin-management focused tests pass.
 
-- [ ] **Step 3: Build the desktop release and Hub module.**
+- [x] **Step 3: Build the desktop release and Hub module.**
 
 Run: `npm run build -- --config.directories.output=release/0.1.6`
 
@@ -257,7 +257,7 @@ Run: `npm run module:build`
 
 Expected: `../TraiblazerHub/exports/specloom-module-0.1.6.zip` is built and its manifest declares version 0.1.6, host API 2, minimum host 0.1.6, and `multiInstance: true`.
 
-- [ ] **Step 4: Verify checksums and update release notes.** Record artifact size, SHA-256, module manifest fields, validation commands/results, and any known suite caveats in `docs/release-0.1.6.md`; verify the Windows installer reports product/file version 0.1.6 and leave the previous 0.1.5 release artifacts intact.
+- [x] **Step 4: Verify checksums and update release notes.** Record artifact size, SHA-256, module manifest fields, validation commands/results, and any known suite caveats in `docs/release-0.1.6.md`; verify the Windows installer reports product/file version 0.1.6 and leave the previous 0.1.5 release artifacts intact.
 
 ## Plan self-review
 

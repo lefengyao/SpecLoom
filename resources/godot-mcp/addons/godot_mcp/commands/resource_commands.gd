@@ -1,0 +1,501 @@
+## Resource commands module - 6 tools.
+## Handles resource CRUD, previews, and autoloads.
+@tool
+class_name MCPResourceCommands
+extends RefCounted
+
+var _plugin: EditorPlugin
+var _undo_helper: MCUndoHelper
+
+
+func set_plugin(plugin: EditorPlugin) -> void:
+	_plugin = plugin
+	if _plugin.has_method("get_undo_helper"):
+		_undo_helper = _plugin.get_undo_helper()
+
+
+func get_commands() -> Dictionary:
+	return {
+		"resource/read": read_resource,
+		"resource/edit": edit_resource,
+		"resource/create": create_resource,
+		"resource/get_preview": get_resource_preview,
+		"resource/add_autoload": add_autoload,
+		"resource/remove_autoload": remove_autoload,
+		"resource/duplicate": duplicate_resource,
+		"resource/get_dependencies": get_resource_dependencies,
+		"resource/list": list_resources,
+		"resource/delete": delete_resource_file,
+	}
+
+
+## Read a Godot resource's properties.
+func read_resource(params: Dictionary) -> Dictionary:
+	var path: String = MCPCommandHelpers.normalize_resource_path(params.get("path", ""))
+	if path.is_empty():
+		return {"success": false, "error": "Path is required"}
+	if not MCPCommandHelpers.validate_path(path):
+		return {"success": false, "error": "Invalid path"}
+	if not FileAccess.file_exists(path):
+		return {"success": false, "error": "Resource not found: %s" % path}
+
+	var res: Resource = ResourceLoader.load(path)
+	if res == null:
+		return {"success": false, "error": "Failed to load resource: %s" % path}
+
+	var props: Dictionary = {}
+	for p: Dictionary in res.get_property_list():
+		var pname: String = p["name"] as String
+		var usage: int = p["usage"] as int
+		if usage & PROPERTY_USAGE_STORAGE == 0:
+			continue
+		if pname.begins_with("resource_") or pname.begins_with("script"):
+			continue
+		var val: Variant = res.get(pname)
+		if val != null:
+			props[pname] = MCPVariantCodec.serialize_value(val)
+
+	return {"result": {"path": path, "type": res.get_class(), "properties": props}}
+
+
+## Edit properties on a resource.
+func edit_resource(params: Dictionary) -> Dictionary:
+	var path: String = MCPCommandHelpers.normalize_resource_path(params.get("path", ""))
+	var properties: Dictionary = params.get("properties", {})
+	if properties.is_empty():
+		return {"result": "No properties provided — nothing to update for: %s" % path}
+	if path.is_empty():
+		return {"success": false, "error": "Path is required"}
+	if not MCPCommandHelpers.validate_path(path):
+		return {"success": false, "error": "Invalid path"}
+	if not FileAccess.file_exists(path):
+		return {"success": false, "error": "Resource not found: %s" % path}
+	var res: Resource = ResourceLoader.load(path)
+	if res == null:
+		return {"success": false, "error": "Failed to load resource: %s" % path}
+
+	var not_found: Array = []
+	var invalid_values: Array = []
+	var hint_invalid: Array = []
+	for prop: String in properties:
+		var val: Variant = properties[prop]
+		var found: bool = false
+		for p: Dictionary in res.get_property_list():
+			if p["name"] as String == prop:
+				if not (p["usage"] as int) & PROPERTY_USAGE_STORAGE:
+					not_found.append(prop)
+					break
+				val = MCPVariantCodec.parse_for_property(val, p["type"] as int)
+				# Detect validation failures: parse_for_property returns null
+				# when the value cannot be converted to the expected type
+				# (e.g., invalid color string parsed as Color).
+				if val == null and not MCPCommandHelpers.is_null(properties[prop]):
+					invalid_values.append(prop)
+					found = true  # mark as found to avoid double-reporting
+					break
+				# Validate against property hints (enum range, numeric range)
+				var hint_err: String = MCPCommandHelpers.validate_property_hint(val, p)
+				if not hint_err.is_empty():
+					hint_invalid.append("%s: %s" % [prop, hint_err])
+					found = true
+					break
+				found = true
+				break
+		if invalid_values.has(prop):
+			continue
+		var is_hint_invalid: bool = false
+		for hint_entry: String in hint_invalid:
+			if hint_entry.begins_with(prop + ":"):
+				is_hint_invalid = true
+				break
+		if is_hint_invalid:
+			continue
+		if not found and not not_found.has(prop):
+			not_found.append(prop)
+			continue
+		if _undo_helper:
+			_undo_helper.set_property_with_undo(res, prop, val)
+		else:
+			res.set(prop, val)
+
+	# Validate properties BEFORE saving — if any are invalid, fail without writing to disk
+	var error_msgs: Array = []
+	if not invalid_values.is_empty():
+		error_msgs.append("Invalid values for properties: " + str(invalid_values))
+	if not hint_invalid.is_empty():
+		error_msgs.append("Properties out of valid range: " + str(hint_invalid))
+	if not not_found.is_empty():
+		error_msgs.append("Unknown properties: " + str(not_found))
+	if not error_msgs.is_empty():
+		var result_data: Dictionary = {"message": "Resource NOT saved: %d property errors for: %s" % [error_msgs.size(), path]}
+		if not not_found.is_empty():
+			result_data["not_found_properties"] = not_found
+		if not invalid_values.is_empty():
+			result_data["invalid_properties"] = invalid_values
+		if not hint_invalid.is_empty():
+			result_data["out_of_range_properties"] = hint_invalid
+		return {"success": false, "error": "; ".join(error_msgs), "result": result_data}
+
+	MCPCommandHelpers.ensure_dir(path.get_base_dir())
+	var err: Error = ResourceSaver.save(res, path)
+	if err != OK:
+		return {"success": false, "error": "Failed to save resource: %s" % error_string(err)}
+	return {"result": "Resource updated: %s" % path}
+
+
+## Create a new resource.
+func create_resource(params: Dictionary) -> Dictionary:
+	var type_name: String = params.get("type", params.get("resource_type", ""))
+	var raw_path: String = params.get("path", "")
+	if raw_path.ends_with("/"):
+		return {"success": false, "error": "Path cannot end with '/': '%s' (paths ending in / are directories, not files)" % raw_path}
+	var path: String = MCPCommandHelpers.normalize_resource_path(raw_path)
+	var properties: Dictionary = params.get("properties", {})
+	if type_name.is_empty() or path.is_empty():
+		return {"success": false, "error": "type and path are required"}
+	if not MCPCommandHelpers.validate_path(path):
+		return {"success": false, "error": "Invalid path"}
+
+	var res: Resource = null
+	match type_name:
+		"StandardMaterial3D":
+			res = StandardMaterial3D.new()
+		"ShaderMaterial":
+			res = ShaderMaterial.new()
+		"Theme":
+			res = Theme.new()
+		"StyleBoxFlat":
+			res = StyleBoxFlat.new()
+		"Gradient":
+			res = Gradient.new()
+		"Curve":
+			res = Curve.new()
+		"AudioStreamMP3":
+			res = AudioStreamMP3.new()
+		"AudioStreamOggVorbis":
+			res = AudioStreamOggVorbis.new()
+		"TileSet":
+			res = TileSet.new()
+		"AnimationLibrary":
+			res = AnimationLibrary.new()
+		_:
+			if ClassDB.can_instantiate(type_name):
+				var obj: Object = ClassDB.instantiate(type_name)
+				if obj is Resource:
+					res = obj as Resource
+	if res == null:
+		return {"success": false, "error": "Unknown resource type: %s" % type_name}
+
+	var not_found: Array = []
+	var invalid_values: Array = []
+	var hint_invalid: Array = []
+	for prop: String in properties:
+		var parsed: bool = false
+		for p: Dictionary in res.get_property_list():
+			if p["name"] as String == prop:
+				if not (p["usage"] as int) & PROPERTY_USAGE_STORAGE:
+					break
+				var val: Variant = MCPVariantCodec.parse_for_property(properties[prop], p["type"] as int)
+				# Detect validation failures (e.g., invalid color string)
+				if val == null and not MCPCommandHelpers.is_null(properties[prop]):
+					invalid_values.append(prop)
+					parsed = true
+					break
+				# Validate against property hints (enum range, numeric range)
+				var hint_err: String = MCPCommandHelpers.validate_property_hint(val, p)
+				if not hint_err.is_empty():
+					hint_invalid.append("%s: %s" % [prop, hint_err])
+					parsed = true
+					break
+				res.set(prop, val)
+				parsed = true
+				break
+		if not parsed:
+			var is_hint_invalid: bool = false
+			for hint_entry: String in hint_invalid:
+				if hint_entry.begins_with(prop + ":"):
+					is_hint_invalid = true
+					break
+			if is_hint_invalid:
+				continue
+			not_found.append(prop)
+
+	if path.get_extension().is_empty():
+		return {"success": false, "error": "Path must include a file extension (e.g. .tres, .res): %s" % path}
+	if FileAccess.file_exists(path):
+		return {"success": false, "error": "Resource already exists: %s" % path}
+	# Windows MAX_PATH limit (260). Godot's accessibility helpers add ~65 chars,
+	# but the absolute path can still exceed the OS limit.
+	if path.length() > 260:
+		return {"success": false, "error": "Path too long: %d characters (maximum is 260)" % path.length()}
+
+	# Validate properties BEFORE saving — if any are invalid, fail without writing to disk
+	var error_msgs: Array = []
+	var result_data: Dictionary = {"path": path, "type": type_name}
+	if not invalid_values.is_empty():
+		error_msgs.append("Invalid values for properties: " + str(invalid_values))
+		result_data["invalid_properties"] = invalid_values
+	if not hint_invalid.is_empty():
+		error_msgs.append("Properties out of valid range: " + str(hint_invalid))
+		result_data["out_of_range_properties"] = hint_invalid
+	if not not_found.is_empty():
+		error_msgs.append("Unknown properties: " + str(not_found))
+		result_data["not_found_properties"] = not_found
+	if not error_msgs.is_empty():
+		return {"success": false, "error": "; ".join(error_msgs), "result": result_data}
+
+	MCPCommandHelpers.ensure_dir(path.get_base_dir())
+	var err: Error = ResourceSaver.save(res, path)
+	if err != OK:
+		return {"success": false, "error": "Failed to save resource: %s" % error_string(err)}
+	_plugin.safe_scan_filesystem()
+	return {"result": result_data}
+
+
+## Helper receiver for async preview callbacks.
+class _PreviewReceiver:
+	extends Node
+
+	var preview: Texture2D = null
+	var done: bool = false
+
+	func _on_preview_done(_path: String, tex: Texture2D, _small: Texture2D, _ud: Variant) -> void:
+		if is_queued_for_deletion():
+			return
+		preview = tex
+		done = true
+
+
+## Convert a Texture2D to base64-encoded PNG.
+func _texture_to_base64(tex: Texture2D) -> String:
+	if tex == null:
+		return ""
+	var img: Image = tex.get_image()
+	if img == null or img.is_empty():
+		return ""
+	var png_bytes: PackedByteArray = img.save_png_to_buffer()
+	return Marshalls.raw_to_base64(png_bytes)
+
+
+## Get a resource preview/thumbnail with base64 PNG image data.
+func get_resource_preview(params: Dictionary) -> Dictionary:
+	var path: String = MCPCommandHelpers.normalize_resource_path(params.get("path", ""))
+	if path.is_empty():
+		return {"success": false, "error": "Path is required"}
+	if not FileAccess.file_exists(path):
+		return {"success": false, "error": "Resource not found: %s" % path}
+
+	var res: Resource = ResourceLoader.load(path)
+	if res == null:
+		return {"success": false, "error": "Path exists but is not a loadable Godot resource (not .tres/.res/.tscn/.scn/etc.): %s" % path}
+
+	var previewer: EditorResourcePreview = _plugin.get_editor_interface().get_resource_previewer()
+	var receiver: _PreviewReceiver = _PreviewReceiver.new()
+	_plugin.add_child(receiver)
+
+	# Queue preview — callback fires synchronously if already cached
+	previewer.queue_resource_preview(path, receiver, "_on_preview_done", null)
+
+	# If not in cache, wait for background thread (timeout ~2s)
+	var timeout: int = 0
+	while not receiver.done and timeout < 120:
+		await _plugin.get_tree().process_frame
+		timeout += 1
+
+	var result_data: Dictionary = {
+		"path": path,
+		"type": res.get_class(),
+		"resource_path": res.resource_path,
+	}
+
+	if receiver.preview != null:
+		var b64: String = _texture_to_base64(receiver.preview)
+		if not b64.is_empty():
+			result_data["preview_base64"] = b64
+			result_data["preview_format"] = "png"
+	else:
+		result_data["preview_note"] = "No preview available (generator may not support this type or timed out)"
+
+	receiver.queue_free()
+	return {"result": result_data}
+
+
+## Add an autoload to the project.
+func add_autoload(params: Dictionary) -> Dictionary:
+	var name_str: String = params.get("name", "")
+	var path: String = MCPCommandHelpers.normalize_resource_path(params.get("path", ""))
+	if name_str.is_empty() or path.is_empty():
+		return {"success": false, "error": "name and path are required"}
+	# Strip existing * prefix before validation (users may pass editor-only paths)
+	if path.begins_with("*"):
+		path = path.substr(1)
+	if not FileAccess.file_exists(path):
+		return {"success": false, "error": "Script/scene not found: %s" % path}
+
+	# Use the autoload name as the key (Godot standard format)
+	var editor_only: bool = params.get("editor_only", false)
+	if ProjectSettings.has_setting("autoload/" + name_str):
+		return {"success": false, "error": "Autoload '%s' already exists" % name_str}
+	var value: String = ("*" + path) if editor_only else path
+	ProjectSettings.set_setting("autoload/" + name_str, value)
+	var err: Error = ProjectSettings.save()
+	if err != OK:
+		return {"success": false, "error": "Failed to save project settings: %s" % error_string(err)}
+	return {"result": "Autoload '%s' added" % name_str}
+
+
+## Remove an autoload from the project.
+func remove_autoload(params: Dictionary) -> Dictionary:
+	var name_str: String = params.get("name", "")
+	if name_str.is_empty():
+		return {"success": false, "error": "name is required"}
+
+	# Find the autoload by name (Godot standard format: autoload/Name)
+	var found_key: String = "autoload/" + name_str
+	if not ProjectSettings.has_setting(found_key):
+		return {"success": false, "error": "Autoload not found: %s" % name_str}
+
+	ProjectSettings.set_setting(found_key, null)
+	var err: Error = ProjectSettings.save()
+	if err != OK:
+		return {"success": false, "error": "Failed to save project settings: %s" % error_string(err)}
+	return {"result": "Autoload '%s' removed" % name_str}
+
+
+## Duplicate a resource file to a new path.
+func duplicate_resource(params: Dictionary) -> Dictionary:
+	var source_path: String = MCPCommandHelpers.normalize_resource_path(params.get("source_path", params.get("path", "")))
+	var new_path: String = MCPCommandHelpers.normalize_resource_path(params.get("dest_path", params.get("new_path", "")))
+	if source_path.is_empty() or new_path.is_empty():
+		return {"success": false, "error": "source_path and new_path are required"}
+	if not MCPCommandHelpers.validate_path(source_path):
+		return {"success": false, "error": "Invalid source path"}
+	if not MCPCommandHelpers.validate_path(new_path):
+		return {"success": false, "error": "Invalid destination path"}
+	if not FileAccess.file_exists(source_path):
+		return {"success": false, "error": "Source resource not found: %s" % source_path}
+	var res: Resource = ResourceLoader.load(source_path)
+	if res == null:
+		return {"success": false, "error": "Failed to load resource: %s" % source_path}
+	var dup: Resource = res.duplicate()
+	if dup == null:
+		return {"success": false, "error": "Failed to duplicate resource"}
+	if FileAccess.file_exists(new_path):
+		return {"success": false, "error": "Destination already exists: %s" % new_path}
+	MCPCommandHelpers.ensure_dir(new_path.get_base_dir())
+	var err: Error = ResourceSaver.save(dup, new_path)
+	if err != OK:
+		return {"success": false, "error": "Failed to save duplicate: %s" % error_string(err)}
+	_plugin.safe_scan_filesystem()
+	return {"result": {"source": source_path, "path": new_path}}
+
+
+## Get dependencies of a resource file.
+func get_resource_dependencies(params: Dictionary) -> Dictionary:
+	var path: String = MCPCommandHelpers.normalize_resource_path(params.get("path", ""))
+	if path.is_empty():
+		return {"success": false, "error": "Path is required"}
+	if not FileAccess.file_exists(path):
+		return {"success": false, "error": "Resource not found: %s" % path}
+	var deps: PackedStringArray = ResourceLoader.get_dependencies(path)
+	var result: Array = []
+	for dep: String in deps:
+		# ResourceLoader.get_dependencies() returns:
+		#   "res://path" (no UID) or "uid://XXXX::::res://path" (with UID)
+		# Split by "::" — path is slice[0] if plain, slice[2] if UID format
+		var parts := dep.split("::")
+		var dep_path: String = parts[2] if parts.size() >= 3 else parts[0]
+		if not dep_path.is_empty():
+			result.append(dep_path)
+	return {"result": {"path": path, "dependencies": result, "count": result.size()}}
+
+
+## List resources of a specific type in the project.
+func list_resources(params: Dictionary) -> Dictionary:
+	var type_filter: String = params.get("type", "")
+	var path: String = MCPCommandHelpers.normalize_resource_path(params.get("directory", params.get("path", "res://")))
+	# Common Godot resource extensions (avoids loading every file)
+	var resource_exts := PackedStringArray(["tres", "res", "gdshader", "gdshaderinc",
+		"material", "theme", "tileset", "shader", "tpf", "atlastex", "escn"])
+	var files: Array = []
+	MCPCommandHelpers.walk_directory(path, resource_exts, func(fp, _name):
+		if not type_filter.is_empty():
+			var res: Resource = load(fp)
+			if res != null and res.is_class(type_filter):
+				files.append(fp)
+		else:
+			files.append(fp))
+	if type_filter.is_empty():
+		# Filter out files that aren't actually loadable resources
+		var valid: Array = []
+		for f: String in files:
+			var res: Resource = load(f)
+			if res != null:
+				valid.append(f)
+		files = valid
+	return {"result": {"resources": files, "count": files.size(), "type_filter": type_filter}}
+
+
+
+
+
+## Delete a resource file from the project.
+func delete_resource_file(params: Dictionary) -> Dictionary:
+	var path: String = MCPCommandHelpers.normalize_resource_path(params.get("path", ""))
+	if path.is_empty():
+		return {"success": false, "error": "Path is required"}
+	if not MCPCommandHelpers.validate_path(path):
+		return {"success": false, "error": "Invalid path"}
+	if not FileAccess.file_exists(path):
+		return {"success": false, "error": "Resource not found: %s" % path}
+	
+	# Check if resource is used in the current scene
+	var root: Node = _plugin.get_editor_interface().get_edited_scene_root()
+	if root:
+		var refs: Array = _find_resource_refs_in_scene(root, path, 0, 20)
+		if not refs.is_empty():
+			return {"success": false, "error": "Resource is used by nodes: %s. Remove references first." % str(refs)}
+	
+	# Convert res:// to global path for DirAccess
+	var global_path: String = ProjectSettings.globalize_path(path)
+	var err: Error = DirAccess.remove_absolute(global_path)
+	if err != OK:
+		return {"success": false, "error": "Failed to delete resource: %s" % error_string(err)}
+	
+	# Also delete .import file if exists
+	var import_path: String = global_path + ".import"
+	if FileAccess.file_exists(import_path):
+		DirAccess.remove_absolute(import_path)
+	
+	# Also delete .uid file if exists
+	var uid_path: String = global_path + ".uid"
+	if FileAccess.file_exists(uid_path):
+		DirAccess.remove_absolute(uid_path)
+	
+	_plugin.safe_scan_filesystem()
+	return {"result": {"deleted": path}}
+
+
+## Helper: find nodes that reference a specific resource path.
+func _find_resource_refs_in_scene(node: Node, resource_path: String, depth: int = 0, max_depth: int = 20) -> Array:
+	var result: Array = []
+	if depth >= max_depth:
+		return result
+	# Check all properties for resource references
+	for p: Dictionary in node.get_property_list():
+		var usage: int = p["usage"] as int
+		if usage & PROPERTY_USAGE_STORAGE == 0:
+			continue
+		var val: Variant = node.get(p["name"] as String)
+		if val is Resource and val.resource_path == resource_path:
+			result.append(node.get_path())
+			break
+	for child in node.get_children():
+		result.append_array(_find_resource_refs_in_scene(child, resource_path, depth + 1, max_depth))
+	return result
+
+
+
+
+
+

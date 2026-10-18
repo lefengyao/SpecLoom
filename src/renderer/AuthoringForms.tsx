@@ -1,45 +1,118 @@
 import { Save } from "lucide-react";
 import { useState } from "react";
 import { stringify } from "yaml";
+import { createMaterialId, writeMaterial, type ComponentField } from "../shared/project-materials";
 import { Modal } from "./ui";
 
-const folders = {
-  character: "characters",
-  map: "maps",
-  system: "systems",
-  item: "items",
-  event: "events",
-};
+export interface EntityOption { id: string; title?: string; type: string }
 
-export function NewEntity({
-  busy,
-  onClose,
-  onStage,
-}: {
+interface MaterialFormProps {
   busy: boolean;
   onClose: () => void;
-  onStage: (
-    path: string,
-    content: string,
-    version?: string,
-  ) => Promise<boolean>;
-}) {
+  onSave: (path: string, content: string, version?: string) => Promise<boolean>;
+}
+
+export function NewEntity({ kind = "entity", initialParent, ...props }: MaterialFormProps & { kind?: "entity" | "map"; initialParent?: string }) {
+  return kind === "map" ? <NewMap {...props} /> : <EntityCreation {...props} {...(initialParent ? { initialParent } : {})} />;
+}
+
+function EntityCreation({ busy, onClose, onSave, initialParent }: MaterialFormProps & { initialParent?: string }) {
+  const [name, setName] = useState("");
+  return <Modal title="新建实体" onClose={onClose}>
+    <form className="form-stack" onSubmit={(event) => {
+      event.preventDefault();
+      const title = name.trim();
+      if (!title) return;
+      const id = createMaterialId("entity", title);
+      const content = writeMaterial({
+        schemaVersion: 1,
+        id,
+        type: "entity",
+        title,
+        description: "",
+        status: "draft",
+        version: 1,
+        relations: [],
+        source: "developer",
+        components: [],
+        ...(initialParent?.trim() ? { parent: initialParent.trim() } : {}),
+      }, `\n# ${title}\n`);
+      void onSave(`specs/entities/${id}.md`, content, "absent").then((ok) => { if (ok) onClose(); });
+    }}>
+      <label>名称<input required value={name} onChange={(event) => setName(event.target.value)} /></label>
+      <p className="subtle">创建后可以填写详细内容、设置父级和继承关系，并添加组件。</p>
+      <footer className="form-actions">
+        <button type="button" onClick={onClose}>取消</button>
+        <button className="primary" disabled={busy || !name.trim()}><Save size={16} />创建实体</button>
+      </footer>
+    </form>
+  </Modal>;
+}
+
+const componentTemplates: Record<string, { name: string; fields: ComponentField[] }> = {
+  blank: { name: "", fields: [] },
+  health: { name: "生命值", fields: [
+    { key: "current", label: "当前值", type: "number", default: 100 },
+    { key: "max", label: "上限", type: "number", default: 100 },
+  ] },
+  position: { name: "坐标", fields: [
+    { key: "x", label: "X", type: "number", default: 0 },
+    { key: "y", label: "Y", type: "number", default: 0 },
+  ] },
+  speed: { name: "速度", fields: [{ key: "value", label: "速度", type: "number", default: 180 }] },
+};
+
+export function NewComponent({ busy, onClose, onSave }: MaterialFormProps) {
+  const [name, setName] = useState("");
+  const [template, setTemplate] = useState("blank");
+  return <Modal title="新建组件" onClose={onClose}>
+    <form className="form-stack" onSubmit={(event) => {
+      event.preventDefault();
+      const title = name.trim();
+      if (!title) return;
+      const id = createMaterialId("component", title);
+      const content = writeMaterial({ schemaVersion: 1, id, type: "component", scope: "user", title, description: "", fields: componentTemplates[template]!.fields }, `\n# ${title}\n`);
+      void onSave(`specs/components/${id}.md`, content, "absent").then((ok) => { if (ok) onClose(); });
+    }}>
+      <label>组件模板<select aria-label="组件模板" value={template} onChange={(event) => {
+        const value = event.target.value;
+        setTemplate(value);
+        setName(componentTemplates[value]!.name);
+      }}>
+        <option value="blank">空白组件</option>
+        <option value="health">生命值</option>
+        <option value="position">坐标</option>
+        <option value="speed">速度</option>
+      </select></label>
+      <label>名称<input required value={name} onChange={(event) => setName(event.target.value)} /></label>
+      <p className="subtle">创建后可以定义组件字段、类型和默认值，再将组件添加到实体。</p>
+      <footer className="form-actions">
+        <button type="button" onClick={onClose}>取消</button>
+        <button className="primary" disabled={busy || !name.trim()}><Save size={16} />创建组件</button>
+      </footer>
+    </form>
+  </Modal>;
+}
+
+function NewMap({ busy, onClose, onSave }: MaterialFormProps) {
   const [id, setId] = useState("");
-  const [type, setType] = useState<keyof typeof folders>("character");
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("## 职责\n\n\n## 行为\n\n\n## 生成边界\n\n");
   const [status, setStatus] = useState("draft");
   const [relations, setRelations] = useState("");
   const [source, setSource] = useState("developer");
   return (
-    <Modal title="新建实体" onClose={onClose}>
+    <Modal title="新建地图" onClose={onClose}>
       <form
         className="form-stack"
         onSubmit={(event) => {
           event.preventDefault();
           const content = `---\n${stringify({
+            schemaVersion: 1,
             id,
-            type,
+            type: "map",
+            title: title.trim() || id,
+            description: "",
             status,
             version: 1,
             relations: relations
@@ -48,8 +121,8 @@ export function NewEntity({
               .filter(Boolean),
             source,
           })}---\n\n# ${title || id}\n\n${body}`;
-          void onStage(
-            `specs/entities/${folders[type]}/${id}.md`,
+          void onSave(
+            `specs/maps/${id}.md`,
             content,
             "absent",
           ).then((ok) => {
@@ -59,27 +132,13 @@ export function NewEntity({
       >
         <div className="form-row">
           <label>
-            实体 ID
+            地图 ID
             <input
               required
               pattern="[a-z][a-z0-9_-]*"
               value={id}
               onChange={(event) => setId(event.target.value)}
             />
-          </label>
-          <label>
-            类型
-            <select
-              aria-label="类型"
-              value={type}
-              onChange={(event) =>
-                setType(event.target.value as keyof typeof folders)
-              }
-            >
-              {Object.keys(folders).map((value) => (
-                <option key={value}>{value}</option>
-              ))}
-            </select>
           </label>
         </div>
         <label>
@@ -133,7 +192,7 @@ export function NewEntity({
           </button>
           <button className="primary" disabled={busy}>
             <Save size={16} />
-            暂存实体
+            创建地图
           </button>
         </footer>
       </form>
@@ -141,13 +200,15 @@ export function NewEntity({
   );
 }
 export function NewSpec({
+  kind = "spec",
   busy,
   onClose,
-  onStage,
+  onSave,
 }: {
+  kind?: "spec" | "setting" | "ui";
   busy: boolean;
   onClose: () => void;
-  onStage: (
+  onSave: (
     path: string,
     content: string,
     version?: string,
@@ -156,14 +217,16 @@ export function NewSpec({
   const [name, setName] = useState("");
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
+  const [parent, setParent] = useState("");
   return (
-    <Modal title="新建规范" onClose={onClose}>
+    <Modal title={kind === "setting" ? "新建设定" : kind === "ui" ? "新建 UI" : "新建规范"} onClose={onClose}>
       <form
         className="form-stack"
         onSubmit={(event) => {
           event.preventDefault();
-          const text = `---\n${stringify({ schemaVersion: 1, id: name, title, description: "" })}---\n\n# ${title}\n\n${content}`;
-          void onStage(`specs/${name}.md`, text, "absent").then((ok) => {
+          const text = `---\n${stringify({ schemaVersion: 1, id: name, title, description: "", ...(kind === "spec" ? {} : { type: kind }), ...(parent.trim() ? { parent: parent.trim() } : {}) })}---\n\n# ${title}\n\n${content}`;
+          const directory = kind === "spec" ? "specs" : kind === "setting" ? "specs/settings" : "specs/ui";
+          void onSave(`${directory}/${name}.md`, text, "absent").then((ok) => {
             if (ok) onClose();
           });
         }}
@@ -185,6 +248,10 @@ export function NewSpec({
             onChange={(event) => setTitle(event.target.value)}
           />
         </label>
+        {kind !== "spec" && <label>
+          父级资料 ID（可选）
+          <input aria-label="父级资料 ID" value={parent} onChange={(event) => setParent(event.target.value)} placeholder="例如 world 或 combat" />
+        </label>}
         <label>
           Markdown 正文
           <textarea
@@ -200,7 +267,7 @@ export function NewSpec({
           </button>
           <button className="primary" disabled={busy}>
             <Save size={16} />
-            暂存规范
+            {kind === "setting" ? "创建设定" : kind === "ui" ? "创建 UI" : "创建规范"}
           </button>
         </footer>
       </form>

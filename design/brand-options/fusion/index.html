@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SpecLoom · 03 + 04 融合稿</title>
+    <style>
+      * { box-sizing: border-box; }
+      :root { font-family: "Segoe UI", "Microsoft YaHei UI", sans-serif; color: #292e30; background: #ecf0ee; color-scheme: light; }
+      body { margin: 0; letter-spacing: 0; }
+      .sheet { max-width: 1440px; margin: 0 auto; padding: 42px 48px 25px; background: #f6f8f7; }
+      header { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; padding-bottom: 28px; }
+      h1 { margin: 0; font-size: 36px; line-height: 1.15; font-weight: 700; }
+      header p { margin: 10px 0 0; font-size: 13px; color: #66736c; }
+      .references { display: flex; align-items: center; gap: 14px; color: #8d9892; font-size: 16px; }
+      .references img { width: 44px; height: 44px; object-fit: contain; }
+      .options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-top: 1px solid #d8e0db; border-left: 1px solid #d8e0db; }
+      article { min-width: 0; background: white; border-right: 1px solid #d8e0db; border-bottom: 1px solid #d8e0db; }
+      .heading { padding: 24px 28px 0; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+      h2 { margin: 0; font-size: 15px; font-weight: 600; }
+      h2 span { margin-right: 12px; font-size: 12px; color: #88978f; }
+      .type { font-size: 10px; color: #9ca8a0; }
+      .display { height: 340px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; }
+      .mark { width: 210px; height: 210px; object-fit: contain; }
+      .wordmark { font-family: "Bahnschrift", "Segoe UI", sans-serif; font-weight: 600; font-size: 34px; line-height: 1; }
+      .tests { display: grid; grid-template-columns: 1fr 1fr; height: 102px; border-top: 1px solid #eef2ef; }
+      .samples { display: flex; align-items: center; justify-content: center; gap: 24px; background: #f7f9f8; }
+      .samples img { width: 32px; height: 32px; object-fit: contain; filter: brightness(0); }
+      .samples .small { width: 20px; height: 20px; }
+      .samples .large { width: 48px; height: 48px; }
+      .dark { background: #272d30; }
+      .dark img { filter: brightness(0) invert(1); }
+      .app-icon { width: 64px; height: 64px; display: grid; place-items: center; border-radius: 8px; background: #f0f4f1; }
+      .app-icon img { width: 55px; height: 55px; filter: none; }
+      .caption { padding: 19px 28px; margin: 0; min-height: 60px; font-size: 12px; line-height: 1.8; color: #77847c; }
+      footer { padding-top: 20px; display: flex; justify-content: space-between; gap: 16px; font-size: 11px; color: #828f87; }
+      @media (max-width: 1000px) { .sheet { padding: 30px 24px 24px; } .type { display: none; } .samples { gap: 16px; } }
+      @media (max-width: 620px) { .sheet { padding: 24px 16px 20px; } .options { grid-template-columns: minmax(0, 1fr); } h1 { font-size: 30px; } .references { display: none; } .heading { padding: 22px 24px 0; } .display { height: 316px; } .mark { width: 190px; height: 190px; } .wordmark { font-size: 32px; } .caption { padding: 17px 24px; } footer { flex-wrap: wrap; } }
+    </style>
+  </head>
+  <body>
+    <main class="sheet">
+      <header><div><h1>SpecLoom</h1><p>03 + 04 / 关卡构造 × 织造伙伴</p></div><div class="references" aria-label="融合来源"><img src="../round-2/03-world-builder.svg" alt="原 03 关卡构造" /><span>+</span><img src="../round-2/04-companion.svg" alt="原 04 织造伙伴" /></div></header>
+      <section class="options" aria-label="融合版 Logo">
+        <article>
+          <div class="heading"><h2><span>A</span>关卡织伴</h2><span class="type">WORLD COMPANION</span></div>
+          <div class="display"><img class="mark" src="01-world-companion.svg" alt="关卡形态与单眼伙伴融合" /><div class="wordmark">SpecLoom</div></div>
+          <div class="tests"><div class="samples"><img class="small" src="01-world-companion.svg" alt="20 像素单色" /><img src="01-world-companion.svg" alt="32 像素单色" /><img class="large" src="01-world-companion.svg" alt="48 像素单色" /></div><div class="samples dark"><img src="01-world-companion.svg" alt="单色反白" /><div class="app-icon"><img src="01-world-companion.svg" alt="彩色应用图标" /></div></div></div>
+          <p class="caption">偏 03：关卡拼块形成身体，单眼与穿线钩带出伙伴性格。</p>
+        </article>
+        <article>
+          <div class="heading"><h2><span>B</span>立体织伴</h2><span class="type">ISOMETRIC LOOM</span></div>
+          <div class="display"><img class="mark" src="02-isometric-companion.svg" alt="立体线轴伙伴与实体模块融合" /><div class="wordmark">SpecLoom</div></div>
+          <div class="tests"><div class="samples"><img class="small" src="02-isometric-companion.svg" alt="20 像素单色" /><img src="02-isometric-companion.svg" alt="32 像素单色" /><img class="large" src="02-isometric-companion.svg" alt="48 像素单色" /></div><div class="samples dark"><img src="02-isometric-companion.svg" alt="单色反白" /><div class="app-icon"><img src="02-isometric-companion.svg" alt="彩色应用图标" /></div></div></div>
+          <p class="caption">偏 04：单眼线轴保留主轮廓，等距厚度和黄色模块呈现游戏实体。</p>
+        </article>
+      </section>
+      <footer><span>SpecLoom / 织布机</span><span>FUSION STUDIES · A / B</span></footer>
+    </main>
+  </body>
+</html>

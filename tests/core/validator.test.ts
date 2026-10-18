@@ -48,6 +48,79 @@ describe("specification validation", () => {
     expect(sources).toContainEqual({ path: "specs/project.md", version: dependencies["specs/project.md"] });
   });
 
+  it("validates setting, map, UI, and custom root specifications", async () => {
+    const { root, store } = await fixture();
+    await put(root, "specs/settings/world.md", md({ schemaVersion: 1, id: "world", type: "setting", title: "World", description: "Island setting" }));
+    await put(root, "specs/maps/island.md", entity("island", { type: "map" }));
+    await put(root, "specs/ui/inventory.md", md({ schemaVersion: 1, id: "inventory", type: "ui", title: "Inventory", description: "Inventory screen" }));
+    await put(root, "specs/combat.md", md({ schemaVersion: 1, id: "combat", title: "Combat", description: "Combat rules" }));
+    const { result, dependencies } = await new Validator(store).validateWithDependencies({ runGodot: false });
+    expect(result.status).toBe("pass");
+    for (const relative of ["specs/settings/world.md", "specs/maps/island.md", "specs/ui/inventory.md", "specs/combat.md"]) {
+      expect(dependencies[relative]).toMatch(/^sha256:/);
+    }
+  });
+
+  it("checks new category types and file paths", async () => {
+    const { root, store } = await fixture();
+    await put(root, "specs/settings/nested/world.md", md({ schemaVersion: 1, id: "world", type: "ui", title: "World", description: "" }));
+    await put(root, "specs/maps/island.md", entity("coast", { type: "character" }));
+    await put(root, "specs/ui/inventory.md", md({ schemaVersion: 1, id: "inventory", type: "setting", title: "Inventory", description: "" }));
+    const result = await new Validator(store).validate({ runGodot: false });
+    expect(result.status).toBe("fail");
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({ path: "specs/settings/nested/world.md", code: "SPEC_TYPE_INVALID" }));
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({ path: "specs/settings/nested/world.md", code: "SPEC_LAYOUT_INVALID" }));
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({ path: "specs/maps/island.md", code: "ENTITY_TYPE_INVALID" }));
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({ path: "specs/maps/island.md", code: "ENTITY_LAYOUT_INVALID" }));
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({ path: "specs/ui/inventory.md", code: "SPEC_TYPE_INVALID" }));
+  });
+
+  it("validates custom root specifications without scanning legacy decisions", async () => {
+    const { root, store } = await fixture();
+    await put(root, "specs/rules.md", "# Missing front matter\n");
+    await put(root, "specs/decisions/legacy.md", "# Legacy decision\n");
+    const result = await new Validator(store).validate({ runGodot: false });
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({ path: "specs/rules.md", code: "FRONTMATTER_MISSING" }));
+    expect(result.diagnostics.some((entry) => entry.path === "specs/decisions/legacy.md")).toBe(false);
+  });
+
+  it("requires standard metadata in custom root specifications", async () => {
+    const { root, store } = await fixture();
+    await put(root, "specs/rules.md", md({ id: "rules" }));
+    const result = await new Validator(store).validate({ runGodot: false });
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({ path: "specs/rules.md", code: "SPEC_FIELD_INVALID", message: expect.stringContaining("schemaVersion") }));
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({ path: "specs/rules.md", code: "SPEC_FIELD_INVALID", message: expect.stringContaining("title") }));
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({ path: "specs/rules.md", code: "SPEC_FIELD_INVALID", message: expect.stringContaining("description") }));
+  });
+
+  it("resolves existing entity relations to maps in the new category", async () => {
+    const { root, store } = await fixture();
+    await put(root, "specs/maps/island.md", entity("island", { type: "map" }));
+    await put(root, "specs/entities/characters/hero.md", entity("hero", { relations: [{ path: "specs/maps/island.md", type: "map" }, "island"] }));
+    const result = await new Validator(store).validate({ runGodot: false });
+    expect(result.status).toBe("pass");
+  });
+
+  it("validates taxonomy parents, inheritance, and composition independently", async () => {
+    const { root, store } = await fixture();
+    await put(root, "specs/entities/items/item.md", entity("item", { type: "item" }));
+    await put(root, "specs/components/damage.md", md({ schemaVersion: 1, id: "damage", type: "component", title: "Damage", description: "", fields: [{ key: "amount", type: "number", default: 10 }] }));
+    await put(root, "specs/entities/items/weapon_base.md", entity("weapon_base", { type: "item", parent: "item", components: [] }));
+    await put(root, "specs/entities/items/pulse_rifle.md", entity("pulse_rifle", { type: "item", parent: "weapon_base", extends: "weapon_base", components: [{ id: "damage", values: { amount: 20 } }] }));
+    const result = await new Validator(store).validate({ runGodot: false });
+    expect(result.status).toBe("pass");
+  });
+
+  it("reports missing semantic links and inheritance or parent cycles", async () => {
+    const { root, store } = await fixture();
+    await put(root, "specs/entities/characters/hero.md", entity("hero", { parent: "villain", extends: "missing", components: ["missing-component"] }));
+    await put(root, "specs/entities/characters/villain.md", entity("villain", { parent: "hero", extends: "hero" }));
+    await put(root, "specs/entities/characters/hero.md", entity("hero", { parent: "villain", extends: "villain", components: ["missing-component"] }));
+    const result = await new Validator(store).validate({ runGodot: false });
+    expect(result.status).toBe("fail");
+    expect(result.diagnostics.map((entry) => entry.code)).toEqual(expect.arrayContaining(["ENTITY_INHERIT_CYCLE", "ENTITY_COMPONENT_NOT_FOUND", "ENTITY_PARENT_CYCLE"]));
+  });
+
   it("reports all missing entity fields and disallows unsupported types", async () => {
     const { root, store } = await fixture();
     await put(root, "specs/entities/characters/hero.md", md({ id: "hero", type: "weapon" }));
@@ -87,10 +160,10 @@ describe("specification validation", () => {
   });
 
   it.each([
-    ["specs/entities/characters/hero.md", "hero", { type: "map" }],
     ["specs/entities/characters/hero.md", "different", {}],
-    ["specs/entities/characters/nested/hero.md", "hero", {}],
-  ])("requires the entity type and ID to match %s", async (relative, id, changes) => {
+    ["specs/entities/hero.md", "different", {}],
+    ["specs/entities/characters/nested/hero.md", "different", {}],
+  ])("requires the entity ID to match the filename in %s", async (relative, id, changes) => {
     const { root, store } = await fixture();
     if (relative !== "specs/entities/characters/hero.md") await rm(path.join(root, "specs/entities/characters/hero.md"));
     await put(root, relative, entity(id, changes));

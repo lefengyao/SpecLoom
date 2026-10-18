@@ -1,0 +1,9 @@
+.chat-avatar { width: 30px; height: 30px; border-radius: 50%; object-fit: cover; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--border); background: var(--bg-surface); }
+.avatar-user { color: var(--accent); background: var(--accent-soft); }
+.avatar-preview { display: flex; flex-direction: row; align-items: center; gap: 12px; }
+.avatar-preview .chat-avatar { width: 44px; height: 44px; border-radius: 50%; }
+.avatar-upload { position: relative; display: inline-flex; align-items: center; padding: 7px 10px; min-height: 32px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg-surface); cursor: pointer; }
+.avatar-upload input { position: absolute; inset: 0; opacity: 0; width: 100%; cursor: pointer; }
+.avatar-upload:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.avatar-upload.is-disabled { opacity: .5; cursor: default; }
+@media (max-width: 620px) { .avatar-setting { flex-wrap: wrap; } .avatar-setting .setting-actions { flex-wrap: wrap; } }

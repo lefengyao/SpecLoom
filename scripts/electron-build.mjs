@@ -4,7 +4,7 @@ import { build } from "esbuild";
 /** @type {import('esbuild').BuildOptions} */
 export const electronBuildOptions = {
   absWorkingDir: fileURLToPath(new URL("../", import.meta.url)),
-  entryPoints: { main: "src/main/main.ts", preload: "src/main/preload.ts" },
+  entryPoints: { main: "src/main/main.ts", preload: "src/main/preload.ts", "chat-attachment-worker": "src/main/chat-attachment-worker.ts" },
   outdir: "dist/main",
   outExtension: { ".js": ".cjs" },
   platform: "node",

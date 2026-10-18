@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160" fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">SpecLoom - Isometric Loom Companion</title>
+  <desc id="desc">An isometric thread spool with a single transparent viewport, lifting a golden game entity on its thread hook.</desc>
+  <defs>
+    <path id="spool-front" d="M34.4 39 76 63 86.4 79 72.5 81V109L86.4 127 76 135 34.4 111 24 91 37.9 89V61L24 43Z"/>
+    <mask id="viewport-cutouts">
+      <rect width="160" height="160" fill="white"/>
+      <path d="M41.3 72 46.5 69 67.3 81 70.8 87 65.6 100 44.8 88 41.3 82Z" fill="black"/>
+      <path d="M41.3 57 69 73M41.3 97 69 113" stroke="black" stroke-width="4.5"/>
+    </mask>
+  </defs>
+  <path d="M99 101 125 86V53" stroke="#252B2E" stroke-width="12" stroke-linejoin="miter"/>
+  <g mask="url(#viewport-cutouts)" stroke-width="0.45" stroke-linejoin="round">
+    <use href="#spool-front" transform="translate(34 -19.6)" fill="#252B2E" stroke="#252B2E"/>
+    <path d="M34.4 39 68.4 19.4 110 43.4 76 63Z" fill="#19AF92" stroke="#19AF92"/>
+    <path d="M76 63 110 43.4 120.4 59.4 86.4 79Z" fill="#252B2E" stroke="#252B2E"/>
+    <path d="M86.4 79 120.4 59.4 106.5 61.4 72.5 81Z" fill="#252B2E" stroke="#252B2E"/>
+    <path d="M72.5 81 106.5 61.4V89.4L72.5 109Z" fill="#252B2E" stroke="#252B2E"/>
+    <path d="M72.5 109 106.5 89.4 120.4 107.4 86.4 127Z" fill="#252B2E" stroke="#252B2E"/>
+    <path d="M86.4 127 120.4 107.4 110 115.4 76 135Z" fill="#252B2E" stroke="#252B2E"/>
+    <path d="M24 43 58 23.4 68.4 19.4 34.4 39Z" fill="#19AF92" stroke="#19AF92"/>
+    <path d="M24 91 58 71.4 71.9 69.4 37.9 89Z" fill="#252B2E" stroke="#252B2E"/>
+    <use href="#spool-front" fill="#19AF92" stroke="#19AF92"/>
+  </g>
+  <path d="M53.4 78 59.5 81.5V91L53.4 87.5Z" fill="#252B2E"/>
+  <path d="M128 16 146 26.4V44.4L128 54.8 110 44.4V26.4Z" fill="#252B2E"/>
+  <path d="M128 16 146 26.4 128 36.8 110 26.4Z" fill="#FFCE50"/>
+</svg>

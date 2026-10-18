@@ -256,8 +256,13 @@ export class SnapshotRegistry {
   }
 
   private async removeAbandonedContainer(record: SnapshotRecord, name: string, version: string, deadline: number, assertHeld: () => void): Promise<void> {
-    const options = { timeoutMs: this.remainingTime(deadline), maxOutputBytes: 64 * 1024 };
+    // Always issue the ownership check once recovery has claimed a record. File
+    // reads and lock acquisition can consume a small budget before Docker is
+    // reached; a one millisecond request still lets the executor report the
+    // timeout and keeps the snapshot retained without attempting removal.
+    const options = { timeoutMs: this.inspectionTime(deadline), maxOutputBytes: 64 * 1024 };
     const inspected = await this.docker(["inspect", "--format", "{{json .Config.Labels}}", name], options);
+    if (performance.now() >= deadline) throw new ProjectError("COMMAND_FAILED", "Snapshot recovery reached its startup time limit; its record is retained");
     if (inspected.exitCode !== 0) {
       if (/No such (?:container|object):/.test(inspected.stderr)) return;
       throw new ProjectError("COMMAND_FAILED", "Docker could not verify an abandoned snapshot container; its snapshot is retained", { container: name, stderr: inspected.stderr });
@@ -278,6 +283,11 @@ export class SnapshotRegistry {
     const remaining = Math.floor(deadline - performance.now());
     if (remaining < 1) throw new ProjectError("COMMAND_FAILED", "Snapshot recovery reached its startup time limit; its record is retained");
     return Math.min(10_000, remaining);
+  }
+
+  private inspectionTime(deadline: number): number {
+    const remaining = Math.floor(deadline - performance.now());
+    return Math.max(1, Math.min(10_000, remaining));
   }
 
   private message(error: unknown): string { return error instanceof Error ? error.message : "Snapshot recovery could not complete; its record is retained"; }

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { DesktopApi, TaskView } from "../shared/desktop-api";
 import type { FileReadResult, SkillSource } from "../shared/contracts";
 import { IconButton, isTerminal } from "./ui";
+import { SessionSkillsView } from "./SessionSkillsView";
 
 interface Skill {
   id: string;
@@ -17,7 +18,20 @@ interface LoadedSkill extends Skill {
   referencedContent: FileReadResult[];
   sources: SkillSource[];
 }
-export function SkillsView({
+export function SkillsView(props: {
+  api: DesktopApi;
+  task: TaskView | undefined;
+  onError: (value: unknown) => void;
+  onNewTask: () => void;
+  projectPath?: string | undefined;
+  onOpenChat?: (() => void) | undefined;
+  skillsApi?: DesktopApi["skills"] | undefined;
+}) {
+  if (props.api.sessions && props.projectPath !== undefined && (!props.task || isTerminal(props.task.status))) return <SessionSkillsView api={props.api.sessions} projectPath={props.projectPath} onError={props.onError} onOpenChat={props.onOpenChat} skillsApi={props.skillsApi ?? props.api.skills} onStateChanged={props.api.onStateChanged} />;
+  return <LegacySkillsView {...props} />;
+}
+
+function LegacySkillsView({
   api,
   task,
   onError,

@@ -14,7 +14,10 @@ import type { ChangeReview } from "../../src/shared/desktop-api";
 import type { FileReadResult } from "../../src/shared/contracts";
 import { fixture, task, version } from "./fixtures";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  window.localStorage.clear();
+});
 describe("renderer async boundaries", () => {
   it("restores saved task conversation and keeps it when sending a continuation", async () => {
     const f = fixture({ project: true, tasks: true });
@@ -33,7 +36,7 @@ describe("renderer async boundaries", () => {
     render(<App />);
     expect(await screen.findByRole("alert")).toHaveTextContent("上次运行的清理未完成");
     expect(screen.getByRole("alert")).toHaveTextContent("private-snapshot");
-    fireEvent.click(screen.getByRole("button", { name: "规范与实体" }));
+    fireEvent.click(screen.getByRole("button", { name: "规范" }));
     expect(screen.getByRole("alert")).toHaveTextContent("Snapshot retained");
   });
   it("opens a new-task action on Skills after completion without querying a finished task", async () => {
@@ -117,6 +120,13 @@ describe("renderer async boundaries", () => {
       { path: "specs/outline.md", version, size: 20 },
       { path: "specs/other.md", version, size: 20 },
     ]);
+    f.api.readDocument.mockImplementation(async (path: string) => ({ path, version, content: path === "specs/outline.md" ? "# 旧文档" : "# 新文档" }));
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "规范" }));
+    fireEvent.click(screen.getByRole("button", { name: "项目树" }));
+    await waitFor(() => expect(f.api.readDocument).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByText("读取资料…")).not.toBeInTheDocument());
+    f.api.readDocument.mockClear();
     let finishOld!: (value: FileReadResult) => void;
     f.api.readDocument.mockImplementation((path: string) =>
       path === "specs/outline.md"
@@ -125,9 +135,8 @@ describe("renderer async boundaries", () => {
           })
         : Promise.resolve({ path, version, content: "# 新文档" }),
     );
-    render(<App />);
-    fireEvent.click(await screen.findByRole("button", { name: "规范与实体" }));
     fireEvent.click(await screen.findByRole("button", { name: "outline.md" }));
+    await waitFor(() => expect(f.api.readDocument).toHaveBeenCalledWith("specs/outline.md", version));
     fireEvent.click(screen.getByRole("button", { name: "other.md" }));
     const editor = await screen.findByLabelText("文档内容");
     expect(editor).toHaveValue("# 新文档");
@@ -143,6 +152,12 @@ describe("renderer async boundaries", () => {
   it("refreshes versions and retries a stale first document read without a task", async () => {
     const f = fixture({ project: true });
     const latest = `sha256:${"b".repeat(64)}` as const;
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "规范" }));
+    fireEvent.click(screen.getByRole("button", { name: "项目树" }));
+    await waitFor(() => expect(f.api.readDocument).toHaveBeenCalledOnce());
+    await waitFor(() => expect(screen.queryByText("读取资料…")).not.toBeInTheDocument());
+    f.api.readDocument.mockClear();
     f.api.readDocument
       .mockRejectedValueOnce(
         Object.assign(new Error("文档版本已变化"), {
@@ -155,19 +170,14 @@ describe("renderer async boundaries", () => {
         version: latest,
         content: "# 当前大纲",
       });
-    render(<App />);
-    fireEvent.click(await screen.findByRole("button", { name: "规范与实体" }));
     fireEvent.click(await screen.findByRole("button", { name: "outline.md" }));
     await screen.findByRole("alert");
     f.api.documents.mockResolvedValue([
       { path: "specs/outline.md", version: latest, size: 30 },
     ]);
     fireEvent.click(screen.getByRole("button", { name: "重新读取" }));
-    expect(await screen.findByLabelText("文档内容")).toHaveValue("# 当前大纲");
-    expect(f.api.readDocument).toHaveBeenLastCalledWith(
-      "specs/outline.md",
-      latest,
-    );
+    await waitFor(() => expect(screen.getByLabelText("文档内容")).toHaveValue("# 当前大纲"));
+    await waitFor(() => expect(f.api.readDocument).toHaveBeenLastCalledWith("specs/outline.md", latest));
     expect(f.api.tool).not.toHaveBeenCalled();
     expect(f.api.createTask).not.toHaveBeenCalled();
   });

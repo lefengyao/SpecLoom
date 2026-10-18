@@ -6,6 +6,10 @@ allowedSources:
   - project.godot
   - specs/project.md
   - specs/entities/**
+  - specs/components/**
+  - specs/settings/**
+  - specs/maps/**
+  - specs/ui/**
   - specs/tasks/**
   - specs/decisions/**
   - specs/prompts/**
@@ -15,7 +19,7 @@ allowedSources:
 
 # Godot 生成流程
 
-1. 读取实体、任务、相关 ADR、生成模板及现有实现，确认 Godot 版本、目标行为、路径授权和验收要求。只实现已批准的功能。
+1. 读取实体及其继承来源、挂载的组件定义、任务、相关 ADR、生成模板及现有实现，确认 Godot 版本、目标行为、路径授权和验收要求。只实现已批准的功能。分类 parent 不自动赋予行为；extends 继承实体设计，components 使用独立字段定义、默认值和实体 values 覆盖，生成时明确组件的数据与职责。
 2. 在生成前明确每个场景的节点树：节点名、类型、父路径、脚本、信号、资源引用；对 Node2D/Node3D 写出变换，对 Control 写出锚点、偏移、容器关系和尺寸约束。
 3. 每批只处理一个明确功能。单个脚本不得超过 300 行，超出时按职责拆分并重新预览范围；不要通过压缩多条语句规避预算。
 4. 每批场景预算最多 48 个节点，独立复杂子场景最多 24 个节点；已有明确更低预算时沿用已有预算。生成前列出节点数量，超出时拆分为可独立验证的子场景，批准后再继续。

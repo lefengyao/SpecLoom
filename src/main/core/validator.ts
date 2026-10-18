@@ -25,6 +25,8 @@ export interface ValidationOptions {
   smokeScene?: string;
   signal?: AbortSignal;
   runGodot?: boolean;
+  /** Manual material saves need specification references, without scanning generated/source directories. */
+  specificationsOnly?: boolean;
 }
 export interface ValidationWithDependencies {
   result: ValidationResult;
@@ -43,12 +45,16 @@ export class Validator {
   async validateWithDependencies(options: ValidationOptions = {}): Promise<ValidationWithDependencies> {
     options.signal?.throwIfAborted();
     const startedAt = new Date().toISOString();
-    const source = await ValidationSource.create(this.store, options.overlay, options.scope);
+    const source = await ValidationSource.create(this.store, options.overlay, options.scope, options.specificationsOnly ? "specs" : undefined);
     const diagnostics: ValidationDiagnostic[] = [];
     const specs: ParsedSpec[] = [];
     const specPaths = source.paths.filter((relative) => {
       const identity = validationPathIdentity(relative);
-      return relative.toLowerCase().endsWith(".md") && (identity.startsWith("specs/entities/") || identity.startsWith("specs/tasks/") || ["specs/project.md", "specs/outline.md"].includes(identity));
+      return relative.toLowerCase().endsWith(".md") && (
+        identity.startsWith("specs/entities/") || identity.startsWith("specs/components/") || identity.startsWith("specs/tasks/")
+        || identity.startsWith("specs/settings/") || identity.startsWith("specs/maps/") || identity.startsWith("specs/ui/")
+        || /^specs\/[^/]+\.md$/i.test(identity)
+      );
     });
     for (const required of ["specs/project.md", "specs/outline.md"]) if (!specPaths.some((relative) => validationPathIdentity(relative) === required)) {
       await source.version(required);

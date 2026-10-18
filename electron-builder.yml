@@ -2,16 +2,31 @@ appId: com.trailblazer.specloom
 productName: SpecLoom
 asar: true
 directories:
-  output: release
+  output: release/${version}
 files:
   - dist/main/**
   - dist/renderer/**
   - skills/**
   - package.json
+extraResources:
+  - from: resources/godot-mcp
+    to: godot-mcp
+  - from: resources/workflows
+    to: workflows
 win:
-  target: nsis
-  signAndEditExecutable: false
+  target:
+    - nsis
+    - zip
+  artifactName: SpecLoom-${version}-Portable-${arch}.${ext}
+  icon: build/icon.ico
+  signExecutable: false
+nsis:
+  artifactName: SpecLoom-${version}-Setup-${arch}.${ext}
+  oneClick: false
+  allowToChangeInstallationDirectory: true
 mac:
   target: dmg
+  icon: build/icon.icns
 linux:
   target: AppImage
+  icon: build/icon.png

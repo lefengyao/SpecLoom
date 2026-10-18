@@ -46,6 +46,17 @@ export interface WorkflowTaskAdapter {
   reject(taskId: string): Promise<void>;
 }
 
+/**
+ * Workflow inputs are usually directories (specs, specs/entities). Project task
+ * scopes match exact paths, so a directory input is widened to a recursive
+ * pattern. File-looking inputs with an extension stay exact.
+ */
+function taskScopePattern(value: string): string {
+  const normalized = value.replace(/\/+$/, "");
+  if (normalized.endsWith("/**") || /\.[a-z0-9]{1,12}$/i.test(normalized)) return normalized;
+  return normalized + "/**";
+}
+
 /** Resolves a run input model id to the profile configured for this project. */
 export type WorkflowProfileResolver = (modelId: string) => ModelProfile | undefined | Promise<ModelProfile | undefined>;
 
@@ -71,8 +82,8 @@ export class ProjectCoreWorkflowTaskAdapter implements WorkflowTaskAdapter {
     const view = await this.core.createTask({
       id,
       title: scope.title,
-      readPaths: [...scope.readPaths],
-      writePaths: [...scope.writePaths],
+      readPaths: scope.readPaths.map(taskScopePattern),
+      writePaths: scope.writePaths.map(taskScopePattern),
       allowDelete: false,
       mode: "manual",
     });

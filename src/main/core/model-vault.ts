@@ -22,6 +22,7 @@ const VaultSchema = z.object({ version: z.literal(1), records: z.array(RecordSch
 type VaultRecord = z.infer<typeof RecordSchema>;
 const MAX_VAULT_BYTES = 1_048_576;
 const SealedCredentialSchema = z.object({ endpoint: z.string(), secret: z.string().min(1).max(8_192) }).strict();
+const CREDENTIAL_RECONFIGURATION_MESSAGE = "供应商密钥已失效，请进入“供应商 → 编辑供应商”重新输入 API 密钥后保存。";
 
 export class ModelVault {
   readonly path: string;
@@ -79,7 +80,7 @@ export class ModelVault {
     this.assertEncryption();
     let decrypted: z.infer<typeof SealedCredentialSchema>;
     try { decrypted = SealedCredentialSchema.parse(JSON.parse(this.encryption.decrypt(Buffer.from(record.credential.ciphertext, "base64")))); }
-    catch { throw new ProjectError("BACKEND_UNAVAILABLE", "Secure credential decryption failed."); }
+    catch { throw new ProjectError("BACKEND_UNAVAILABLE", CREDENTIAL_RECONFIGURATION_MESSAGE); }
     if (decrypted.endpoint !== endpoint) throw new ProjectError("APPROVAL_REQUIRED", "The encrypted credential belongs to another endpoint.");
     return decrypted.secret;
   }

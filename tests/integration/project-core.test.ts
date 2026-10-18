@@ -25,6 +25,15 @@ async function read(core: ProjectCore, relative: string) {
 }
 
 describe("ProjectCore shared project authority", () => {
+  it("exposes the real project tree, including empty specification folders", async () => {
+    const { core } = await fixture();
+    const entries = await core.projectTree();
+    expect(entries).toContainEqual({ path: "project.godot", kind: "file" });
+    expect(entries).toContainEqual({ path: "specs/entities/maps", kind: "directory" });
+    expect(entries).toContainEqual({ path: "specs/project.md", kind: "file" });
+    expect(entries).not.toContainEqual(expect.objectContaining({ path: ".specloom/project.yaml" }));
+  });
+
   it("reports retained startup snapshots while allowing project work", async () => {
     const issue = { code: "COMMAND_FAILED", message: "Snapshot retained after container cleanup failed", path: "private-snapshot" };
     const recover = vi.spyOn(SnapshotRunner.prototype, "recoverAbandoned").mockResolvedValue([issue]);
@@ -150,6 +159,20 @@ describe("ProjectCore shared project authority", () => {
     expect((await reopened.previewChanges("task")).changeSet.digest).toBe(review.changeSet.digest);
     expect((await reopened.previewChanges("task")).validation?.status).toBe("pass");
     await expect(reopened.approveChanges("task", review.changeSet.digest)).rejects.toMatchObject({ code: "APPROVAL_REQUIRED" });
+  });
+
+  it("removes a completed task history record from memory and disk", async () => {
+    const { core, root, taskId } = await fixture();
+    await core.rejectChanges(taskId);
+    const history = path.join(root, ".specloom/history/tasks");
+    expect((await readdir(history)).length).toBe(1);
+
+    await core.removeTask(taskId);
+
+    expect(core.listTasks()).toEqual([]);
+    expect(await readdir(history)).toEqual([]);
+    const reopened = await ProjectCore.open(root);
+    expect(reopened.listTasks()).toEqual([]);
   });
 
   it("invalidates validation when the source inventory gains a new file", async () => {

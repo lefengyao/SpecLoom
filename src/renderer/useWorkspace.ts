@@ -4,39 +4,89 @@ import type {
   DesktopApi,
   WorkspaceState,
 } from "../shared/desktop-api";
-import type { FileVersion, TaskScopeSpec } from "../shared/contracts";
+import type { FileVersion, ModelReference, TaskScopeSpec } from "../shared/contracts";
+import { defaultPreferences, type Preferences } from "../shared/preferences";
+import { playCompletionChime } from "./sound";
 import type { ChatMessage } from "./WorkspaceView";
 import { describeError, isTerminal, type UiError } from "./ui";
 
+/** Refresh retained panel lists once per burst without touching their local form state. */
+export function useStateChangeRefresh(subscribe: DesktopApi["onStateChanged"], refresh: () => Promise<unknown>) {
+  useEffect(() => {
+    let alive = true; let queued = false;
+    const unsubscribe = subscribe?.(() => {
+      if (queued) return;
+      queued = true;
+      queueMicrotask(() => {
+        queued = false;
+        if (alive) void refresh();
+      });
+    });
+    return () => { alive = false; unsubscribe?.(); };
+  }, [subscribe, refresh]);
+}
+
 export function useWorkspace(api?: DesktopApi) {
-  const [state, setState] = useState<WorkspaceState>({ tasks: [], models: [] });
-  const [selectedId, setSelectedId] = useState("");
+  const [state, setState] = useState<WorkspaceState>({
+    tasks: [],
+    models: [],
+    recent: [],
+    preferences: defaultPreferences,
+  });
+  const [selectedId, updateSelectedId] = useState("");
+  const taskSelectionSeq = useRef(0);
+  const setSelectedId = useCallback((id: string) => { taskSelectionSeq.current++; updateSelectedId(id); }, []);
+  const projectSelectionSeq = useRef(0);
+  const refreshSeq = useRef(0);
+  const selectingProject = useRef(false);
+  const deferredRefresh = useRef(false);
   const currentTask = useRef(selectedId);
   currentTask.current = selectedId;
+  /** Monotonic id for preference patches, so stale responses can be discarded. */
+  const preferencesSeq = useRef(0);
   const [review, setReview] = useState<ChangeReview>();
   const [error, setError] = useState<UiError>();
   const [busy, setBusy] = useState(false);
   const [pendingTasks, setPendingTasks] = useState<string[]>([]);
   const [chats, setChats] = useState<Record<string, ChatMessage[]>>({});
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatRunning, setChatRunning] = useState(false);
   const selected = state.tasks.find((task) => task.id === selectedId);
   const running =
-    !!selected && (selected.running || pendingTasks.includes(selected.id));
+    chatRunning || (!!selected && (selected.running || pendingTasks.includes(selected.id)));
   const reportError = useCallback((value: unknown) => {
     setError(describeError(value));
   }, []);
   const refresh = useCallback(async () => {
     if (!api) return;
+    if (selectingProject.current) { deferredRefresh.current = true; return; }
+    const request = ++refreshSeq.current;
+    const projectSelection = projectSelectionSeq.current;
+    const taskSelection = taskSelectionSeq.current;
     const next = await api.state();
+    if (request !== refreshSeq.current || projectSelection !== projectSelectionSeq.current || selectingProject.current) return;
     setState(next);
-    setSelectedId((current) =>
+    if (taskSelection !== taskSelectionSeq.current) return;
+    updateSelectedId((current) =>
+      api.sessions && !current ? "" :
       next.tasks.some((task) => task.id === current)
         ? current
         : (next.tasks.at(-1)?.id ?? ""),
     );
   }, [api]);
   useEffect(() => {
+    let alive = true; let queued = false;
+    const unsubscribe = api?.onStateChanged?.(() => {
+      if (queued) return;
+      queued = true;
+      queueMicrotask(() => {
+        queued = false;
+        if (alive) void refresh().catch(reportError);
+      });
+    });
     void refresh().catch(reportError);
-  }, [refresh, reportError]);
+    return () => { alive = false; refreshSeq.current++; unsubscribe?.(); };
+  }, [api, refresh, reportError]);
   useEffect(() => {
     if (!api || !selectedId) {
       setReview(undefined);
@@ -90,11 +140,51 @@ export function useWorkspace(api?: DesktopApi) {
   }
   async function openProject(example = false) {
     if (!api) return;
-    await perform(async () => {
-      setState(example ? await api.createExample() : await api.selectProject());
+    await selectProject(() => example ? api.createExample() : api.selectProject());
+  }
+  async function selectProject(action: () => Promise<WorkspaceState>) {
+    const selection = ++projectSelectionSeq.current;
+    refreshSeq.current++;
+    selectingProject.current = true;
+    try { await perform(async () => {
+      const next = await action();
+      if (selection !== projectSelectionSeq.current) return;
+      refreshSeq.current++;
+      setState(next);
       setSelectedId("");
       setReview(undefined);
       setChats({});
+      setChatMessages([]);
+    }); } finally {
+      if (selection === projectSelectionSeq.current) {
+        selectingProject.current = false;
+        if (deferredRefresh.current) { deferredRefresh.current = false; await refresh().catch(reportError); }
+      }
+    }
+  }
+  /** Reopens a project from the home list without a directory picker. */
+  async function openRecent(path: string) {
+    if (!api) return;
+    await selectProject(() => api.openProject(path));
+  }
+  async function forgetRecent(path: string) {
+    if (!api) return;
+    const selection = projectSelectionSeq.current;
+    await perform(async () => {
+      const next = await api.forgetProject(path);
+      if (selection === projectSelectionSeq.current && !selectingProject.current) { refreshSeq.current++; setState(next); }
+    });
+  }
+  async function updatePreferences(patch: Partial<Preferences>) {
+    if (!api) return;
+    const seq = ++preferencesSeq.current;
+    const selection = projectSelectionSeq.current;
+    await perform(async () => {
+      const next = await api.updatePreferences(patch);
+      // Two edits made in quick succession can resolve out of order. Applying an
+      // older response would visibly revert a setting the user just changed, so
+      // only the newest one is allowed to touch the UI.
+      if (seq === preferencesSeq.current && selection === projectSelectionSeq.current && !selectingProject.current) { refreshSeq.current++; setState(next); }
     });
   }
   async function createTask(scope: Omit<TaskScopeSpec, "id">) {
@@ -113,7 +203,7 @@ export function useWorkspace(api?: DesktopApi) {
       await refresh();
     });
   }
-  async function send(modelId: string, prompt: string) {
+  async function send(modelId: string | ModelReference, prompt: string) {
     if (!api || !selected || running || isTerminal(selected.status)) return;
     const id = selected.id;
     setError(undefined);
@@ -131,6 +221,7 @@ export function useWorkspace(api?: DesktopApi) {
           { role: "assistant", content: result.summary },
         ],
       }));
+      playCompletionChime();
     } catch (value) {
       reportError(value);
     } finally {
@@ -141,6 +232,22 @@ export function useWorkspace(api?: DesktopApi) {
       } catch (value) {
         reportError(value);
       }
+    }
+  }
+  async function sendConversation(modelId: string | ModelReference, prompt: string) {
+    if (!api?.chat || chatRunning) return;
+    const previousMessages = chatMessages;
+    setError(undefined);
+    setChatRunning(true);
+    setChatMessages((current) => [...current, { role: "user", content: prompt }]);
+    try {
+      const result = await api.chat(modelId, prompt, previousMessages);
+      setChatMessages((current) => [...current, { role: "assistant", content: result.summary }]);
+      playCompletionChime();
+    } catch (value) {
+      reportError(value);
+    } finally {
+      setChatRunning(false);
     }
   }
   async function reviewAction(action: "approve" | "reject" | "validate") {
@@ -158,50 +265,6 @@ export function useWorkspace(api?: DesktopApi) {
       if (action === "validate") await api.validate(selectedId);
       await inspect(selectedId);
       await refresh();
-    });
-  }
-  async function stageDocument(
-    path: string,
-    content: string,
-    loadedVersion?: string,
-  ) {
-    if (!api) return undefined;
-    return perform(async () => {
-      const task = await api.createTask({
-        title: `编辑 ${path}`,
-        readPaths: [path],
-        writePaths: [path],
-        allowDelete: false,
-        mode: "manual",
-      });
-      await refresh();
-      setSelectedId(task.id);
-      const [version] = (await api.tool(task.id, "files.list_versions", {
-        paths: [path],
-      })) as FileVersion[];
-      if (!version)
-        throw Object.assign(new Error("未获取文件版本"), {
-          code: "FILE_NOT_FOUND",
-          details: { path },
-        });
-      if (loadedVersion && loadedVersion !== version.version)
-        throw Object.assign(new Error("文档已变化，请重新读取后再暂存"), {
-          code: "VERSION_CONFLICT",
-          details: { path },
-        });
-      if (version.exists)
-        await api.tool(task.id, "files.read", {
-          path,
-          expectedVersion: version.version,
-        });
-      await api.tool(task.id, "files.write", {
-        path,
-        content,
-        expectedVersion: version.version,
-      });
-      await inspect(task.id);
-      await refresh();
-      return task;
     });
   }
   async function reread() {
@@ -242,18 +305,25 @@ export function useWorkspace(api?: DesktopApi) {
     busy,
     running,
     chats,
+    chatMessages,
+    chatRunning,
     pendingTasks,
     refresh,
     perform,
     openProject,
+    openRecent,
+    forgetRecent,
+    updatePreferences,
     createTask,
     refreshReview,
     send,
+    sendConversation,
     reviewAction,
-    stageDocument,
     reread,
     cancel: () => {
-      if (api && selected) void api.cancel(selected.id).catch(reportError);
+      if (!api) return;
+      if (selected) void api.cancel(selected.id).catch(reportError);
+      else if (api.cancelChat) void api.cancelChat().catch(reportError);
     },
   };
 }

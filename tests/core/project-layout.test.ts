@@ -27,9 +27,13 @@ describe("Godot project layout", () => {
     expect(isReservedProjectPath("./.specloom/project.yaml")).toBe(true);
   });
 
-  it("rejects non-Godot roots and project.godot directories before writing", async () => {
+  it("opens a generic workspace without creating project.godot", async () => {
     const root = await fixture(false);
-    await expect(new ProjectLayout().initialize(root)).rejects.toMatchObject({ code: "INVALID_PROJECT" });
+    expect(await new ProjectLayout().initialize(root)).toMatchObject({ engine: "generic", name: path.basename(root) });
+    await expect(lstat(path.join(root, "project.godot"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+  it("rejects project.godot directories before writing", async () => {
+    const root = await fixture(false);
     await mkdir(path.join(root, "project.godot"));
     await expect(new ProjectLayout().initialize(root)).rejects.toMatchObject({ code: "INVALID_PROJECT" });
     await expect(lstat(path.join(root, "specs"))).rejects.toMatchObject({ code: "ENOENT" });
@@ -39,7 +43,7 @@ describe("Godot project layout", () => {
     const root = await fixture();
     const metadata = await new ProjectLayout().initialize(root);
     expect(metadata).toMatchObject({ path: root, name: "Test Game", description: "A test adventure", schemaVersion: 1, godot: { configVersion: 5, mainScene: "res://main.tscn", features: ["4.5", "GL Compatibility"] } });
-    for (const relative of ["specs/entities/characters", "specs/entities/maps", "specs/entities/systems", "specs/entities/items", "specs/entities/events", "specs/tasks", "specs/decisions", "specs/prompts", ".specloom/history/changes", ".specloom/history/validations", ".specloom/skills"]) {
+    for (const relative of ["specs/entities/characters", "specs/entities/maps", "specs/entities/systems", "specs/entities/items", "specs/entities/events", "specs/components", "specs/settings", "specs/maps", "specs/ui", "specs/tasks", "specs/decisions", "specs/prompts", ".specloom/history/changes", ".specloom/history/validations", ".specloom/skills"]) {
       expect((await lstat(path.join(root, relative))).isDirectory()).toBe(true);
     }
     const markdown = await readFile(path.join(root, "specs/project.md"), "utf8");

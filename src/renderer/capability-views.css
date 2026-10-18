@@ -1,0 +1,25 @@
+.capability-browser { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 14px; margin-block: 16px; }
+.capability-entry { min-width: 0; border: 1px solid var(--border); border-radius: 10px; padding: 16px; background: var(--bg-surface); overflow-wrap: anywhere; }
+.capability-entry h2 { font-size: 15px; }
+.capability-entry > p { color: var(--muted); margin-block: 9px; }
+.skill-use-request { display: flex; align-items: center; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+.skill-use-request > code { flex: 1; font-size: 11px; }
+.project-mcp-inventory { padding-block: 18px; margin-bottom: 18px; border-bottom: 1px solid var(--border); }
+.godot-mcp-card { display: flex; align-items: flex-start; gap: 14px; margin-block: 14px 22px; padding: 16px; border: 1px solid var(--accent-border); border-radius: 12px; background: var(--accent-soft); }
+.godot-mcp-icon { display: grid; flex: 0 0 42px; width: 42px; height: 42px; place-items: center; border: 1px solid var(--accent-border); border-radius: 10px; color: var(--accent); background: var(--bg-surface); }
+.godot-mcp-content { min-width: 0; flex: 1; }
+.godot-mcp-content > header { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+.godot-mcp-content h3 { margin: 0; font-size: 15px; }
+.godot-mcp-content > p { margin: 8px 0; color: var(--muted); }
+.godot-mcp-content > small { color: var(--muted); }
+.godot-mcp-content .mcp-connected { color: var(--accent-text); }
+.godot-mcp-content .mcp-error, .godot-mcp-issue { color: var(--danger-text) !important; }
+.project-mcp-subheading { margin: 18px 0 8px; font-size: 15px; }
+.mcp-category-tabs { display: flex; align-items: center; gap: 5px; overflow-x: auto; margin: 4px 0 18px; border-bottom: 1px solid var(--border); }
+.mcp-category-tabs button { position: relative; display: inline-flex; flex: 0 0 auto; align-items: center; gap: 8px; min-height: 44px; padding: 9px 13px; border: 0; border-radius: 0; background: transparent; color: var(--muted); font-size: 13px; white-space: nowrap; }
+.mcp-category-tabs button:hover { color: var(--text); background: var(--accent-soft); }
+.mcp-category-tabs button[aria-selected="true"] { color: var(--accent-text); font-weight: 650; }
+.mcp-category-tabs button[aria-selected="true"]::after { position: absolute; right: 12px; bottom: -1px; left: 12px; height: 2px; background: var(--accent); content: ""; }
+.mcp-category-tabs button:focus-visible { outline: 2px solid var(--ring); outline-offset: -3px; }
+.mcp-category-panel[hidden] { display: none; }
+.mcp-connection-panel { padding-top: 10px; }

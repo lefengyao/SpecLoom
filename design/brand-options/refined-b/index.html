@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SpecLoom · B 优化稿</title>
+    <style>
+      * { box-sizing: border-box; }
+      :root { font-family: "Segoe UI", "Microsoft YaHei UI", sans-serif; color: #2c3335; background: #edf1ee; color-scheme: light; }
+      body { margin: 0; letter-spacing: 0; }
+      .sheet { max-width: 1440px; margin: 0 auto; padding: 38px 48px 24px; background: #f6f8f7; }
+      header { display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; padding-bottom: 26px; }
+      h1 { margin: 0; font-size: 34px; font-weight: 700; line-height: 1.2; }
+      header p { margin: 8px 0 0; font-size: 13px; color: #728077; }
+      .edition { font-size: 11px; color: #8a978e; }
+      .study { display: grid; grid-template-columns: 280px minmax(0, 1fr); border: 1px solid #dce4df; background: white; }
+      .previous { min-width: 0; border-right: 1px solid #e4eae6; padding: 24px; background: #f5f7f6; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; }
+      .previous img { width: 134px; height: 134px; object-fit: contain; }
+      .previous p { margin: 0; font-size: 12px; color: #87958c; }
+      .refined { height: 378px; display: flex; align-items: center; justify-content: center; gap: 46px; padding: 32px; min-width: 0; }
+      .refined > img { width: 272px; height: 272px; object-fit: contain; }
+      .wordmark { font-family: "Bahnschrift", "Segoe UI", sans-serif; font-size: 42px; font-weight: 600; white-space: nowrap; }
+      .wordmark p { font-family: "Segoe UI", "Microsoft YaHei UI", sans-serif; margin: 12px 0 0; font-size: 12px; font-weight: 400; color: #8a988e; }
+      .examples { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-left: 1px solid #dce4df; border-bottom: 1px solid #dce4df; }
+      .example { min-width: 0; padding: 22px 28px 25px; border-right: 1px solid #dce4df; background: white; }
+      h2 { margin: 0 0 20px; font-size: 12px; font-weight: 500; color: #7a8980; }
+      .sizes { height: 80px; display: flex; align-items: center; justify-content: center; gap: 28px; }
+      .sizes img { width: 48px; height: 48px; object-fit: contain; filter: brightness(0); }
+      .sizes .tiny { width: 16px; height: 16px; }
+      .sizes .small { width: 24px; height: 24px; }
+      .sizes .medium { width: 32px; height: 32px; }
+      .dark { background: #273033; border-color: #273033; }
+      .dark h2 { color: #98aaa4; }
+      .dark .sizes img { filter: brightness(0) invert(1); }
+      .dark .sizes .large { width: 64px; height: 64px; }
+      .app-icons { height: 80px; display: flex; justify-content: center; align-items: center; gap: 28px; }
+      .app-icon { width: 64px; height: 64px; display: grid; place-items: center; border-radius: 8px; background: #eef5f1; }
+      .app-icon img { width: 58px; height: 58px; object-fit: contain; }
+      .app-icon.secondary { width: 48px; height: 48px; background: #d8ece4; }
+      .app-icon.secondary img { width: 42px; height: 42px; }
+      .palettes { display: flex; gap: 22px; padding: 20px 0 0; font-size: 10px; color: #839188; }
+      .palette { display: flex; align-items: center; gap: 8px; }
+      .swatch { width: 10px; height: 10px; display: inline-block; }
+      footer { display: flex; justify-content: space-between; gap: 14px; padding-top: 16px; font-size: 11px; color: #87968c; }
+      @media (max-width: 1200px) { .study { grid-template-columns: 220px minmax(0, 1fr); } .refined { gap: 22px; } .refined > img { width: 230px; height: 230px; } .wordmark { font-size: 36px; } }
+      @media (max-width: 900px) { .sheet { padding: 28px 24px 22px; } .study { grid-template-columns: 160px minmax(0, 1fr); } .previous { padding: 16px; } .previous img { width: 108px; height: 108px; } .refined { flex-direction: column; gap: 14px; height: 368px; padding: 20px; } .refined > img { width: 210px; height: 210px; } .wordmark { font-size: 32px; } .wordmark p { display: none; } .example { padding: 20px 16px; } .sizes { gap: 14px; } .sizes img { width: 40px; height: 40px; } .app-icons { gap: 12px; } }
+      @media (max-width: 600px) { .sheet { padding: 24px 16px 20px; } header { gap: 10px; } h1 { font-size: 30px; } .edition { display: none; } .study { grid-template-columns: minmax(0, 1fr); } .previous { flex-direction: row; gap: 16px; padding: 14px 20px; border-right: 0; border-bottom: 1px solid #e4eae6; } .previous img { width: 64px; height: 64px; } .refined { height: 368px; } .refined > img { width: 238px; height: 238px; } .examples { grid-template-columns: minmax(0, 1fr); } .sizes { gap: 30px; height: 64px; } .example { padding: 20px 24px; } h2 { margin-bottom: 12px; } .palettes { flex-wrap: wrap; gap: 14px; } footer { flex-wrap: wrap; } }
+    </style>
+  </head>
+  <body>
+    <main class="sheet">
+      <header><div><h1>SpecLoom</h1><p>B / 立体织伴 · 优化稿</p></div><div class="edition">REFINEMENT 01</div></header>
+      <section class="study" aria-label="优化前后">
+        <div class="previous"><img src="../fusion/02-isometric-companion.svg" alt="原 B" /><p>原 B</p></div>
+        <div class="refined"><img src="specloom.svg" alt="优化后的立体织伴" /><div class="wordmark">SpecLoom<p>立体织伴</p></div></div>
+      </section>
+      <section class="examples" aria-label="小尺寸与应用图标预览">
+        <div class="example"><h2>单色 / 16 · 24 · 32 · 48 px</h2><div class="sizes"><img class="tiny" src="specloom-small.svg" alt="16 像素小尺寸版" /><img class="small" src="specloom-small.svg" alt="24 像素小尺寸版" /><img class="medium" src="specloom.svg" alt="32 像素标准版" /><img src="specloom.svg" alt="48 像素标准版" /></div></div>
+        <div class="example dark"><h2>深色背景</h2><div class="sizes"><img class="small" src="specloom-small.svg" alt="24 像素反白" /><img src="specloom.svg" alt="48 像素反白" /><img class="large" src="specloom.svg" alt="64 像素反白" /></div></div>
+        <div class="example"><h2>应用图标</h2><div class="app-icons"><div class="app-icon"><img src="specloom.svg" alt="64 像素应用图标" /></div><div class="app-icon secondary"><img src="specloom-small.svg" alt="48 像素应用图标" /></div></div></div>
+      </section>
+      <div class="palettes"><span class="palette"><i class="swatch" style="background:#12ad90"></i>#12AD90</span><span class="palette"><i class="swatch" style="background:#39c9a8"></i>#39C9A8</span><span class="palette"><i class="swatch" style="background:#263238"></i>#263238</span><span class="palette"><i class="swatch" style="background:#ffce50"></i>#FFCE50</span></div>
+      <footer><span>SpecLoom / 织布机</span><span>LOOM COMPANION · REFINED B</span></footer>
+    </main>
+  </body>
+</html>

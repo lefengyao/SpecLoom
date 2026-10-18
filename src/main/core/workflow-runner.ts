@@ -101,6 +101,11 @@ export interface WorkflowRunnerOptions {
   now?: () => Date;
   /** Injectable run id generator; ids must be usable as file names. */
   idFactory?: () => string;
+  /**
+   * Called with a clone of the durable record after each persist succeeds.
+   * createRun() does not persist, so it never reports an update.
+   */
+  onUpdate?: (run: WorkflowRun) => void;
 }
 
 /** Hard cap for a persisted node output. */
@@ -326,6 +331,7 @@ export class WorkflowRunner {
   private readonly files: FileStore;
   private readonly now: () => Date;
   private readonly idFactory: () => string;
+  private readonly onUpdate: ((run: WorkflowRun) => void) | undefined;
   /** Runs created by this instance or hydrated from disk. */
   private readonly runs = new Map<string, WorkflowRun>();
   /** The single run allowed to own a task/agent in this runner instance. */
@@ -349,6 +355,7 @@ export class WorkflowRunner {
     this.files = options.files ?? new FileStore(this.root);
     this.now = options.now ?? (() => new Date());
     this.idFactory = options.idFactory ?? (() => "run-" + randomUUID());
+    this.onUpdate = options.onUpdate;
   }
 
   /**
@@ -812,7 +819,10 @@ export class WorkflowRunner {
     if (signal.aborted) return;
     run.validation = result;
     state.output = boundOutput("validation: " + result.status);
-    if (result.status !== "pass") {
+    // A skipped check means the environment cannot run it (for example Docker
+    // is unavailable). It is not a code failure; the review still shows the
+    // skipped diagnostics and a human decides whether to approve.
+    if (result.status === "fail") {
       throw new ProjectError("VALIDATION_FAILED", validationFailureMessage(result));
     }
   }
@@ -1261,6 +1271,13 @@ export class WorkflowRunner {
       await this.writeAtomic(target, content);
       // Publish only once the record is on disk: the live run may already be newer.
       this.durableRuns.set(run.runId, durable);
+      // Observers only ever see durable state, and an observer must never change
+      // the outcome of a transition that already reached the disk.
+      try {
+        this.onUpdate?.(this.view(durable));
+      } catch {
+        // A throwing listener cannot fail the durable write it observes.
+      }
     };
     const write = previous.then(commit, commit);
     this.persistChains.set(run.runId, write.catch(() => undefined));

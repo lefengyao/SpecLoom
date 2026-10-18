@@ -7,8 +7,10 @@ describe("ToolCatalog", () => {
   it("publishes bounded provider schemas with reversible canonical names", () => {
     const catalog = new ToolCatalog();
     const tools = catalog.providerTools();
-    expect(tools).toHaveLength(10);
+    expect(tools).toHaveLength(18);
     expect(tools.map((tool) => tool.function.name)).toContain("files_list_versions");
+    expect(tools.map((tool) => tool.function.name)).toContain("get_diagnostics");
+    expect(tools.map((tool) => tool.function.name)).toContain("get_game_node_properties");
     for (const tool of tools) {
       expect(tool.function.name).toMatch(/^[a-zA-Z0-9_-]+$/);
       expect(tool.function.parameters).toMatchObject({ type: "object", additionalProperties: false });
@@ -17,6 +19,7 @@ describe("ToolCatalog", () => {
     expect(read.function.parameters.required).toEqual(["path", "expectedVersion"]);
     expect(catalog.parseCall("files_read", JSON.stringify({ path: "specs/game.md", expectedVersion: version })))
       .toEqual({ name: "files.read", input: { path: "specs/game.md", expectedVersion: version } });
+    expect(catalog.parseCall("get_diagnostics", "{}")).toEqual({ name: "get_diagnostics", input: {} });
   });
 
   it("rejects unknown aliases, missing versions, malformed JSON and extra arguments", () => {

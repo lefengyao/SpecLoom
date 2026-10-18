@@ -4,6 +4,7 @@ import type { AddressInfo } from "node:net";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
+import { version } from "../../package.json";
 import type { McpConnection } from "../shared/desktop-api";
 import { serializeError } from "./core/errors";
 import type { ProjectCore } from "./core/project-core";
@@ -15,6 +16,9 @@ export async function startMcpServer(core: () => ProjectCore): Promise<LocalMcpS
   const token = randomBytes(32).toString("hex");
   let port = 0;
   let active = 0;
+  let closing = false;
+  let closePromise: Promise<void> | undefined;
+  const pendingTools = new Set<Promise<unknown>>();
   const connections = new Set<StreamableHTTPServerTransport>();
   const http = createServer((request, response) => {
     void handle(request, response).catch(() => { if (!response.headersSent) respond(response, 500, "Request failed"); else response.destroy(); });
@@ -24,6 +28,7 @@ export async function startMcpServer(core: () => ProjectCore): Promise<LocalMcpS
   http.maxHeadersCount = 64;
 
   async function handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    if (closing) { respond(response, 503, "Server is closing"); return; }
     const host = request.headers.host;
     const allowedHosts = [`127.0.0.1:${port}`, `localhost:${port}`];
     if (!host || !allowedHosts.includes(host)) { respond(response, 403, "Invalid Host"); return; }
@@ -52,14 +57,25 @@ export async function startMcpServer(core: () => ProjectCore): Promise<LocalMcpS
       let body: unknown;
       try { body = JSON.parse(Buffer.concat(chunks).toString("utf8")); }
       catch { respond(response, 400, "Invalid JSON"); return; }
-      server = new McpServer({ name: "specloom", version: "0.1.0" });
+      if (closing) { respond(response, 503, "Server is closing"); return; }
+      server = new McpServer({ name: "specloom", version });
       for (const tool of toolCatalog.listTools()) {
         const schema = tool.schema as z.ZodObject;
         server.registerTool(tool.name, { description: tool.description, inputSchema: schema.extend({ taskId: z.string().min(1).max(256) }) }, async (arguments_, extra) => {
           const { taskId, ...input } = arguments_ as { taskId: string } & Record<string, unknown>;
           try {
-            const result = await core().executeTool(taskId, tool.name, input, extra.signal);
-            return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+            if (closing) throw new Error("Server is closing");
+            const operation = core().executeTool(taskId, tool.name, input, extra.signal);
+            pendingTools.add(operation);
+            try {
+              const result = await operation;
+              const image = mcpImageResult(result);
+              if (image) return { content: [
+                { type: "image" as const, data: image.base64, mimeType: "image/png" },
+                { type: "text" as const, text: JSON.stringify({ mimeType: "image/png", width: image.width, height: image.height }) },
+              ] };
+              return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+            } finally { pendingTools.delete(operation); }
           } catch (error) { return { isError: true, content: [{ type: "text" as const, text: JSON.stringify(serializeError(error)) }] }; }
         });
       }
@@ -79,10 +95,16 @@ export async function startMcpServer(core: () => ProjectCore): Promise<LocalMcpS
   port = (http.address() as AddressInfo).port;
   return {
     url: `http://127.0.0.1:${port}/mcp`, token,
-    close: async () => {
-      await Promise.all([...connections].map((connection) => connection.close()));
-      http.closeAllConnections();
-      await new Promise<void>((resolve, reject) => http.close((error) => error ? reject(error) : resolve()));
+    close: () => {
+      closing = true;
+      closePromise ??= (async () => {
+        const stopped = new Promise<void>((resolve, reject) => http.close((error) => error ? reject(error) : resolve()));
+        const disconnected = Promise.allSettled([...connections].map((connection) => connection.close()));
+        http.closeAllConnections();
+        // Disconnecting a transport aborts its signal, but tools may still be finishing writes.
+        await Promise.all([stopped, disconnected, Promise.allSettled([...pendingTools])]);
+      })();
+      return closePromise;
     },
   };
 }
@@ -90,4 +112,15 @@ export async function startMcpServer(core: () => ProjectCore): Promise<LocalMcpS
 function respond(response: ServerResponse, status: number, message: string): void {
   response.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store" });
   response.end(JSON.stringify({ error: message }));
+}
+
+function mcpImageResult(value: unknown): { base64: string; width: number; height: number } | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const image = value as Record<string, unknown>;
+  if (image.mimeType !== "image/png" || typeof image.base64 !== "string" || !image.base64 || image.base64.length > 11_184_812
+      || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(image.base64)
+      || !Number.isSafeInteger(image.width) || !Number.isSafeInteger(image.height)
+      || Number(image.width) < 1 || Number(image.height) < 1 || Number(image.width) > 32768 || Number(image.height) > 32768
+      || Number(image.width) * Number(image.height) > 100_000_000) return undefined;
+  return { base64: image.base64, width: Number(image.width), height: Number(image.height) };
 }

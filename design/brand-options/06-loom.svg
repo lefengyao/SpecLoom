@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title" style="color:#344644">
+  <title id="title">SpecLoom - Loom Frame</title>
+  <path d="M16 16h96v16H16zM24 32h16v80H24zM88 32h16v80H88zM56 32h16v80H56z" fill="currentColor"/>
+  <path d="M12 64l104-20v18L12 82z" fill="#c49832"/>
+</svg>

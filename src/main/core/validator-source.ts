@@ -18,8 +18,8 @@ export class ValidationSource {
     this.paths = [...this.inventory];
   }
 
-  static async create(store: FileStore, overlay: ChangeEntry[] = [], scope?: TaskScope): Promise<ValidationSource> {
-    const source = new ValidationSource(store, await store.listFiles());
+  static async create(store: FileStore, overlay: ChangeEntry[] = [], scope?: TaskScope, prefix?: string): Promise<ValidationSource> {
+    const source = new ValidationSource(store, await store.listFiles(prefix));
     for (const candidate of overlay) {
       const entry = ChangeEntrySchema.parse(candidate);
       const relative = store.normalizePath(entry.path);

@@ -1,0 +1,200 @@
+import { categoryForPath, referenceId, summarizeMaterial, type DocumentCategory } from "../../../shared/material-catalog";
+import { createMaterialId, parseMaterial, readFields, writeMaterial } from "../../../shared/project-materials";
+import { groupIncludes, importMissingLegacyGroups, materialGroupPath, type MaterialGroup, type MaterialGroupCategory } from "../../../shared/material-groups";
+import type { FileReadResult, VersionToken } from "../../../shared/contracts";
+import { materialImageLimit } from "../../../shared/material-images";
+import { FileStore } from "../file-store";
+import { ProjectDocuments } from "../project-documents";
+import { componentValueMatches } from "../validator-markdown";
+import { ProjectError } from "../errors";
+import { digestBytes } from "../store-fs";
+import { StateMachineSchema } from "../../../shared/state-machine";
+
+const mimeTypes: Record<string, string> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp", gif: "image/gif" };
+const folders: Record<Exclude<DocumentCategory, "all">, string> = { entity: "entities/", component: "components/", map: "maps/", setting: "settings/", ui: "ui/", spec: "" };
+interface MaterialGroupTreeNode extends MaterialGroup { category: MaterialGroupCategory; path: string; children: MaterialGroupTreeNode[] }
+
+/** Agent-facing material operations share the desktop document service and never create tasks. */
+export class WorkMaterials {
+  private readonly documents: ProjectDocuments;
+  constructor(private readonly store: FileStore) { this.documents = new ProjectDocuments(store); }
+  private path(relative: string) {
+    const normalized = this.store.normalizePath(relative);
+    if (!normalized.toLowerCase().startsWith("specs/") || !normalized.toLowerCase().endsWith(".md")) throw new ProjectError("TASK_SCOPE_DENIED", "资料工具仅支持 specs 内的 Markdown 文件");
+    return normalized;
+  }
+  async read(relative: string) {
+    const path = this.path(relative); const version = await this.store.listVersion(path);
+    const file = await this.store.read(path, version.version); const parsed = parseMaterial(file.content);
+    return { ...file, data: parsed?.data ?? null, body: parsed?.body ?? file.content };
+  }
+  async list(input: Record<string, unknown>) {
+    if (input.entityType !== undefined && input.category !== "entity") throw new ProjectError("VALIDATION_FAILED", "entityType 筛选仅适用于 entity 分类");
+    const allVersions = (await this.store.listFiles("specs")).filter(file => file.path.toLowerCase().endsWith(".md"));
+    const versions = allVersions.filter(file => !input.category || categoryForPath(file.path) === input.category || file.path.toLowerCase() === "specs/project.md");
+    const files = [];
+    for (const version of versions) files.push(await this.store.read(version.path, version.version));
+    const projectFile = files.find((file) => file.path.toLowerCase() === "specs/project.md");
+    const legacyLabels: Partial<Record<MaterialGroupCategory, string[]>> = {};
+    for (const file of files) {
+      const category = categoryForPath(file.path);
+      const group = parseMaterial(file.content)?.data.group;
+      if (category && typeof group === "string" && group.trim()) legacyLabels[category] = [...(legacyLabels[category] ?? []), group.trim()];
+    }
+    const registry = importMissingLegacyGroups(parseMaterial(projectFile?.content ?? "")?.data.materialGroups, legacyLabels);
+    const summaries = files.filter((file) => !input.category || categoryForPath(file.path) === input.category).map((file) => summarizeMaterial(file, registry));
+    const query = String(input.query ?? "").trim().toLocaleLowerCase();
+    const matches = summaries.filter(item => {
+      const category = categoryForPath(item.path);
+      const categoryGroups = category ? registry[category] ?? [] : [];
+      const groupMatches = input.groupId === undefined || Boolean(item.groupId && groupIncludes(categoryGroups, String(input.groupId), item.groupId));
+      const groupTextMatches = input.group === undefined || (item.group ?? "") === input.group;
+      const typeMatches = input.entityType === undefined || item.type === input.entityType;
+      return groupMatches && groupTextMatches && typeMatches && `${item.title} ${item.description ?? ""} ${item.id} ${item.path} ${item.groupPath ?? item.group ?? ""}`.toLocaleLowerCase().includes(query);
+    });
+    const offset = Number(input.offset ?? 0); const limit = Number(input.limit ?? 50);
+    const categories: MaterialGroupCategory[] = input.category ? [input.category as MaterialGroupCategory] : ["entity", "component", "setting", "map", "ui", "spec"];
+    const groupTree = categories.flatMap((category) => this.groupTree(category, registry[category] ?? []));
+    const groupNames = groupTree.flatMap((group) => this.groupNames(group));
+    return { total: matches.length, offset, limit, groups: [...new Set([...summaries.map(item => item.group).filter((group): group is string => Boolean(group)), ...groupNames])].sort((a, b) => a.localeCompare(b)), groupTree,
+      items: matches.slice(offset, offset + limit).map(item => ({ id: item.id, title: item.title, type: item.type, category: categoryForPath(item.path), path: item.path, version: item.version,
+        description: item.description ?? "", group: item.group ?? "", ...(item.groupId ? { groupId: item.groupId } : {}), ...(item.groupPath ? { groupPath: item.groupPath } : {}), ...(item.scope ? { scope: item.scope } : {}), ...(item.parent ? { parent: item.parent } : {}), ...(item.extends ? { extends: item.extends } : {}), ...(item.image ? { image: item.image } : {}), ...(item.invalid ? { invalid: true } : {}) })) };
+  }
+  private groupTree(category: MaterialGroupCategory, groups: MaterialGroup[]) {
+    const nodes = new Map<string, MaterialGroupTreeNode>();
+    for (const group of groups) nodes.set(group.id, { ...group, category, path: materialGroupPath(groups, group.id), children: [] });
+    const roots: MaterialGroupTreeNode[] = [];
+    for (const group of groups) {
+      const node = nodes.get(group.id)!;
+      const parent = group.parentId ? nodes.get(group.parentId) : undefined;
+      if (parent) parent.children.push(node); else roots.push(node);
+    }
+    const sort = (items: MaterialGroupTreeNode[]) => { items.sort((left, right) => left.order - right.order || left.name.localeCompare(right.name)); for (const item of items) sort(item.children); };
+    sort(roots);
+    return roots;
+  }
+  private groupNames(group: MaterialGroupTreeNode): string[] {
+    return [group.name, ...group.children.flatMap((child) => this.groupNames(child))];
+  }
+  private assertProperties(category: string, properties: Record<string, unknown>) {
+    if (properties.fields !== undefined && category !== "component") throw new ProjectError("VALIDATION_FAILED", "仅组件资料可定义 fields");
+    if (properties.scope !== undefined && category !== "component") throw new ProjectError("VALIDATION_FAILED", "仅组件资料可定义 scope");
+    if ((properties.extends !== undefined || properties.components !== undefined) && category !== "entity" && category !== "map") throw new ProjectError("VALIDATION_FAILED", "仅实体或地图可继承和绑定组件");
+    if (properties.stateMachine !== undefined) {
+      if (category !== "entity") throw new ProjectError("VALIDATION_FAILED", "仅实体资料可配置状态机");
+      if (properties.stateMachine !== null && !StateMachineSchema.safeParse(properties.stateMachine).success) throw new ProjectError("VALIDATION_FAILED", "状态机配置无效");
+    }
+    if (properties.type !== undefined && (category === "entity" ? !["entity", "character", "enemy", "map", "system", "item", "event"].includes(String(properties.type)) : properties.type !== category)) throw new ProjectError("VALIDATION_FAILED", "资料类型与分类不匹配");
+  }
+  async create(input: Record<string, unknown>) {
+    const category = input.category as Exclude<DocumentCategory, "all">; const title = String(input.title);
+    const id = input.id as string ?? createMaterialId(category, title); const properties = input.properties as Record<string, unknown> ?? {};
+    this.assertProperties(category, properties);
+    const data: Record<string, unknown> = { schemaVersion: 1, id, title, type: category, description: "",
+      ...(category === "entity" || category === "map" ? { status: "draft", version: 1, relations: [], source: "agent", components: [] } : {}),
+      ...(category === "component" ? { fields: [], scope: "user" } : {}), ...properties };
+    for (const key of ["group", "groupId", "parent", "extends"]) if (data[key] === null || data[key] === "") delete data[key];
+    if (data.groupId !== undefined) delete data.group;
+    return this.documents.save(`specs/${folders[category]}${id}.md`, writeMaterial(data, input.body as string ?? `\n# ${title}\n`), "absent");
+  }
+  private async existing(input: Record<string, unknown>) {
+    const file = await this.read(String(input.path)); this.store.assertVersion(file.path, file.version, input.expectedVersion as VersionToken);
+    if (!file.data) throw new ProjectError("VALIDATION_FAILED", "该资料缺少有效元数据，请先修复 YAML front matter");
+    return { ...file, data: { ...file.data } };
+  }
+  private save(file: FileReadResult & { data: Record<string, unknown>; body: string }) {
+    return this.documents.save(file.path, writeMaterial(file.data, file.body), file.version);
+  }
+  async update(input: Record<string, unknown>) {
+    const file = await this.existing(input); const changes = input.changes as Record<string, unknown> ?? {};
+    this.assertProperties(categoryForPath(file.path)!, changes);
+    for (const [key, value] of Object.entries(changes)) {
+      if (key === "groupId") {
+        if (value === null) { delete file.data.groupId; delete file.data.group; }
+        else { file.data.groupId = value; delete file.data.group; }
+      } else if (key === "group") {
+        if (value === null || value === "") { delete file.data.group; delete file.data.groupId; }
+        else { file.data.group = value; delete file.data.groupId; }
+      } else if (value === null) delete file.data[key]; else file.data[key] = value;
+    }
+    if (input.body !== undefined) file.body = String(input.body);
+    return this.save(file);
+  }
+  private async owner(input: Record<string, unknown>) {
+    const file = await this.existing(input);
+    if (!["entity", "map"].includes(categoryForPath(file.path)!)) throw new ProjectError("VALIDATION_FAILED", "仅实体或地图可绑定组件");
+    if (file.data.components !== undefined && !Array.isArray(file.data.components)) throw new ProjectError("VALIDATION_FAILED", "components 必须为数组");
+    return { ...file, bindings: [...(file.data.components as unknown[] ?? [])] };
+  }
+  private matchesComponent(binding: unknown, id: string, componentPath?: string) {
+    const reference = referenceId(binding);
+    if (reference === id) return true;
+    if (!reference || !componentPath || !reference.includes("/")) return false;
+    try { return this.store.pathIdentity(reference.replace(/^res:\/\//, "")) === this.store.pathIdentity(componentPath); } catch { return false; }
+  }
+  async bind(input: Record<string, unknown>) {
+    const file = await this.owner(input); const component = await this.read(String(input.componentPath));
+    if (categoryForPath(component.path) !== "component" || component.data?.type !== "component" || typeof component.data.id !== "string") throw new ProjectError("VALIDATION_FAILED", "componentPath 必须指向有效组件");
+    const fields = readFields(component.data);
+    if (!Array.isArray(component.data.fields) || fields.length !== component.data.fields.length) throw new ProjectError("VALIDATION_FAILED", "组件字段定义无效");
+    const id = component.data.id;
+    const matching = (binding: unknown) => this.matchesComponent(binding, id, component.path);
+    const existing = file.bindings.find(matching);
+    const previous = existing && typeof existing === "object" && "values" in existing ? existing.values as Record<string, unknown> : {};
+    const values = { ...Object.fromEntries(fields.map(field => [field.key, field.default])), ...previous, ...(input.values as Record<string, unknown> ?? {}) };
+    for (const [key, value] of Object.entries(values)) {
+      const field = fields.find(field => field.key === key);
+      if (!field || !componentValueMatches(field.type, value)) throw new ProjectError("VALIDATION_FAILED", `组件字段 ${key} 不存在或类型不正确`);
+    }
+    const index = file.bindings.findIndex(matching); const binding = { id, values };
+    if (index < 0) file.bindings.push(binding); else file.bindings[index] = binding;
+    file.data.components = file.bindings; return this.save(file);
+  }
+  async unbind(input: Record<string, unknown>) {
+    const file = await this.owner(input);
+    const id = String(input.componentId);
+    let componentPath: string | undefined;
+    if (!file.bindings.some(binding => referenceId(binding) === id)) {
+      const component = await this.read(id.includes("/") ? id.replace(/^res:\/\//, "") : `specs/components/${id}.md`);
+      if (component.data?.type !== "component") throw new ProjectError("VALIDATION_FAILED", "目标不是组件资料");
+      componentPath = component.path;
+    }
+    const matches = (binding: unknown) => this.matchesComponent(binding, id, componentPath);
+    if (!file.bindings.some(matches)) throw new ProjectError("FILE_NOT_FOUND", "资料未绑定该组件");
+    file.data.components = file.bindings.filter(binding => !matches(binding)); return this.save(file);
+  }
+  private async importFile(relative: string) {
+    const source = this.store.normalizePath(relative); const target = await this.store.policy.resolve(source);
+    const version = await this.store.listVersion(source); const mime = mimeTypes[source.split(".").pop()!.toLowerCase()];
+    if (!version.exists) throw new ProjectError("FILE_NOT_FOUND", "配图源文件不存在");
+    if (!mime || version.size > materialImageLimit) throw new ProjectError("VALIDATION_FAILED", "配图必须为 PNG/JPEG/WebP/GIF 且最多 2 MiB");
+    const handle = await this.store.fs.open(target, "r");
+    let bytes: Buffer;
+    try {
+      const stats = await handle.stat(); if (!stats.isFile() || stats.size > materialImageLimit) throw new ProjectError("VALIDATION_FAILED", "配图源文件超过限制");
+      bytes = Buffer.alloc(stats.size); let offset = 0;
+      while (offset < bytes.length) { const { bytesRead } = await handle.read(bytes, offset, bytes.length - offset, null); if (!bytesRead) throw new ProjectError("VERSION_CONFLICT", "配图源文件已变化"); offset += bytesRead; }
+      await this.store.policy.assertSafe(target); this.store.assertVersion(source, digestBytes(bytes), version.version);
+    } finally { await handle.close(); }
+    return this.documents.importImage(`data:${mime};base64,${bytes.toString("base64")}`);
+  }
+  async setImage(input: Record<string, unknown>) {
+    const file = await this.existing(input);
+    if (input.remove) delete file.data.image;
+    else if (input.sourcePath) file.data.image = await this.importFile(String(input.sourcePath));
+    else { await this.documents.readImage(String(input.imagePath)); file.data.image = input.imagePath; }
+    return this.save(file);
+  }
+  execute(name: string, input: Record<string, unknown>) {
+    switch (name) {
+      case "MaterialsList": return this.list(input);
+      case "MaterialRead": return this.read(String(input.path));
+      case "MaterialCreate": return this.create(input);
+      case "MaterialUpdate": return this.update(input);
+      case "MaterialBindComponent": return this.bind(input);
+      case "MaterialUnbindComponent": return this.unbind(input);
+      case "MaterialSetImage": return this.setImage(input);
+      default: throw new ProjectError("MODEL_ERROR", "未知资料工具");
+    }
+  }
+}

@@ -13,7 +13,7 @@ export default defineConfig({
         tag: "meta",
         attrs: {
           "http-equiv": "Content-Security-Policy",
-          content: `default-src 'self'; script-src ${scripts}; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws://127.0.0.1:*; object-src 'none'; base-uri 'none'`,
+          content: `default-src 'self'; script-src ${scripts}; style-src 'self' 'unsafe-inline'; img-src 'self' data: http://127.0.0.1:*; media-src 'self' http://127.0.0.1:*; connect-src 'self' ws://127.0.0.1:*; object-src 'none'; base-uri 'none'`,
         },
         injectTo: "head-prepend",
       }];

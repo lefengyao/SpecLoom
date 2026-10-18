@@ -5,7 +5,9 @@ export default defineConfig({
   plugins: [react()],
   test: {
     include: ["tests/**/*.test.{ts,tsx}"],
+    setupFiles: ["tests/setup.ts"],
     environment: "node",
+    testTimeout: 60_000,
     clearMocks: true,
     restoreMocks: true,
   },

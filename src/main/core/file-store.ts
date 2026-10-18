@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import type { FileReadResult, FileVersion, TextPatch, VersionToken } from "../../shared/contracts";
+import type { ProjectTreeEntry } from "../../shared/desktop-api";
 import { ProjectError } from "./errors";
 import { PathPolicy, normalizeProjectPath } from "./path-policy";
 import { withRootMutex } from "./root-mutex";
@@ -31,8 +32,17 @@ export class FileStore {
   validateContent(content: string): void { encodeText(content, this.maxTextBytes); }
 
   async listVersion(relative: string): Promise<FileVersion> {
-    const normalized = this.normalizePath(relative);
-    const target = await this.policy.resolve(normalized);
+    return this.listVersionWithPolicy(relative, false);
+  }
+
+  /** Reads a version from SpecLoom's reserved durable state. */
+  async listInternalVersion(relative: string): Promise<FileVersion> {
+    return this.listVersionWithPolicy(relative, true);
+  }
+
+  private async listVersionWithPolicy(relative: string, internal: boolean): Promise<FileVersion> {
+    const normalized = normalizeProjectPath(relative, internal);
+    const target = await this.policy.resolve(normalized, internal);
     try {
       const handle = await this.fs.open(target, "r");
       try {
@@ -88,13 +98,48 @@ export class FileStore {
     return versions.sort((a, b) => a.path.localeCompare(b.path));
   }
 
+  async listTree(): Promise<ProjectTreeEntry[]> {
+    await this.policy.validateRoot();
+    const entries: ProjectTreeEntry[] = [];
+    const visit = async (directory: string): Promise<void> => {
+      const children = await this.fs.readdir(path.join(this.root, directory), { withFileTypes: true });
+      for (const child of children.sort((a, b) => a.name.localeCompare(b.name))) {
+        if ([".git", ".godot"].includes(child.name.toLowerCase()) || child.name.includes(".specloom-tmp-")) continue;
+        if (directory.toLowerCase() === ".specloom" && child.name.toLowerCase() !== "skills") continue;
+        const relative = path.posix.join(directory, child.name);
+        if (relative.toLowerCase() !== ".specloom") this.normalizePath(relative);
+        await this.policy.assertSafe(path.join(this.root, relative));
+        if (child.isDirectory()) {
+          entries.push({ path: relative, kind: "directory" });
+          await visit(relative);
+        } else if (child.isFile()) {
+          entries.push({ path: relative, kind: "file" });
+        } else {
+          throw new ProjectError("PATH_ESCAPE", "Only regular files and directories are allowed", { path: relative });
+        }
+      }
+    };
+    await visit("");
+    return entries.sort((a, b) => a.path.localeCompare(b.path));
+  }
+
   async read(relative: string, expectedVersion: VersionToken): Promise<FileReadResult> {
+    const result = await this.readText(relative, expectedVersion);
+    return { path: result.path, version: result.version, content: result.content };
+  }
+
+  /** Captures size, version and strict UTF-8 content from the same bounded descriptor read. */
+  async readCurrentText(relative: string): Promise<FileReadResult & { size: number }> {
+    return this.readText(relative, undefined, Math.min(this.maxTextBytes, 1024 * 1024));
+  }
+
+  private async readText(relative: string, expectedVersion?: VersionToken, byteLimit = this.maxTextBytes): Promise<FileReadResult & { size: number }> {
     const normalized = this.normalizePath(relative);
     const target = await this.policy.resolve(normalized);
     let handle;
     try { handle = await this.fs.open(target, "r"); } catch (error) {
       if (hasCode(error, "ENOENT")) {
-        this.assertVersion(normalized, "absent", expectedVersion);
+        if (expectedVersion !== undefined) this.assertVersion(normalized, "absent", expectedVersion);
         throw new ProjectError("FILE_NOT_FOUND", "The project file does not exist", { path: normalized });
       }
       throw error;
@@ -102,22 +147,22 @@ export class FileStore {
     try {
       const stats = await handle.stat();
       if (!stats.isFile()) throw new ProjectError("VALIDATION_FAILED", "Expected a regular text file", { path: normalized });
-      if (stats.size > this.maxTextBytes) throw new ProjectError("VALIDATION_FAILED", "Text file exceeds the configured byte limit");
+      if (stats.size > byteLimit) throw new ProjectError("VALIDATION_FAILED", "Text file exceeds the configured byte limit");
       const chunks: Buffer[] = [];
       let size = 0;
       while (true) {
-        const chunk = Buffer.alloc(Math.min(64 * 1024, this.maxTextBytes + 1 - size));
+        const chunk = Buffer.alloc(Math.min(64 * 1024, byteLimit + 1 - size));
         const { bytesRead } = await handle.read(chunk, 0, chunk.length, null);
         if (!bytesRead) break;
         size += bytesRead;
-        if (size > this.maxTextBytes) throw new ProjectError("VALIDATION_FAILED", "Text file exceeds the configured byte limit");
+        if (size > byteLimit) throw new ProjectError("VALIDATION_FAILED", "Text file exceeds the configured byte limit");
         chunks.push(chunk.subarray(0, bytesRead));
       }
       const bytes = Buffer.concat(chunks);
       const version = digestBytes(bytes);
-      this.assertVersion(normalized, version, expectedVersion);
+      if (expectedVersion !== undefined) this.assertVersion(normalized, version, expectedVersion);
       await this.policy.assertSafe(target);
-      return { path: normalized, version, content: decodeText(bytes, this.maxTextBytes) };
+      return { path: normalized, version, size, content: decodeText(bytes, byteLimit) };
     } finally { await handle.close(); }
   }
 
@@ -144,6 +189,11 @@ export class FileStore {
   }
 
   async remove(relative: string, expectedVersion: VersionToken): Promise<void> { return this.withLock((access) => access.remove(relative, expectedVersion)); }
+
+  /** Removes a file from SpecLoom's reserved durable state under the same root mutex. */
+  async removeInternal(relative: string, expectedVersion: VersionToken): Promise<void> {
+    return this.withLock(() => this.removeUnlocked(relative, expectedVersion, true));
+  }
 
   private async writeUnlocked(relative: string, content: string, expectedVersion: VersionToken): Promise<FileVersion> {
     const normalized = this.normalizePath(relative);
@@ -175,14 +225,14 @@ export class FileStore {
     return { path: normalized, exists: true, size: bytes.length, version: digestBytes(bytes) };
   }
 
-  private async removeUnlocked(relative: string, expectedVersion: VersionToken): Promise<void> {
-    const normalized = this.normalizePath(relative);
-    const target = await this.policy.resolve(normalized);
-    const current = await this.listVersion(normalized);
+  private async removeUnlocked(relative: string, expectedVersion: VersionToken, internal = false): Promise<void> {
+    const normalized = normalizeProjectPath(relative, internal);
+    const target = await this.policy.resolve(normalized, internal);
+    const current = internal ? await this.listInternalVersion(normalized) : await this.listVersion(normalized);
     this.assertVersion(normalized, current.version, expectedVersion);
     if (!current.exists) throw new ProjectError("FILE_NOT_FOUND", "Cannot delete an absent project file", { path: normalized });
     await this.policy.assertSafe(target);
-    this.assertVersion(normalized, (await this.listVersion(normalized)).version, expectedVersion);
+    this.assertVersion(normalized, (internal ? await this.listInternalVersion(normalized) : await this.listVersion(normalized)).version, expectedVersion);
     await this.fs.unlink(target);
   }
 }

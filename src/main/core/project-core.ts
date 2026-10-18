@@ -5,9 +5,14 @@ import { ChangeSetDataSchema, TaskScopeSpecSchema, ValidationResultSchema } from
 import type { ChangeEntry, ChangeSetData, FileReadResult, FileVersion, ModelProfile, ProjectMetadata, TaskScopeSpec, ValidationResult, VersionToken } from "../../shared/contracts";
 import type { ChangeReview, RecoveryIssue, TaskView } from "../../shared/desktop-api";
 import { AgentConversationSchema, AgentRuntime, boundConversation, type AgentMessage, type AgentRunResult, type AgentRuntimeOptions } from "./agent-runtime";
+import { chatMessage } from "./agent-chat";
+import { systemPrompt } from "./agent-prompts";
+import { readProjectContext } from "./project-context";
+import { readWorkspacePrompt, saveWorkspacePrompt } from "./workspace-prompt";
 import { StagedChangeSet } from "./change-set";
 import { ProjectError, serializeError } from "./errors";
 import { FileStore } from "./file-store";
+import { ProjectDocuments } from "./project-documents";
 import { ProjectLayout } from "./project-layout";
 import { SkillRegistry } from "./skill-registry";
 import { SnapshotRunner } from "./snapshot-runner";
@@ -16,6 +21,9 @@ import { TaskScope } from "./task-scope";
 import { toolCatalog } from "./tool-catalog";
 import { Validator } from "./validator";
 import type { JournalRecord } from "./change-journal";
+import type { DiagnosticsLogStore } from "./diagnostics-log";
+import { getGodotMcpToolDefinition } from "./godot-mcp/tool-definitions";
+import { godotMcpHostRegistry, type GodotMcpHostRegistry } from "./godot-mcp/host-registry";
 
 interface CoreTask {
   scope: TaskScope;
@@ -35,10 +43,15 @@ interface CoreTask {
 }
 export interface ProjectCoreOptions {
   bundledSkillsDirectory?: string;
+  installedSkillsDirectory?: string;
   resolveCredential?: AgentRuntimeOptions["resolveCredential"];
   fetch?: typeof fetch;
   snapshotRunner?: SnapshotRunner;
   validator?: Pick<Validator, "validateWithDependencies">;
+  /** Operator instructions from the settings view, appended after the built-in prompt. */
+  customInstructions?: () => string;
+  diagnostics?: DiagnosticsLogStore;
+  godotMcpHosts?: GodotMcpHostRegistry;
 }
 
 export class ProjectCore {
@@ -48,6 +61,7 @@ export class ProjectCore {
   private readonly registries = new Map<string, SkillRegistry>();
   private readonly validator: Pick<Validator, "validateWithDependencies">;
   private readonly tasks = new Map<string, CoreTask>();
+  private godotMcpLease = false;
 
   private constructor(readonly metadata: ProjectMetadata, private readonly options: ProjectCoreOptions) {
     this.store = new FileStore(metadata.path);
@@ -56,12 +70,22 @@ export class ProjectCore {
   }
 
   static async open(root: string, options: ProjectCoreOptions = {}): Promise<ProjectCore> {
-    const metadata = await new ProjectLayout(options.bundledSkillsDirectory === undefined ? {} : { bundledSkillsDirectory: options.bundledSkillsDirectory }).initialize(root);
+    const metadata = await new ProjectLayout({ ...(options.bundledSkillsDirectory === undefined ? {} : { bundledSkillsDirectory: options.bundledSkillsDirectory }), ...(options.installedSkillsDirectory === undefined ? {} : { installedSkillsDirectory: options.installedSkillsDirectory }) }).initialize(root);
     const core = new ProjectCore(metadata, options);
     core.recoveryIssues.push(...await core.snapshot.recoverAbandoned());
     await StagedChangeSet.recover(core.store);
     await core.restoreDrafts(await StagedChangeSet.inspectHistory(core.store));
+    if (metadata.engine === "godot") {
+      await (options.godotMcpHosts ?? godotMcpHostRegistry).acquire(metadata.path);
+      core.godotMcpLease = true;
+    }
     return core;
+  }
+
+  async close(): Promise<void> {
+    if (!this.godotMcpLease) return;
+    this.godotMcpLease = false;
+    await (this.options.godotMcpHosts ?? godotMcpHostRegistry).release(this.metadata.path);
   }
 
   async createTask(spec: TaskScopeSpec): Promise<TaskView> {
@@ -76,8 +100,27 @@ export class ProjectCore {
   }
 
   listTasks(): TaskView[] { return [...this.tasks.values()].map((task) => this.taskView(task)); }
+  /** Removes one finished task and its persisted history record. */
+  async removeTask(taskId: string): Promise<void> {
+    const task = this.task(taskId);
+    if (task.running) {
+      throw new ProjectError("MODEL_ERROR", "运行中的任务或待处理任务需要保留");
+    }
+    await task.pending;
+    const relative = `.specloom/history/tasks/${digestBytes(taskId).slice(7)}.json`;
+    const current = await this.store.listInternalVersion(relative);
+    if (current.exists) await this.store.removeInternal(relative, current.version);
+    this.tasks.delete(taskId);
+    this.registries.delete(taskId);
+  }
 
-  async documents(): Promise<FileVersion[]> { return this.store.listFiles("specs"); }
+  async documents(): Promise<FileVersion[]> { return (await this.store.listFiles("specs")).filter((file) => file.path.endsWith(".md")); }
+  saveDocument(path: string, content: string, version: VersionToken) { return new ProjectDocuments(this.store).save(path, content, version); }
+  importMaterialImage(dataUrl: string) { return new ProjectDocuments(this.store).importImage(dataUrl); }
+  readMaterialImage(path: string) { return new ProjectDocuments(this.store).readImage(path); }
+  async projectTree() { return this.store.listTree(); }
+  readWorkspacePrompt() { return readWorkspacePrompt(this.store); }
+  saveWorkspacePrompt(content: string, expectedVersion: VersionToken) { return saveWorkspacePrompt(this.store, content, expectedVersion); }
   async readDocument(path: string, expectedVersion: VersionToken): Promise<FileReadResult> {
     const normalized = this.store.normalizePath(path);
     if (!normalized.startsWith("specs/") && !normalized.startsWith(".specloom/skills/")) throw new ProjectError("TASK_SCOPE_DENIED", "Document inspection is limited to project specifications and Skills");
@@ -136,19 +179,25 @@ export class ProjectCore {
     return this.withTask(taskId, (task) => this.validateTask(task, undefined, signal));
   }
 
-  async agentMessage(taskId: string, profile: ModelProfile, prompt: string, signal?: AbortSignal): Promise<AgentRunResult> {
+  async agentMessage(taskId: string, profile: ModelProfile, prompt: string, signal?: AbortSignal, hooks: Pick<AgentRuntimeOptions, "onEvent" | "onQuestion" | "onConversation"> = {}): Promise<AgentRunResult> {
     const task = this.task(taskId);
     if (task.historical || !["staged", "validated"].includes(task.changes.preview().status)) throw new ProjectError("TASK_SCOPE_DENIED", "Create a new task before starting another agent run");
     if (task.running) throw new ProjectError("MODEL_ERROR", "This task already has an active agent run");
     task.running = true;
     const runtime = new AgentRuntime({
+      ...(hooks.onEvent ? { onEvent: hooks.onEvent } : {}),
+      ...(hooks.onQuestion ? { onQuestion: hooks.onQuestion } : {}),
+      ...(this.options.diagnostics ? { onDiagnostic: event => this.options.diagnostics!.record(event) } : {}),
       executeTool: (call) => this.executeTool(call.taskId, call.name, call.input, call.signal),
-      onConversation: (messages) => this.withTask(taskId, async () => { task.messages = messages; await this.persist(task); }),
+      onConversation: (messages) => this.withTask(taskId, async () => { task.messages = messages; await this.persist(task); await hooks.onConversation?.(messages); }),
       ...(this.options.resolveCredential ? { resolveCredential: this.options.resolveCredential } : {}),
       ...(this.options.fetch ? { fetch: this.options.fetch } : {}),
+      ...(this.options.diagnostics ? { onDiagnostic: event => this.options.diagnostics!.record(event) } : {}),
     });
     try {
-      const result = await runtime.run({ taskId, profile, prompt, systemPrompt: `You are SpecLoom, a Godot project agent. Use skills.list and skills.load to read project procedures and specifications. Work only inside this approved immutable scope: ${JSON.stringify(task.scope.describe())}. Discover current file versions before reading. Read existing files before editing. Writes and Bash only stage changes. Never claim a manual commit succeeded before desktop approval. Validate generated Godot files. Keep scripts small and responsibilities separated. Respond in Chinese.`,
+      const workspace = await this.readWorkspacePrompt();
+      const projectContext = await readProjectContext(this.store.root, !task.messages.some(message => message.role === "assistant"));
+      const result = await runtime.run({ taskId, profile, prompt, systemPrompt: systemPrompt(this.options.customInstructions?.() ?? "", workspace.content, task.scope.describe(), projectContext),
         ...(task.messages.length ? { previousMessages: task.messages } : {}), ...(signal ? { signal } : {}) });
       task.messages = boundConversation(result.messages);
       task.summary = result.summary;
@@ -156,8 +205,22 @@ export class ProjectCore {
     } finally { task.running = false; await this.persist(task); }
   }
 
+  async chatMessage(profile: ModelProfile, prompt: string, previousMessages: AgentMessage[] = [], signal?: AbortSignal): Promise<AgentRunResult> {
+    const workspace = await this.readWorkspacePrompt();
+    return chatMessage({
+      workspaceRoot: this.store.root,
+      ...(this.options.resolveCredential ? { resolveCredential: this.options.resolveCredential } : {}),
+      ...(this.options.fetch ? { fetch: this.options.fetch } : {}),
+    }, profile, prompt, this.options.customInstructions?.() ?? "", workspace.content, previousMessages, signal);
+  }
+
   private async dispatch(task: CoreTask, name: string, input: Record<string, unknown>, signal?: AbortSignal): Promise<unknown> {
     const taskId = task.scope.describe().id;
+    if (getGodotMcpToolDefinition(name)) {
+      if (this.metadata.engine !== "godot") throw new ProjectError("INVALID_PROJECT", "Godot MCP tools require a Godot project");
+      const registry = this.options.godotMcpHosts ?? godotMcpHostRegistry;
+      return registry.call(this.metadata.path, name, input, signal);
+    }
     switch (name) {
       case "files.list_versions": {
         const requested = input.paths as string[] | undefined;

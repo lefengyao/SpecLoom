@@ -1,0 +1,11 @@
+.guidance-queue { flex-shrink: 0; max-height: min(28vh, 240px); overflow-y: auto; padding: 8px 24px 0; display: grid; gap: 8px; }
+.guidance-card { padding: 12px 14px; border: 1px solid var(--accent-border); border-radius: 10px; background: var(--accent-soft); min-width: 0; }
+.guidance-card header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.guidance-card header > span { display: inline-flex; gap: 6px; align-items: center; color: var(--accent); font-size: 12px; font-weight: 600; }
+.guidance-card small { color: var(--muted); font-size: 11px; }
+.guidance-card p { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 88px; overflow-y: auto; line-height: 1.6; margin: 8px 0; font-size: 13px; }
+.guidance-card footer { display: flex; align-items: center; gap: 6px; justify-content: flex-end; }
+.guidance-card button { display: inline-flex; align-items: center; gap: 5px; padding: 5px 9px; font-size: 12px; }
+.composer-send-actions { display: flex; gap: 8px; flex-shrink: 0; align-items: center; }
+.agent-sidebar-toggle { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; font-size: 12px; }
+@media (max-width: 1000px) { .guidance-queue { padding-inline: 12px; } .guidance-card header { align-items: flex-start; flex-direction: column; gap: 3px; } }

@@ -27,6 +27,36 @@ describe("versioned file store", () => {
     expect(await store.listFiles("specs")).toEqual([await store.listVersion("specs/a.md")]);
   });
 
+  it("lists files and empty directories without opening their contents", async () => {
+    const root = await fixture();
+    for (const directory of ["assets/empty", "scenes", ".git", ".godot", ".specloom/history", ".specloom/skills/custom"]) {
+      await mkdir(path.join(root, directory), { recursive: true });
+    }
+    for (const relative of ["project.godot", "scenes/main.tscn", ".git/config", ".godot/cache", ".specloom/project.yaml", ".specloom/history/a.json", ".specloom/skills/custom/SKILL.md"]) {
+      await writeFile(path.join(root, relative), "contents");
+    }
+    const store = new FileStore(root, { fs: { open: async () => { throw new Error("tree must not open files"); } } });
+    expect(await store.listTree()).toEqual([
+      { path: ".specloom", kind: "directory" },
+      { path: ".specloom/skills", kind: "directory" },
+      { path: ".specloom/skills/custom", kind: "directory" },
+      { path: ".specloom/skills/custom/SKILL.md", kind: "file" },
+      { path: "assets", kind: "directory" },
+      { path: "assets/empty", kind: "directory" },
+      { path: "project.godot", kind: "file" },
+      { path: "scenes", kind: "directory" },
+      { path: "scenes/main.tscn", kind: "file" },
+    ]);
+  });
+
+  it("rejects project tree entries that point through a symbolic link", async () => {
+    const root = await fixture();
+    const outside = await fixture();
+    await writeFile(path.join(outside, "private.md"), "outside");
+    await symlink(outside, path.join(root, "linked"), "junction");
+    await expect(new FileStore(root).listTree()).rejects.toMatchObject({ code: "PATH_ESCAPE" });
+  });
+
   it("hashes exactly the bytes returned and rejects stale reads and updates", async () => {
     const root = await fixture();
     await writeFile(path.join(root, "a.md"), "old");

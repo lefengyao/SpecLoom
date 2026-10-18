@@ -26,6 +26,30 @@ export class ProjectError extends Error {
   }
 }
 
+type ProjectErrorLike = {
+  code: ProjectErrorCode;
+  message: string;
+  details?: unknown;
+};
+
+/**
+ * IPC, bundled modules, and test doubles can produce an error-like object
+ * whose prototype is not this module's ProjectError constructor. Preserve
+ * its validated public code and message instead of hiding it as INTERNAL_ERROR.
+ */
+function projectErrorLike(value: unknown): ProjectErrorLike | undefined {
+  if (value instanceof ProjectError) return value;
+  if (!value || typeof value !== "object") return undefined;
+  const candidate = value as { code?: unknown; message?: unknown; details?: unknown };
+  try {
+    const code = ProjectErrorCodeSchema.safeParse(candidate.code);
+    if (!code.success || typeof candidate.message !== "string") return undefined;
+    return { code: code.data, message: candidate.message, details: candidate.details };
+  } catch {
+    return undefined;
+  }
+}
+
 const secretField = /(?:api[-_]?key|token|password|secret|authorization|credential|cookie)/i;
 
 function redactMessage(value: string): string {
@@ -54,11 +78,12 @@ function safeDetails(value: unknown, seen = new WeakSet<object>(), depth = 0): u
 }
 
 export function serializeError(error: unknown): SerializedProjectError {
-  if (!(error instanceof ProjectError)) {
+  const projectError = projectErrorLike(error);
+  if (!projectError) {
     return { name: "ProjectError", code: "INTERNAL_ERROR", message: "An unexpected project error occurred." };
   }
-  const result: SerializedProjectError = { name: "ProjectError", code: error.code, message: redactMessage(error.message) };
-  if (error.details !== undefined) result.details = safeDetails(error.details) as Record<string, unknown>;
+  const result: SerializedProjectError = { name: "ProjectError", code: projectError.code, message: redactMessage(projectError.message) };
+  if (projectError.details !== undefined) result.details = safeDetails(projectError.details) as Record<string, unknown>;
   return result;
 }
 

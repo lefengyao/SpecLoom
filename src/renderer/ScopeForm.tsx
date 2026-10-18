@@ -6,7 +6,7 @@ import { Modal } from "./ui";
 export const defaultScope: Omit<TaskScopeSpec, "id"> = {
   title: "实现守灯人移动与交互",
   readPaths: ["*"],
-  writePaths: ["specs/entities/characters/**", "scenes/**", "scripts/**"],
+  writePaths: ["specs/entities/**", "specs/components/**", "scenes/**", "scripts/**"],
   allowDelete: false,
   mode: "manual",
 };
