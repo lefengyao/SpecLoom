@@ -122,7 +122,7 @@ interface OrchestrationRun {
 
 ### 3.6 输入上下文
 
-WorkflowRunInputs 增加可选 context（上限 32 KiB）。Runner 在 plan/implement 提示中注入。编排把上一步摘要/决策路径/审批/校验拼成该字段。
+WorkflowRunInputs 增加可选 context（上限 32768 个字符，按 UTF-16 代码单元计数而不是字节；首尾空白裁剪，裁剪后为空视为未提供）。Runner 在 plan/implement 提示中注入。编排把上一步摘要/决策路径/审批/校验拼成该字段。
 
 ## 4. 运行时
 
@@ -231,7 +231,7 @@ resolveDefaultWorkflow():
 - 子运行失败：编排 failed，可重试当前步；不自动跳过。
 - 自动批准：显式配置、UI 警告、运行记录标记；官方默认 manual。
 - 智能体可创建/启动，但没有直接 approve 工具；只有配置 auto 时编排器批准。
-- 上下文注入上限 32 KiB；摘要截断。
+- 上下文注入上限 32768 个字符（UTF-16 代码单元）；摘要截断。
 - 所有定义/运行/设置写入使用路径安全、版本/原子写入。
 - 同一项目单活动运行。
 

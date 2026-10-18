@@ -18,8 +18,8 @@ import { SkillImportOptionsSchema } from "../shared/skill-management";
 import { DiagnosticQuerySchema } from "../shared/diagnostics";
 import { GodotPluginIdSchema, RevealPluginDirectoryInputSchema } from "../shared/godot-plugins";
 import { CHAT_ATTACHMENT_LIMITS, type ChatAttachmentInput } from "../shared/chat-attachments";
-import { WorkflowDefinitionSchema, type WorkflowDefinition } from "../shared/workflow";
-import type { WorkflowRetryAction, WorkflowRunInputs, WorkflowUpdate } from "../shared/workflow-api";
+import { WorkflowDefinitionSchema, WORKFLOW_ID_PATTERN, type WorkflowDefinition } from "../shared/workflow";
+import { WorkflowRunInputsSchema, type WorkflowRetryAction, type WorkflowRunInputs, type WorkflowUpdate } from "../shared/workflow-api";
 import { readChatClipboard, type ClipboardReader } from "./chat-clipboard";
 import type { ProjectCore } from "./core/project-core";
 import { WorkflowService } from "./core/workflow-service";
@@ -29,17 +29,13 @@ import type { EntityLayout } from "../shared/entity-layout";
 const id = z.string().min(1).max(256);
 const conversationMessages = z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().max(131072) }).strict()).max(64).optional();
 /** Workflow ids are file ids; the store applies the same rule to the YAML name. */
-const workflowId = z.string().regex(/^[a-z][a-z0-9_]{0,119}$/);
+const workflowId = z.string().regex(WORKFLOW_ID_PATTERN);
 /**
- * Inputs accepted for a workflow run. Mirrors the runner's own input schema so
- * an unsupported payload is rejected before a run record is ever created.
+ * The run inputs contract is owned by the shared workflow API and reused here
+ * (re-exported for the existing IPC tests) and by the runner for both input and
+ * record validation, so the three boundaries cannot drift.
  */
-export const WorkflowRunInputsSchema = z.object({
-  goal: z.string().trim().min(1, "goal must not be empty").max(8192, "goal must be at most 8192 characters"),
-  readPaths: z.array(z.string().trim().min(1, "read paths must not be empty").max(1024)).min(1, "readPaths must contain at least one path").max(256),
-  writePaths: z.array(z.string().trim().min(1, "write paths must not be empty").max(1024)).min(1, "writePaths must contain at least one path").max(256),
-  model: z.string().trim().min(1, "model must not be empty").max(120).optional(),
-}).strict();
+export { WorkflowRunInputsSchema };
 /** A definition document save: one YAML body of at most 1 MiB against a version token. */
 export const WorkflowSaveRequestSchema = z.object({
   id: workflowId,

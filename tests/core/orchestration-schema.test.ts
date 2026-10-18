@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
+  OFFICIAL_WORKFLOW_ID,
   OrchestrationDefinitionSchema,
   WorkflowSettingsSchema,
   type WorkflowDefaultResolution,
@@ -92,6 +93,20 @@ describe("orchestration definition", () => {
   test("rejects unknown definition fields", () => {
     expect(OrchestrationDefinitionSchema.safeParse({ ...base, extra: true }).success).toBe(false);
   });
+
+  test("accepts the official workflow id as a step workflow id", () => {
+    const parsed = OrchestrationDefinitionSchema.parse({ ...base, steps: [step("s1", OFFICIAL_WORKFLOW_ID)] });
+    expect(parsed.steps[0]?.workflowId).toBe(OFFICIAL_WORKFLOW_ID);
+  });
+
+  test("rejects a step workflow id that is not a safe snake_case file name", () => {
+    for (const workflowId of ["../escape", "..", "wf release", "Wf_release", "1wf", "_wf", ""]) {
+      expect(
+        OrchestrationDefinitionSchema.safeParse({ ...base, steps: [step("s1", workflowId)] }).success,
+        workflowId,
+      ).toBe(false);
+    }
+  });
 });
 
 describe("workflow settings", () => {
@@ -123,6 +138,20 @@ describe("workflow settings", () => {
 
   test("rejects an empty default workflow id", () => {
     expect(WorkflowSettingsSchema.safeParse({ schemaVersion: 1, defaultWorkflowId: "   " }).success).toBe(false);
+  });
+
+  test("accepts the official default workflow id", () => {
+    const settings = WorkflowSettingsSchema.parse({ schemaVersion: 1, defaultWorkflowId: OFFICIAL_WORKFLOW_ID });
+    expect(settings.defaultWorkflowId).toBe(OFFICIAL_WORKFLOW_ID);
+  });
+
+  test("rejects a default workflow id that is not a safe snake_case file name", () => {
+    for (const defaultWorkflowId of ["../escape", "..", "wf release", "Wf_release", "1wf", "_wf"]) {
+      expect(
+        WorkflowSettingsSchema.safeParse({ schemaVersion: 1, defaultWorkflowId }).success,
+        defaultWorkflowId,
+      ).toBe(false);
+    }
   });
 
   test("describes a resolved default workflow", () => {

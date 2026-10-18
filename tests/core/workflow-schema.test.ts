@@ -408,9 +408,18 @@ describe("workflow run inputs", () => {
     expect(WorkflowRunInputsSchema.parse(inputs).context).toBeUndefined();
   });
 
-  test("bounds context to 32768 characters", () => {
+  test("bounds context to 32768 characters, not bytes", () => {
     const atLimit = "x".repeat(32768);
     expect(WorkflowRunInputsSchema.parse({ ...inputs, context: atLimit }).context).toHaveLength(32768);
     expect(() => WorkflowRunInputsSchema.parse({ ...inputs, context: "x".repeat(32769) })).toThrow(/32768/);
+    // Multi-byte characters count as one character each; only the character count is capped.
+    const multibyte = "上".repeat(32768);
+    expect(WorkflowRunInputsSchema.parse({ ...inputs, context: multibyte }).context).toHaveLength(32768);
+  });
+
+  test("trims context and treats an empty or whitespace-only context as absent", () => {
+    expect(WorkflowRunInputsSchema.parse({ ...inputs, context: "  previous step  " }).context).toBe("previous step");
+    expect(WorkflowRunInputsSchema.parse({ ...inputs, context: "" }).context).toBeUndefined();
+    expect(WorkflowRunInputsSchema.parse({ ...inputs, context: "   " }).context).toBeUndefined();
   });
 });

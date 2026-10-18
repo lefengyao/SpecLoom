@@ -11,6 +11,14 @@ export const WORKFLOW_LIMITS = {
 } as const;
 
 /**
+ * File-name rule for a workflow id: lowercase snake_case, at most 120
+ * characters. The store applies it to specs/workflows/<id>.yaml and the IPC
+ * surface applies it to every id that names a workflow file, so the rule lives
+ * here as the one shared constant instead of being repeated per module.
+ */
+export const WORKFLOW_ID_PATTERN = /^[a-z][a-z0-9_]{0,119}$/;
+
+/**
  * The single readable error thrown for every invalid workflow definition.
  *
  * Its message is a "; "-joined list of "path: message" entries (or a B rule
@@ -66,9 +74,10 @@ export const WorkflowDecisionConfigSchema = z
   .strict();
 
 /**
- * Definition settings. `approvalPolicy` is optional in a saved definition and
- * defaults to "manual" when the definition is parsed, so existing files keep
- * their current (manual) behaviour.
+ * Definition settings. A saved document may omit `approvalPolicy`; the schema
+ * defaults it to "manual" so existing files keep their current (manual)
+ * behaviour, while a parsed (and therefore type-checked) definition always
+ * carries the effective policy.
  */
 export const WorkflowDefinitionSettingsSchema = z
   .object({
@@ -77,10 +86,7 @@ export const WorkflowDefinitionSettingsSchema = z
   })
   .strict();
 
-export interface WorkflowDefinitionSettings {
-  maxImplementAttempts: number;
-  approvalPolicy?: WorkflowApprovalPolicy;
-}
+export type WorkflowDefinitionSettings = z.infer<typeof WorkflowDefinitionSettingsSchema>;
 
 const WorkflowContextNodeSchema = z
   .object({ ...nodeIdentity, type: z.literal("context"), config: WorkflowEmptyConfigSchema })
@@ -149,9 +155,13 @@ export const WorkflowDefinitionSchema = z
   })
   .strict();
 
-export type WorkflowDefinition = Omit<z.infer<typeof WorkflowDefinitionSchema>, "settings"> & {
-  settings: WorkflowDefinitionSettings;
-};
+/**
+ * Derived from the schema on purpose: a parsed definition always has settings
+ * with a concrete approvalPolicy, and the type must say so. Callers that build
+ * a definition literal have to spell out the policy instead of relying on an
+ * optional field the parser always fills in.
+ */
+export type WorkflowDefinition = z.infer<typeof WorkflowDefinitionSchema>;
 export type WorkflowNode = z.infer<typeof WorkflowNodeSchema>;
 export type WorkflowEdge = z.infer<typeof WorkflowEdgeSchema>;
 export type WorkflowInput = z.infer<typeof WorkflowInputSchema>;

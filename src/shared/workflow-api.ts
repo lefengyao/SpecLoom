@@ -55,14 +55,21 @@ export type WorkflowRunStatus =
 /** Lifecycle of one node inside a workflow run. */
 export type WorkflowNodeStatus = "pending" | "running" | "waiting_approval" | "completed" | "failed" | "skipped";
 
-/** Hard cap for the optional previous-step context carried into one run. */
+/**
+ * Hard cap for the optional previous-step context carried into one run.
+ *
+ * The unit is characters (UTF-16 code units), not bytes: this is a prompt
+ * contract, not a file-size limit, so a value of MAX_RUN_CONTEXT_LENGTH
+ * characters is valid and MAX_RUN_CONTEXT_LENGTH + 1 is not.
+ */
 export const MAX_RUN_CONTEXT_LENGTH = 32768;
 
 /**
  * The user-supplied inputs of one run.
  *
  * `context` is optional and bounded so an orchestration can hand the next step
- * a summary without copying an unbounded history into the prompt.
+ * a summary without copying an unbounded history into the prompt. It is
+ * trimmed, and an empty or whitespace-only value is treated as absent.
  */
 export const WorkflowRunInputsSchema = z
   .object({
@@ -78,8 +85,10 @@ export const WorkflowRunInputsSchema = z
     model: z.string().trim().min(1, "model must not be empty").max(120).optional(),
     context: z
       .string()
+      .trim()
       .max(MAX_RUN_CONTEXT_LENGTH, "context must be at most " + MAX_RUN_CONTEXT_LENGTH + " characters")
-      .optional(),
+      .optional()
+      .transform((value) => (value === undefined || value.length === 0 ? undefined : value)),
   })
   .strict();
 
@@ -87,8 +96,8 @@ export interface WorkflowRunInputs {
   goal: string;
   readPaths: string[];
   writePaths: string[];
-  model?: string;
-  context?: string;
+  model?: string | undefined;
+  context?: string | undefined;
 }
 
 /** Snapshot of one node's execution state. */

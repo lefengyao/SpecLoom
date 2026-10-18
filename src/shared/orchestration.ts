@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { WORKFLOW_ID_PATTERN } from "./workflow";
 
 /**
  * Shared contracts for project workflow defaults and sequential orchestrations.
@@ -19,8 +20,14 @@ export const ORCHESTRATION_LIMITS = {
 /** Virtual id of the official development-review workflow. */
 export const OFFICIAL_WORKFLOW_ID = "wf_official_development_review";
 
-/** How one orchestration step treats the workflow's approval node. */
-export const OrchestrationApprovalSchema = z.enum(["inherit", "always", "auto"]).default("inherit");
+/**
+ * How one orchestration step treats the workflow's approval node.
+ *
+ * This is a plain enum, without the step default: stored orchestration run
+ * records reuse it, and parsing a record must never invent an approval value
+ * that was not persisted. Only OrchestrationStepSchema adds "inherit".
+ */
+export const OrchestrationApprovalSchema = z.enum(["inherit", "always", "auto"]);
 export type OrchestrationApproval = z.infer<typeof OrchestrationApprovalSchema>;
 
 /** One ordered step: an existing workflow plus its approval override. */
@@ -30,9 +37,8 @@ export const OrchestrationStepSchema = z
     workflowId: z
       .string()
       .trim()
-      .min(1, "workflow id must not be empty")
-      .max(120, "workflow id must be at most 120 characters"),
-    approval: OrchestrationApprovalSchema,
+      .regex(WORKFLOW_ID_PATTERN, "workflow id must be lowercase snake_case, at most 120 characters"),
+    approval: OrchestrationApprovalSchema.default("inherit"),
   })
   .strict();
 
@@ -84,8 +90,7 @@ export const WorkflowSettingsSchema = z
     defaultWorkflowId: z
       .string()
       .trim()
-      .min(1, "default workflow id must not be empty")
-      .max(120, "default workflow id must be at most 120 characters")
+      .regex(WORKFLOW_ID_PATTERN, "default workflow id must be lowercase snake_case, at most 120 characters")
       .optional(),
   })
   .strict();

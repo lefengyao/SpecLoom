@@ -12,6 +12,7 @@ import {
   type WorkflowDefinition,
   type WorkflowNode,
 } from "../../shared/workflow";
+import { WorkflowRunInputsSchema } from "../../shared/workflow-api";
 import { ProjectError } from "./errors";
 import { FileStore } from "./file-store";
 import type { WorkflowTaskAdapter } from "./workflow-task-adapter";
@@ -29,12 +30,19 @@ export type WorkflowRunStatus =
 /** Lifecycle of one node inside a workflow run. */
 export type WorkflowNodeStatus = "pending" | "running" | "waiting_approval" | "completed" | "failed" | "skipped";
 
-/** The user-supplied inputs of one run. */
+/**
+ * The user-supplied inputs of one run.
+ *
+ * This is the runner's structural copy of the shared contract; validation and
+ * record checks use the shared WorkflowRunInputsSchema so the types cannot
+ * drift. `context` is the optional, bounded previous-step summary.
+ */
 export interface WorkflowRunInputs {
   goal: string;
   readPaths: string[];
   writePaths: string[];
-  model?: string;
+  model?: string | undefined;
+  context?: string | undefined;
 }
 
 /** Snapshot of one node's execution state. */
@@ -119,21 +127,6 @@ const RUNS_DIRECTORY = ".specloom/workflows/runs";
 const RUN_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const INTERRUPTED_MESSAGE = "Workflow run was interrupted when the application restarted";
 const TERMINAL_STATUSES: readonly WorkflowRunStatus[] = ["completed", "failed", "cancelled", "interrupted"];
-
-const WorkflowRunInputsSchema = z
-  .object({
-    goal: z.string().trim().min(1, "goal must not be empty").max(8192, "goal must be at most 8192 characters"),
-    readPaths: z
-      .array(z.string().trim().min(1, "read paths must not be empty").max(1024))
-      .min(1, "readPaths must contain at least one path")
-      .max(256),
-    writePaths: z
-      .array(z.string().trim().min(1, "write paths must not be empty").max(1024))
-      .min(1, "writePaths must contain at least one path")
-      .max(256),
-    model: z.string().trim().min(1, "model must not be empty").max(120).optional(),
-  })
-  .strict();
 
 const WorkflowNodeStateRecordSchema = z
   .object({
@@ -382,6 +375,7 @@ export class WorkflowRunner {
       readPaths: [...parsed.data.readPaths],
       writePaths: [...parsed.data.writePaths],
       ...(parsed.data.model === undefined ? {} : { model: parsed.data.model }),
+      ...(parsed.data.context === undefined ? {} : { context: parsed.data.context }),
     };
 
     const runId = this.idFactory();

@@ -106,7 +106,7 @@ export function createBlankWorkflowDefinition(id: string, title = "新建工作�
       { id: "e5", from: "review", to: "decide", on: "success" },
       { id: "e6", from: "review", to: "implement", on: "reject" },
     ],
-    settings: { maxImplementAttempts: 3 },
+    settings: { maxImplementAttempts: 3, approvalPolicy: "manual" },
   };
 }
 

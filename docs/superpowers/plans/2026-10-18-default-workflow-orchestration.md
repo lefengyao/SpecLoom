@@ -89,7 +89,7 @@ Modify:
 
 - [ ] Test: auto workflow approves review and completes with approval.autoApproved; manual still waits; context appears in plan prompt; context bounded.
 - [ ] Run — FAIL.
-- [ ] Add context to inputs schema; append to plan/implement prompts with 32 KiB cap.
+- [ ] Add context to inputs schema; append to plan/implement prompts with a 32768-character cap.
 - [ ] In runReviewNode read definitionSnapshot.settings.approvalPolicy. manual: current waiting behavior. auto: adapter.approve(taskId,digest), set approval approvedAt/autoApproved/approvedBy orchestrator, node completed, persist, continue to decision.
 - [ ] Ensure executeFrom handles continue/stop correctly and completed run.
 - [ ] Test — PASS (existing 32 + new); commit feat(workflow): support run context and auto approval.
@@ -105,7 +105,7 @@ Modify:
 - [ ] start creates OrchestrationRun with steps, persists, advance.
 - [ ] advance starts child with inputs plus previous context; waits for waiting/completed/failed/cancelled; auto approves when effective approval auto; manual persists waiting; completed records summary/decisionPath and advances; failed pauses; final completed.
 - [ ] approveStep/rejectStep/retryStep/cancel update child and advance.
-- [ ] previousContext: summary, decisionPath, validation status, approval; cap 32 KiB.
+- [ ] previousContext: summary, decisionPath, validation status, approval; cap 32768 characters.
 - [ ] Persist and reload waiting; running -> interrupted.
 - [ ] Test — PASS; commit feat(workflow): execute orchestration steps sequentially.
 
