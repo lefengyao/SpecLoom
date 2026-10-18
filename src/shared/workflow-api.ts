@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { ValidationResult, VersionToken } from "./contracts";
 import type { WorkflowDefinition, WorkflowNode } from "./workflow";
 
@@ -54,12 +55,40 @@ export type WorkflowRunStatus =
 /** Lifecycle of one node inside a workflow run. */
 export type WorkflowNodeStatus = "pending" | "running" | "waiting_approval" | "completed" | "failed" | "skipped";
 
-/** The user-supplied inputs of one run. */
+/** Hard cap for the optional previous-step context carried into one run. */
+export const MAX_RUN_CONTEXT_LENGTH = 32768;
+
+/**
+ * The user-supplied inputs of one run.
+ *
+ * `context` is optional and bounded so an orchestration can hand the next step
+ * a summary without copying an unbounded history into the prompt.
+ */
+export const WorkflowRunInputsSchema = z
+  .object({
+    goal: z.string().trim().min(1, "goal must not be empty").max(8192, "goal must be at most 8192 characters"),
+    readPaths: z
+      .array(z.string().trim().min(1, "read paths must not be empty").max(1024))
+      .min(1, "readPaths must contain at least one path")
+      .max(256),
+    writePaths: z
+      .array(z.string().trim().min(1, "write paths must not be empty").max(1024))
+      .min(1, "writePaths must contain at least one path")
+      .max(256),
+    model: z.string().trim().min(1, "model must not be empty").max(120).optional(),
+    context: z
+      .string()
+      .max(MAX_RUN_CONTEXT_LENGTH, "context must be at most " + MAX_RUN_CONTEXT_LENGTH + " characters")
+      .optional(),
+  })
+  .strict();
+
 export interface WorkflowRunInputs {
   goal: string;
   readPaths: string[];
   writePaths: string[];
   model?: string;
+  context?: string;
 }
 
 /** Snapshot of one node's execution state. */

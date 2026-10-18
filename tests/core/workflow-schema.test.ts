@@ -4,6 +4,7 @@ import {
   WorkflowValidationError,
   validateWorkflowDefinition,
 } from "../../src/shared/workflow";
+import { WorkflowRunInputsSchema } from "../../src/shared/workflow-api";
 
 type NodeFixture = {
   id: string;
@@ -24,7 +25,7 @@ type DefinitionFixture = {
   inputs: InputFixture[];
   nodes: NodeFixture[];
   edges: EdgeFixture[];
-  settings: { maxImplementAttempts: number };
+  settings: { maxImplementAttempts: number; approvalPolicy?: "manual" | "auto" };
 };
 
 const base: DefinitionFixture = {
@@ -361,5 +362,55 @@ describe("workflow definition", () => {
 
   test.each(invalidCases)("rejects $name with a readable error", ({ build, error }) => {
     expectReadableError(() => validateWorkflowDefinition(build()), error);
+  });
+});
+
+describe("workflow approval policy", () => {
+  test("defaults settings.approvalPolicy to manual", () => {
+    expect(validateWorkflowDefinition(base).settings.approvalPolicy).toBe("manual");
+  });
+
+  test("accepts settings.approvalPolicy auto", () => {
+    const definition = validateWorkflowDefinition({
+      ...base,
+      settings: { ...base.settings, approvalPolicy: "auto" },
+    });
+    expect(definition.settings.approvalPolicy).toBe("auto");
+  });
+
+  test("rejects an unknown approval policy with a readable error", () => {
+    expectReadableError(
+      () =>
+        validateWorkflowDefinition({
+          ...base,
+          settings: { ...base.settings, approvalPolicy: "sometimes" },
+        }),
+      /settings\.approvalPolicy/,
+    );
+  });
+
+  test("keeps the default maxImplementAttempts when approvalPolicy is provided", () => {
+    const definition = validateWorkflowDefinition({
+      ...base,
+      settings: { approvalPolicy: "auto" },
+    });
+    expect(definition.settings.maxImplementAttempts).toBe(3);
+    expect(definition.settings.approvalPolicy).toBe("auto");
+  });
+});
+
+describe("workflow run inputs", () => {
+  const inputs = { goal: "Ship the feature", readPaths: ["src"], writePaths: ["src"] };
+
+  test("accepts an optional context", () => {
+    const parsed = WorkflowRunInputsSchema.parse({ ...inputs, context: "previous step summary" });
+    expect(parsed.context).toBe("previous step summary");
+    expect(WorkflowRunInputsSchema.parse(inputs).context).toBeUndefined();
+  });
+
+  test("bounds context to 32768 characters", () => {
+    const atLimit = "x".repeat(32768);
+    expect(WorkflowRunInputsSchema.parse({ ...inputs, context: atLimit }).context).toHaveLength(32768);
+    expect(() => WorkflowRunInputsSchema.parse({ ...inputs, context: "x".repeat(32769) })).toThrow(/32768/);
   });
 });

@@ -28,6 +28,9 @@ export class WorkflowValidationError extends Error {
 
 export const WorkflowNodeTypeSchema = z.enum(["context", "agent", "validation", "approval", "decision"]);
 export const WorkflowInputTypeSchema = z.enum(["string", "paths", "model"]);
+/** How the approval node is handled: wait for a person (manual) or approve automatically (auto). */
+export const WorkflowApprovalPolicySchema = z.enum(["manual", "auto"]);
+export type WorkflowApprovalPolicy = z.infer<typeof WorkflowApprovalPolicySchema>;
 
 const WorkflowPositionSchema = z.object({ x: z.number(), y: z.number() }).strict();
 
@@ -61,6 +64,23 @@ export const WorkflowApprovalConfigSchema = z
 export const WorkflowDecisionConfigSchema = z
   .object({ directory: z.literal("specs/decisions") })
   .strict();
+
+/**
+ * Definition settings. `approvalPolicy` is optional in a saved definition and
+ * defaults to "manual" when the definition is parsed, so existing files keep
+ * their current (manual) behaviour.
+ */
+export const WorkflowDefinitionSettingsSchema = z
+  .object({
+    maxImplementAttempts: z.number().int().min(1).max(10).default(3),
+    approvalPolicy: WorkflowApprovalPolicySchema.default("manual"),
+  })
+  .strict();
+
+export interface WorkflowDefinitionSettings {
+  maxImplementAttempts: number;
+  approvalPolicy?: WorkflowApprovalPolicy;
+}
 
 const WorkflowContextNodeSchema = z
   .object({ ...nodeIdentity, type: z.literal("context"), config: WorkflowEmptyConfigSchema })
@@ -125,11 +145,13 @@ export const WorkflowDefinitionSchema = z
     edges: z
       .array(WorkflowEdgeSchema)
       .max(WORKFLOW_LIMITS.edges, "at most " + WORKFLOW_LIMITS.edges + " edges are supported"),
-    settings: z.object({ maxImplementAttempts: z.number().int().min(1).max(10).default(3) }).strict(),
+    settings: WorkflowDefinitionSettingsSchema,
   })
   .strict();
 
-export type WorkflowDefinition = z.infer<typeof WorkflowDefinitionSchema>;
+export type WorkflowDefinition = Omit<z.infer<typeof WorkflowDefinitionSchema>, "settings"> & {
+  settings: WorkflowDefinitionSettings;
+};
 export type WorkflowNode = z.infer<typeof WorkflowNodeSchema>;
 export type WorkflowEdge = z.infer<typeof WorkflowEdgeSchema>;
 export type WorkflowInput = z.infer<typeof WorkflowInputSchema>;
