@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { WORKFLOW_ID_PATTERN } from "./workflow";
+import type { WorkflowRunInputs } from "./workflow-api";
 
 /**
  * Shared contracts for project workflow defaults and sequential orchestrations.
@@ -82,6 +83,73 @@ export const OrchestrationDefinitionSchema = z
 
 export type OrchestrationStep = z.infer<typeof OrchestrationStepSchema>;
 export type OrchestrationDefinition = z.infer<typeof OrchestrationDefinitionSchema>;
+
+/** Lifecycle of one persisted orchestration run. */
+export const ORCHESTRATION_RUN_STATUSES = [
+  "queued",
+  "running",
+  "waiting_approval",
+  "failed",
+  "completed",
+  "cancelled",
+  "interrupted",
+] as const;
+export type OrchestrationRunStatus = (typeof ORCHESTRATION_RUN_STATUSES)[number];
+
+/** Lifecycle of one step inside an orchestration run. */
+export const ORCHESTRATION_RUN_STEP_STATUSES = [
+  "pending",
+  "running",
+  "waiting_approval",
+  "completed",
+  "failed",
+  "cancelled",
+  "skipped",
+] as const;
+export type OrchestrationRunStepStatus = (typeof ORCHESTRATION_RUN_STEP_STATUSES)[number];
+
+/**
+ * One step of a persisted sequential orchestration run.
+ *
+ * A step references an existing workflow and, once started, the durable
+ * WorkflowRun under .specloom/workflows/runs that executed it. The orchestration
+ * record never embeds the workflow definition or the child run.
+ */
+export interface OrchestrationRunStep {
+  stepId: string;
+  workflowId: string;
+  approval: OrchestrationApproval;
+  /** The child WorkflowRun this step started. */
+  runId?: string;
+  status: OrchestrationRunStepStatus;
+  /** Set when the orchestrator approved this step without a person. */
+  autoApproved?: boolean;
+  error?: string;
+  /** Bounded handoff context captured from the completed child run. */
+  summary?: string;
+  decisionPath?: string;
+}
+
+/**
+ * A durable orchestration run record.
+ *
+ * Field names follow the design record contract. The record is stored under
+ * .specloom/workflows/orchestration-runs/<orchestrationRunId>.json and is
+ * validated again when read.
+ */
+export interface OrchestrationRun {
+  schemaVersion: 1;
+  orchestrationRunId: string;
+  orchestrationId: string;
+  title: string;
+  inputs: WorkflowRunInputs;
+  steps: OrchestrationRunStep[];
+  currentStepIndex: number;
+  status: OrchestrationRunStatus;
+  startedAt: string;
+  finishedAt?: string;
+  error?: string;
+}
 
 /** Project-level default workflow settings stored under .specloom/editor. */
 export const WorkflowSettingsSchema = z
