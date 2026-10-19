@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { ValidationResult, VersionToken } from "./contracts";
-import type { WorkflowDefinition, WorkflowNode } from "./workflow";
+import { WORKFLOW_ID_PATTERN, type WorkflowDefinition, type WorkflowNode } from "./workflow";
 
 /**
  * Serializable workflow contracts shared by the main process, the preload
@@ -98,6 +98,53 @@ export interface WorkflowRunInputs {
   writePaths: string[];
   model?: string | undefined;
   context?: string | undefined;
+}
+
+/**
+ * The scope a chat implementation turn starts with.
+ *
+ * It carries the same goal/read/write/model inputs as a workflow run; the goal
+ * is the message the person sent, and an explicit workflowId overrides the
+ * project default. The schema is shared so the renderer, preload, and IPC layer
+ * reject an unusable turn before the main process resolves any workflow.
+ */
+export const WorkflowTriggerChatInputSchema = z
+  .object({
+    goal: z.string().trim().min(1, "goal must not be empty").max(8192, "goal must be at most 8192 characters"),
+    readPaths: z
+      .array(z.string().trim().min(1, "read paths must not be empty").max(1024))
+      .min(1, "readPaths must contain at least one path")
+      .max(256),
+    writePaths: z
+      .array(z.string().trim().min(1, "write paths must not be empty").max(1024))
+      .min(1, "writePaths must contain at least one path")
+      .max(256),
+    model: z.string().trim().min(1, "model must not be empty").max(120).optional(),
+    workflowId: z
+      .string()
+      .trim()
+      .regex(WORKFLOW_ID_PATTERN, "workflow id must be lowercase snake_case, at most 120 characters")
+      .optional(),
+  })
+  .strict();
+
+export type WorkflowTriggerChatInput = z.infer<typeof WorkflowTriggerChatInputSchema>;
+
+/** Where a triggered run's workflow came from. */
+export type WorkflowTriggerSource = "project" | "official" | "fallback" | "explicit";
+
+/**
+ * The durable result of starting a workflow from a task or chat turn.
+ *
+ * A task binding is idempotent, so a repeated start returns the same runId;
+ * the source records whether the project default, official fallback, or an
+ * explicit selection supplied the definition.
+ */
+export interface WorkflowTriggerResult {
+  workflowId: string;
+  runId: string;
+  source: WorkflowTriggerSource;
+  warning?: string;
 }
 
 /** Snapshot of one node's execution state. */

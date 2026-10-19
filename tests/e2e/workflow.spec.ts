@@ -10,7 +10,7 @@ test("workflow page copies the official template and renders its nodes", async (
   const application = await launchSourceElectron(data);
   try {
     const window = await application.firstWindow();
-    await expect(window.getByRole("heading", { name: "SpecLoom", exact: true })).toBeVisible();
+    await expect(window.getByRole("heading", { name: "SpecLoom", exact: true })).toBeVisible({ timeout: 20000 });
     await window.getByRole("button", { name: "创建示例项目" }).click();
     await expect(window.getByRole("heading", { name: "灯塔守望", exact: true })).toBeVisible();
     await window.getByRole("button", { name: "工作流", exact: true }).click();

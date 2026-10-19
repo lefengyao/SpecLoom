@@ -33,6 +33,8 @@ import type {
   WorkflowSaveResult,
   WorkflowSource,
   WorkflowSummary,
+  WorkflowTriggerChatInput,
+  WorkflowTriggerResult,
   WorkflowUpdate,
 } from "./workflow-api";
 import type { OrchestrationRun, WorkflowSettings } from "./orchestration";
@@ -174,6 +176,14 @@ export interface WorkflowApi {
   remove(id: string, expectedVersion: VersionToken): Promise<void>;
   copyOfficial(id: string): Promise<WorkflowCopyResult>;
   start(definition: WorkflowDefinition, inputs: WorkflowRunInputs): Promise<WorkflowRun>;
+  /**
+   * Start the project default workflow for a task's first implementation
+   * message. The main process records a durable one-run binding, so a repeat
+   * returns the same run. Hosts that predate this feature omit the method.
+   */
+  startForTask?(taskId: string, message?: string): Promise<WorkflowTriggerResult>;
+  /** Start a chat implementation turn; an explicit workflow overrides the default. */
+  startForChat?(input: WorkflowTriggerChatInput): Promise<WorkflowTriggerResult>;
   getRun(runId: string): Promise<WorkflowRun>;
   listRuns(): Promise<WorkflowRun[]>;
   approve(runId: string, digest: string): Promise<void>;

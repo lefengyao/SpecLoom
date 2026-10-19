@@ -13,6 +13,9 @@ import {
   WorkflowRunInputsSchema,
   type WorkflowRun,
   type WorkflowRunInputs,
+  type WorkflowTriggerChatInput,
+  type WorkflowTriggerResult,
+  type WorkflowTriggerSource,
 } from "../../shared/workflow-api";
 import { ProjectError } from "./errors";
 import { resolveDefaultWorkflow } from "./workflow-defaults";
@@ -220,25 +223,12 @@ export interface WorkflowTriggerOptions {
   loadOfficial?: () => Promise<WorkflowDefinition>;
 }
 
-/** A chat implementation turn: an explicit scope plus an optional workflow. */
-export interface WorkflowTriggerChatInput {
-  goal: string;
-  readPaths: string[];
-  writePaths: string[];
-  model?: string;
-  /** Explicit selection; omitted means "use the project default". */
-  workflowId?: string;
-}
-
-/** Where a trigger's workflow came from. */
-export type WorkflowTriggerSource = WorkflowDefaultSource | "explicit";
-
-export interface WorkflowTriggerResult {
-  workflowId: string;
-  runId: string;
-  source: WorkflowTriggerSource;
-  warning?: string;
-}
+/**
+ * A chat implementation turn: an explicit scope plus an optional workflow.
+ * The shape is owned by the shared workflow API so the IPC boundary and the
+ * trigger cannot drift.
+ */
+export type { WorkflowTriggerChatInput, WorkflowTriggerResult, WorkflowTriggerSource };
 
 /**
  * The goal a task starts its default workflow with.

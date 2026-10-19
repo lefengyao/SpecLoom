@@ -13,6 +13,8 @@ import {
   WorkflowRunRequestSchema,
   WorkflowSaveRequestSchema,
   WorkflowSettingsRequestSchema,
+  WorkflowStartForChatRequestSchema,
+  WorkflowStartForTaskRequestSchema,
 } from "../../src/main/ipc";
 import { stringifyOrchestration } from "../../src/main/core/orchestration-store";
 import type { ProjectCore } from "../../src/main/core/project-core";
@@ -383,5 +385,41 @@ describe("entity layout requests", () => {
   test("rejects non-finite points and unknown fields", () => {
     expect(EntityLayoutRequestSchema.safeParse({ layout: { keeper: { health: { x: Number.NaN, y: 2 } } } }).success).toBe(false);
     expect(EntityLayoutRequestSchema.safeParse({ layout: { keeper: { health: { x: 1, y: 2 } } }, extra: true }).success).toBe(false);
+  });
+});
+describe("workflow trigger requests", () => {
+  test("accepts a task start with an optional bounded implementation message", () => {
+    expect(WorkflowStartForTaskRequestSchema.safeParse({ taskId: "task-1" }).success).toBe(true);
+    expect(
+      WorkflowStartForTaskRequestSchema.safeParse({ taskId: "task-1", message: "开始实现灯塔交互" }).success,
+    ).toBe(true);
+    expect(WorkflowStartForTaskRequestSchema.safeParse({ taskId: "" }).success).toBe(false);
+    expect(
+      WorkflowStartForTaskRequestSchema.safeParse({ taskId: "task-1", message: "x".repeat(131073) }).success,
+    ).toBe(false);
+    expect(
+      WorkflowStartForTaskRequestSchema.safeParse({ taskId: "task-1", extra: true }).success,
+    ).toBe(false);
+  });
+
+  test("accepts a chat implementation turn with shared scope inputs and an optional workflow", () => {
+    const input = { goal: "实现守灯人交互", readPaths: ["*"], writePaths: ["scripts"] };
+    expect(WorkflowStartForChatRequestSchema.safeParse({ input }).success).toBe(true);
+    expect(
+      WorkflowStartForChatRequestSchema.safeParse({
+        input: { ...input, workflowId: "wf_demo", model: "model-1" },
+      }).success,
+    ).toBe(true);
+  });
+
+  test("rejects a chat turn without a usable goal, paths, or with an unsafe workflow id", () => {
+    const input = { goal: "实现守灯人交互", readPaths: ["*"], writePaths: ["scripts"] };
+    expect(WorkflowStartForChatRequestSchema.safeParse({ input: { ...input, goal: "   " } }).success).toBe(false);
+    expect(WorkflowStartForChatRequestSchema.safeParse({ input: { ...input, readPaths: [] } }).success).toBe(false);
+    expect(WorkflowStartForChatRequestSchema.safeParse({ input: { ...input, writePaths: [] } }).success).toBe(false);
+    expect(
+      WorkflowStartForChatRequestSchema.safeParse({ input: { ...input, workflowId: "../escape" } }).success,
+    ).toBe(false);
+    expect(WorkflowStartForChatRequestSchema.safeParse({ input: { ...input, extra: true } }).success).toBe(false);
   });
 });

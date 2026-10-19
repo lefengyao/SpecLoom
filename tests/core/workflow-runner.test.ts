@@ -96,6 +96,14 @@ describe("workflow task adapter", () => {
     expect(core.removeTask).toHaveBeenCalledWith(created.id);
   });
 
+  test("preserves an all-project read wildcard for the task scope", async () => {
+    const core = coreDouble();
+    const adapter = new ProjectCoreWorkflowTaskAdapter(core, () => profile);
+    await adapter.createTask({ title: "plan", readPaths: ["*"], writePaths: [] });
+    const spec = vi.mocked(core.createTask).mock.calls[0]?.[0];
+    expect(spec?.readPaths).toEqual(["*"]);
+  });
+
   test("resolves model profiles through the injected callback", async () => {
     const adapter = new ProjectCoreWorkflowTaskAdapter(coreDouble(), (model) => (model === profile.id ? profile : undefined));
     await expect(adapter.resolveModelProfile(profile.id)).resolves.toBe(profile);
@@ -255,6 +263,19 @@ describe("workflow runner", () => {
     expect(context).toContain("read 2 file(s)");
     expect(context).toContain("write: specs/entities");
     if (linked) expect(context).toContain("1 symbolic link(s) skipped");
+  });
+
+  test("the context node accepts task-scope wildcards and directory globs", async () => {
+    const root = await tempRoot();
+    await writeFile(path.join(root, "specs", "entities", "keeper.md"), "# keeper", "utf8");
+    const adapter = new FakeWorkflowTaskAdapter();
+    const runner = new WorkflowRunner({ adapter, root });
+    const run = runner.createRun(await loadOfficialWorkflow(), inputs({ readPaths: ["*"], writePaths: ["specs/entities/**"] }));
+    await runner.start(run.runId);
+    const waiting = await runner.waitForRun(run.runId, (candidate) => candidate.status === "waiting_approval");
+    const context = waiting.nodeStates.find((state) => state.id === "context")?.output ?? "";
+    expect(context).toContain("read 1 file(s)");
+    expect(stateStatus(waiting, "context")).toBe("completed");
   });
 
   test("start runs the official graph in success-edge order and waits for approval", async () => {

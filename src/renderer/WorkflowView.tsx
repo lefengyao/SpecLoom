@@ -1,5 +1,5 @@
 import { Copy, Plus, RefreshCw, Save, Star, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ModelProfile } from "../shared/contracts";
 import type { DesktopApi } from "../shared/desktop-api";
 import { OFFICIAL_WORKFLOW_ID } from "../shared/orchestration";
@@ -18,6 +18,10 @@ export interface WorkflowViewProps {
   models: ModelProfile[];
   projectPath: string;
   onError?: (error: unknown) => void;
+  /** A run card asked the page to open one durable run in Run mode. */
+  runRequest?: { runId: string; sequence: number } | undefined;
+  /** Called once the request was consumed, so the owner can clear it. */
+  onRunRequestHandled?: (sequence: number) => void;
 }
 
 type RunTarget = "workflow" | "orchestration";
@@ -30,7 +34,7 @@ const OFFICIAL_TITLE = "官方开发审查";
  * chain. The official workflow is the global default; a project workflow can
  * override it, and an orchestration can never be a default.
  */
-export function WorkflowView({ api, models, projectPath, onError }: WorkflowViewProps) {
+export function WorkflowView({ api, models, projectPath, onError, runRequest, onRunRequestHandled }: WorkflowViewProps) {
   const workflow = useWorkflow(api, projectPath, onError);
   const orchestration = useOrchestration(api, projectPath, workflow.summaries, onError);
   const [selectedNodeId, setSelectedNodeId] = useState<string | undefined>(undefined);
@@ -43,6 +47,30 @@ export function WorkflowView({ api, models, projectPath, onError }: WorkflowView
   useEffect(() => {
     setSelectedNodeId(undefined);
   }, [definitionId]);
+  // A chat or task run card can deep-link into Run mode. The request carries a
+  // sequence so the same run can be reopened after the page already handled it.
+  const handledRunRequest = useRef<number | undefined>(undefined);
+  const handledRunRequestCallback = useRef(onRunRequestHandled);
+  handledRunRequestCallback.current = onRunRequestHandled;
+  const openRun = workflow.openRun;
+  useEffect(() => {
+    if (!runRequest || !api?.workflow || handledRunRequest.current === runRequest.sequence) return;
+    handledRunRequest.current = runRequest.sequence;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const run = await api.workflow!.getRun(runRequest.runId);
+        if (cancelled) return;
+        setRunTarget("workflow");
+        await openRun(run);
+      } catch (error) {
+        if (!cancelled) onError?.(error);
+      } finally {
+        if (!cancelled) handledRunRequestCallback.current?.(runRequest.sequence);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [api, runRequest, openRun, onError]);
 
   const selectedNode = definition?.nodes.find((node) => node.id === selectedNodeId);
 

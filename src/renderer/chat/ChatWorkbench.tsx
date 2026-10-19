@@ -1,9 +1,11 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { CornerUpRight, PanelRightOpen, Pencil, Plus, Settings2, Trash2 } from "lucide-react";
-import type { ChangeReview, DesktopApi, TaskView } from "../../shared/desktop-api";
+import type { ChangeReview, DesktopApi, TaskView, WorkflowApi } from "../../shared/desktop-api";
 import type { ModelReference, ProviderPublic, ReasoningPreference, SessionModelPreference } from "../../shared/contracts";
 import type { ChatSession, ChatSessionsApi } from "../../shared/chat";
 import type { Preferences } from "../../shared/preferences";
+import { OFFICIAL_WORKFLOW_ID, type WorkflowSettings } from "../../shared/orchestration";
+import type { WorkflowRun, WorkflowSummary, WorkflowTriggerResult } from "../../shared/workflow-api";
 import { DEFAULT_APPROVAL_MODE, type ApprovalMode } from "../../shared/approvals";
 import { DEFAULT_WEB_SEARCH_MODE, WEB_SEARCH_MODE_LABELS, WebSearchModeSchema, type WebSearchMode } from "../../shared/web-search";
 import { sessionFileLimit } from "../../shared/chat";
@@ -18,8 +20,10 @@ import { AgentProgress } from "./AgentProgress";
 import { SessionSettings } from "./SessionSettings";
 import { AgentSidebar } from "./AgentSidebar";
 import type { ToolSidebarSelection } from "./ToolChainBox";
-import { AttachmentIngest, type AttachmentTarget } from "./attachment-ingest";
+import { AttachmentIngest, composePrompt, type AttachmentTarget, type PreparedDraftSnapshot } from "./attachment-ingest";
 import { AttachmentTray } from "./AttachmentTray";
+import { ImplementationScopeCard, type ImplementationScopeInput } from "./ImplementationScopeCard";
+import { WorkflowRunCard, type WorkflowRunCardState } from "./WorkflowRunCard";
 import "./chat.css";
 import "./guidance.css";
 
@@ -56,7 +60,9 @@ function ContextUsageIndicator({ current, pending, contextTokens, lastRequestUsa
   </span>;
 }
 
-export function ChatWorkbench({ api, attachments, projectPath, windowId, tasks, providers, defaultModel, sessionModel, preferences, selectedTaskId, sessionSelection, review, busy, onSelectTask, onNewTask, onReview, onError, onFinished, onRunningChange, documents }: {
+type ComposerMode = "qa" | "implementation";
+
+export function ChatWorkbench({ api, attachments, projectPath, windowId, tasks, providers, defaultModel, sessionModel, preferences, selectedTaskId, sessionSelection, review, busy, workflow, onOpenWorkflowRun, onSelectTask, onNewTask, onReview, onError, onFinished, onRunningChange, documents }: {
   api: ChatSessionsApi; projectPath: string; tasks: TaskView[]; providers: ProviderPublic[]; defaultModel?: ModelReference; sessionModel?: SessionModelPreference; selectedTaskId?: string; review: ChangeReview | undefined; busy: boolean;
   attachments?: DesktopApi["chatAttachments"];
   onSelectTask: (id: string) => void; onNewTask: () => void; onReview: (action: "approve" | "reject" | "validate" | "refresh") => Promise<void>;
@@ -64,6 +70,10 @@ export function ChatWorkbench({ api, attachments, projectPath, windowId, tasks, 
   sessionSelection?: { id: string; sequence: number };
   windowId?: string | undefined;
   documents?: () => Promise<{ path: string }[]>;
+  /** Workflow entry API; when absent the composer stays in Q&A mode. */
+  workflow?: WorkflowApi | undefined;
+  /** Deep-link a started run into the workflow page's Run mode. */
+  onOpenWorkflowRun?: (runId: string) => void;
   preferences?: Pick<Preferences, "userAvatar" | "assistantAvatar" | "hideAgentDetails" | "showOutputRate" | "showFirstTokenLatency" | "showThinkingDuration"> | undefined;
 }) {
   const [, setAttachmentTick] = useState(0);
@@ -88,6 +98,14 @@ export function ChatWorkbench({ api, attachments, projectPath, windowId, tasks, 
   const creatingRevision = useRef(0);
   const creationToken = useRef<string | undefined>(undefined);
   const [failedCreation, setFailedCreation] = useState(false);
+  const [composerMode, setComposerMode] = useState<ComposerMode>("qa");
+  const [workflowSummaries, setWorkflowSummaries] = useState<WorkflowSummary[]>([]);
+  const [workflowDefault, setWorkflowDefault] = useState<WorkflowSettings>({ schemaVersion: 1 });
+  const [selectedWorkflowId, setSelectedWorkflowId] = useState("");
+  const [runCards, setRunCards] = useState<WorkflowRunCardState[]>([]);
+  const [scopeRequest, setScopeRequest] = useState<{ goal: string }>();
+  const [implementationBusy, setImplementationBusy] = useState(false);
+  const pendingImplementation = useRef<{ sessionId: string; target: AttachmentTarget; snapshot: PreparedDraftSnapshot } | undefined>(undefined);
   const temporaryDraft = chat.creating || failedCreation;
   const creatingSessionId = useRef<string | undefined>(undefined);
   useLayoutEffect(() => {
@@ -99,6 +117,64 @@ export function ChatWorkbench({ api, attachments, projectPath, windowId, tasks, 
   const input = useRef<HTMLTextAreaElement>(null); const importFile = useRef<HTMLInputElement>(null); const attachment = useRef<HTMLInputElement>(null);
   const pickerTarget = useRef<AttachmentTarget | undefined>(undefined);
   const task = tasks.find((t) => t.id === active?.taskId);
+  const projectDefaultId = workflowDefault.defaultWorkflowId;
+  const defaultWorkflowId = projectDefaultId !== undefined && projectDefaultId !== OFFICIAL_WORKFLOW_ID
+    ? projectDefaultId
+    : OFFICIAL_WORKFLOW_ID;
+  const defaultWorkflowTitle = defaultWorkflowId === OFFICIAL_WORKFLOW_ID
+    ? "官方开发审查"
+    : (workflowSummaries.find((summary) => summary.id === defaultWorkflowId)?.title ?? defaultWorkflowId);
+  const implementationAvailable = Boolean(workflow?.startForTask ?? workflow?.startForChat);
+  const implementationMode = composerMode === "implementation";
+
+  // A task session opens in implementation mode; a free chat opens in Q&A.
+  useEffect(() => {
+    setComposerMode(active?.taskId ? "implementation" : "qa");
+    setSelectedWorkflowId("");
+  }, [active?.id, active?.taskId]);
+
+  useEffect(() => {
+    if (!workflow) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const [list, settings] = await Promise.all([
+          workflow.list(),
+          workflow.defaults?.read() ?? Promise.resolve({ schemaVersion: 1 } as WorkflowSettings),
+        ]);
+        if (!cancelled) {
+          setWorkflowSummaries(list);
+          setWorkflowDefault(settings);
+        }
+      } catch (error) {
+        if (!cancelled) onError(error);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [workflow, projectPath, onError]);
+
+  // Run cards follow the same durable updates the workflow page observes.
+  useEffect(() => {
+    if (!workflow || typeof workflow.onUpdate !== "function") return;
+    return workflow.onUpdate((event) => {
+      if (event.projectPath !== projectPath) return;
+      setRunCards((current) => {
+        let changed = false;
+        const next = current.map((card) => {
+          if (card.runId !== event.run.runId) return card;
+          changed = true;
+          return {
+            ...card,
+            title: event.run.title,
+            status: event.run.status,
+            ...(event.run.error === undefined ? {} : { error: event.run.error }),
+          };
+        });
+        return changed ? next : current;
+      });
+    });
+  }, [workflow, projectPath]);
+
   const running = !!active && (chat.sending.includes(active.id) || ["running", "waiting"].includes(active.status));
   const pendingPermission = !!active && pendingPermissions.includes(active.id);
   const pendingWebSearchMode = !!active && pendingWebSearchModes.includes(active.id);
@@ -308,7 +384,7 @@ export function ChatWorkbench({ api, attachments, projectPath, windowId, tasks, 
       refocusComposer();
     } finally { setDeleting(false); }
   }
-  async function send() {
+  async function sendChat() {
     if (temporaryDraft || !active || unfinishedAttachments || [...pendingPastes.current].some(operation => pasteKey(operation.target) === pasteKey({ kind: "session", sessionId: active.id })) || permissionUpdates.current.has(active.id) || webSearchModeUpdates.current.has(active.id) || active.archived || !chosen || (!chat.draft.trim() && !currentEntries.length)) return;
     const target: AttachmentTarget = { kind: "session", sessionId: active.id };
     const snapshot = ingest.snapshot(target, chat.snapshotDraft(active.id));
@@ -328,6 +404,108 @@ export function ChatWorkbench({ api, attachments, projectPath, windowId, tasks, 
     const sent = await chat.send(active.id, images, pendingModel, snapshot);
     if (!sent && chatRef.current.sessions.some(session => session.id === active.id && !session.archived)) ingest.restore(target, snapshot);
   }
+  function addRunCard(result: WorkflowTriggerResult): void {
+    const base: WorkflowRunCardState = {
+      runId: result.runId,
+      workflowId: result.workflowId,
+      source: result.source,
+      ...(result.warning === undefined ? {} : { warning: result.warning }),
+    };
+    setRunCards((current) => {
+      const existing = current.find((card) => card.runId === result.runId);
+      if (!existing) return [base, ...current];
+      return current.map((card) => card.runId === result.runId ? { ...existing, ...base } : card);
+    });
+    const loaded = workflow?.getRun?.(result.runId);
+    if (loaded) void loaded.then((run: WorkflowRun) => {
+      setRunCards((current) => current.map((card) => card.runId === result.runId
+        ? { ...card, title: run.title, status: run.status, ...(run.error === undefined ? {} : { error: run.error }) }
+        : card));
+    }).catch(() => undefined);
+  }
+
+  /** Clear the consumed draft and attachments only after a run really started. */
+  function commitImplementation(sessionId: string, target: AttachmentTarget, snapshot: PreparedDraftSnapshot): void {
+    const current = chatRef.current.snapshotDraft(sessionId);
+    if (current.revision === snapshot.draftRevision && current.text === snapshot.draftText) chatRef.current.setDraftFor(sessionId, "");
+    ingest.detach(target, snapshot);
+  }
+
+  async function startChatImplementation(goal: string, readPaths: string[], writePaths: string[]): Promise<boolean> {
+    if (!workflow?.startForChat) {
+      onError(new Error("当前桌面版本不支持从聊天启动工作流。"));
+      return false;
+    }
+    setImplementationBusy(true);
+    try {
+      const result = await workflow.startForChat({
+        goal,
+        readPaths,
+        writePaths,
+        ...(selectedWorkflowId ? { workflowId: selectedWorkflowId } : {}),
+      });
+      addRunCard(result);
+      const pending = pendingImplementation.current;
+      if (pending) commitImplementation(pending.sessionId, pending.target, pending.snapshot);
+      pendingImplementation.current = undefined;
+      return true;
+    } catch (error) {
+      onError(error);
+      return false;
+    } finally {
+      setImplementationBusy(false);
+    }
+  }
+
+  async function sendImplementation(): Promise<void> {
+    if (!active || temporaryDraft || unfinishedAttachments || running || active.archived || implementationBusy) return;
+    if ([...pendingPastes.current].some((operation) => pasteKey(operation.target) === pasteKey({ kind: "session", sessionId: active.id }))) return;
+    const target: AttachmentTarget = { kind: "session", sessionId: active.id };
+    const snapshot = ingest.snapshot(target, chat.snapshotDraft(active.id));
+    const goal = composePrompt(snapshot).trim();
+    if (!goal) return;
+
+    if (active.taskId) {
+      if (!workflow?.startForTask) {
+        onError(new Error("当前桌面版本不支持启动任务工作流。"));
+        return;
+      }
+      setImplementationBusy(true);
+      try {
+        const result = await workflow.startForTask(active.taskId, goal);
+        addRunCard(result);
+        commitImplementation(active.id, target, snapshot);
+      } catch (error) {
+        onError(error);
+      } finally {
+        setImplementationBusy(false);
+      }
+      return;
+    }
+
+    // Prefer the selected task scope; only ask for a scope when there is none.
+    const scopeTask = tasks.find((candidate) => candidate.id === selectedTaskId);
+    pendingImplementation.current = { sessionId: active.id, target, snapshot };
+    if (scopeTask && scopeTask.scope.readPaths.length > 0 && scopeTask.scope.writePaths.length > 0) {
+      await startChatImplementation(goal, scopeTask.scope.readPaths, scopeTask.scope.writePaths);
+      return;
+    }
+    setScopeRequest({ goal });
+  }
+
+  async function startFromScope(input: ImplementationScopeInput): Promise<void> {
+    const started = await startChatImplementation(input.goal, input.readPaths, input.writePaths);
+    if (started) setScopeRequest(undefined);
+  }
+
+  async function send(): Promise<void> {
+    if (implementationMode && implementationAvailable) {
+      await sendImplementation();
+      return;
+    }
+    await sendChat();
+  }
+
   async function changeApprovalMode(id: string, mode: ApprovalMode) {
     if (permissionUpdates.current.has(id)) return;
     permissionUpdates.current.add(id); setPendingPermissions([...permissionUpdates.current]);
@@ -363,7 +541,7 @@ export function ChatWorkbench({ api, attachments, projectPath, windowId, tasks, 
     </aside>
     <section className="conversation-pane">
       <header className="conversation-heading"><div><h2 title={active?.title ?? "智能体对话"}>{active?.title ?? "智能体对话"}</h2><span className="subtle">{task ? <Status status={task.status} /> : "项目智能体会话"}{active?.status === "waiting" && (pendingApproval ? " · 等待你的审批" : " · 等待你的回答")}</span></div>{active && <button type="button" className="agent-sidebar-toggle" aria-label="打开智能体侧栏" aria-expanded={sidebar?.sessionId === active.id} onClick={() => setSidebar(current => current?.sessionId === active.id ? undefined : { sessionId: active.id })}><PanelRightOpen size={16} /><span>侧栏</span></button>}</header>
-      {task && <details className="scope-summary"><summary>已授权范围</summary><p>读取：{task.scope.readPaths.join("、")} · 写入：{task.scope.writePaths.join("、") || "无"} · {task.scope.mode === "manual" ? "手动审查" : "自动提交"}</p>{task.events.length > 0 && <details><summary>任务审计历史 · {task.events.length}</summary><AuditEvents task={task} /></details>}</details>}
+      {task && <details className="scope-summary"><summary>已授权范围</summary>{task.scope.goal && <p>目标：{task.scope.goal}</p>}<p>读取：{task.scope.readPaths.join("、")} · 写入：{task.scope.writePaths.join("、") || "无"} · {task.scope.mode === "manual" ? "手动审查" : "自动提交"}</p>{task.events.length > 0 && <details><summary>任务审计历史 · {task.events.length}</summary><AuditEvents task={task} /></details>}</details>}
       <ChatTimeline sessionId={active?.id ?? ""} runId={active?.runId} running={active?.status === "running" || active?.status === "waiting"} items={active?.items ?? []} avatars={preferences} preferences={preferences} introduction={active && <CapabilitySummary capabilities={active.capabilities} error={active.capabilityError} />} onOpenTools={(selection) => { if (active) setSidebar({ sessionId: active.id, selection }); }} onAnswer={async (item, answers) => { chat.apply(await api.answer(projectPath, item.question.sessionId, item.question.runId, item.question.id, answers)); }} onApprove={async (item, approved) => { chat.apply(await api.approve(projectPath, item.request.sessionId, item.request.runId, item.request.id, approved)); }}>
         {!active && <div className="conversation-empty"><h3>开始一段对话</h3><p>新建会话即可使用当前项目的工具与扩展。</p><button type="button" className="primary" disabled={chat.creating} onClick={() => safely(createSession)}>新建会话</button></div>}
         {active && !active.items.length && <p className="empty-state">输入消息开始对话。</p>}
@@ -371,6 +549,13 @@ export function ChatWorkbench({ api, attachments, projectPath, windowId, tasks, 
         {active?.error && <div className="run-error" role="status"><span>{active.error}</span>{active.diagnosticId && <span className="diagnostic-reference">诊断编号 <code>{active.diagnosticId}</code><CopyButton value={active.diagnosticId} label="复制诊断编号" onError={onError} /></span>}</div>}
         {activeReview && <article className="inline-review" aria-label="文件变更审查"><ReviewPane review={activeReview} running={running} busy={busy} onRefresh={() => safely(() => onReview("refresh"))} onValidate={() => safely(() => onReview("validate"))} onApprove={() => safely(() => onReview("approve"))} onReject={() => safely(() => onReview("reject"))} /></article>}
       </ChatTimeline>
+      {runCards.length > 0 && (
+        <section className="workflow-run-cards" aria-label="工作流运行卡片">
+          {runCards.map((card) => (
+            <WorkflowRunCard key={card.runId} card={card} onOpen={(runId) => onOpenWorkflowRun?.(runId)} />
+          ))}
+        </section>
+      )}
       {chat.pendingGuidance.length > 0 && <div className="guidance-queue" aria-label="引导消息列表">{chat.pendingGuidance.map(message => <section className="guidance-card" role="region" aria-label="待引导消息" key={message.id}>
         <header><span><CornerUpRight size={14} />{message.sending ? "正在发送引导…" : "待引导"}</span><small>加入当前工作，继续当前回复</small></header>
         <p>{message.text}</p>{!!message.images?.length && <small>{message.images.map(image => image.name).join("、")}</small>}
@@ -379,6 +564,42 @@ export function ChatWorkbench({ api, attachments, projectPath, windowId, tasks, 
       {pasteNotice && <div className="paste-notice" role="status">{pasteNotice}<button type="button" aria-label="关闭粘贴提示" onClick={() => setPasteNotice("")}>×</button></div>}
       {failedCreation && <div className="paste-notice" role="status">会话创建失败，草稿和附件已保留。<button type="button" onClick={() => safely(createSession)}>重试创建</button><button type="button" onClick={() => { if (creationToken.current) ingest.clear({ kind: "creating", creationToken: creationToken.current }); creationToken.current = undefined; setFailedCreation(false); }}>取消草稿</button></div>}
       <form className="composer session-composer" onSubmit={(e) => { e.preventDefault(); safely(send); }}>
+        {workflow && active && !active.archived && (
+          <div className="composer-workflow" aria-label="工作流入口">
+            <div className="composer-workflow-mode" role="group" aria-label="消息模式">
+              <button type="button" aria-pressed={composerMode === "qa"} onClick={() => setComposerMode("qa")}>
+                问答
+              </button>
+              <button
+                type="button"
+                aria-pressed={implementationMode}
+                disabled={!implementationAvailable}
+                title={implementationAvailable ? undefined : "当前桌面版本不支持工作流"}
+                onClick={() => setComposerMode("implementation")}
+              >
+                实现
+              </button>
+            </div>
+            {implementationMode && (
+              <span className="composer-workflow-default">
+                默认工作流：{defaultWorkflowTitle}
+                {!active.taskId && (
+                  <select
+                    aria-label="实现工作流"
+                    value={selectedWorkflowId}
+                    onChange={(event) => setSelectedWorkflowId(event.target.value)}
+                  >
+                    <option value="">使用默认（{defaultWorkflowTitle}）</option>
+                    <option value={OFFICIAL_WORKFLOW_ID}>官方开发审查</option>
+                    {workflowSummaries.filter((summary) => summary.id !== OFFICIAL_WORKFLOW_ID).map((summary) => (
+                      <option key={summary.id} value={summary.id}>{summary.title}</option>
+                    ))}
+                  </select>
+                )}
+              </span>
+            )}
+          </div>
+        )}
         <textarea ref={input} aria-label="任务消息" maxLength={131072} placeholder={chat.creating ? "正在创建会话，可先输入消息…" : active ? running ? "输入补充要求，发送后点击“引导”加入当前工作" : "输入消息，Shift+Enter 换行" : "先新建会话"} value={pendingDraft} disabled={!temporaryDraft && (!active || !!active.archived)} onChange={(e) => { if (temporaryDraft) { creatingRevision.current++; creatingDraftRef.current = e.target.value; setCreatingDraft(e.target.value); if (creatingSessionId.current) chat.setDraftFor(creatingSessionId.current, e.target.value); } else chat.setDraft(e.target.value); }} rows={1} onPaste={(event) => { event.preventDefault(); const captured = capturePaste(); const files = Array.from(event.clipboardData.files ?? []); if (!files.length) for (const item of Array.from(event.clipboardData.items ?? [])) { if (item.kind === "file") { const file = item.getAsFile(); if (file) files.push(file); } } const selection = { start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd }; const text = event.clipboardData.getData("text/plain"); safely(() => paste(captured, selection, files, text)); }} onKeyDown={(e) => { if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing || e.keyCode === 229) return; if (sendShortcut === "mod-enter" && !e.ctrlKey && !e.metaKey) return; e.preventDefault(); safely(send); }} />
         <footer><div className="composer-options"><select aria-label="选择模型" disabled={!active || running} value={chosen?.key ?? ""} onChange={(e) => { const next = available.find((m) => m.key === e.target.value); if (active && next) safely(() => chat.patch(active.id, { model: { providerId: next.providerId, model: next.model, reasoning: model?.reasoning ?? "inherit" } })); }}><option value="" disabled>选择模型</option>{available.map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}</select>
           <select aria-label="思考偏好" value={model?.reasoning ?? "inherit"} disabled={!active || running || !chosen} onChange={(e) => { if (active && chosen) safely(() => chat.patch(active.id, { model: { providerId: chosen.providerId, model: chosen.model, reasoning: e.target.value as ReasoningPreference } })); }}>{["inherit", "off", "low", "medium", "high"].map((r) => <option key={r} value={r}>思考：{r === "inherit" ? "继承默认" : r}</option>)}</select>
@@ -392,11 +613,22 @@ export function ChatWorkbench({ api, attachments, projectPath, windowId, tasks, 
               {documents && <button type="button" role="menuitem" onClick={() => { setShowAttachmentMenu(false); safely(async () => setReferences((await documents()).map((d) => d.path))); }}>引用资料</button>}
             </span>}
           </span>
-        </div><span className="composer-send-actions">{running && <button type="button" onClick={() => { if (active) safely(() => api.cancel(projectPath, active.id)); }}>停止</button>}<button className="primary" disabled={temporaryDraft || unfinishedAttachments || pastePending || !active || pendingPermission || pendingWebSearchMode || (!running && busy) || active.archived || !chosen || (!chat.draft.trim() && !currentEntries.length)}>发送</button></span></footer>
+        </div><span className="composer-send-actions">{running && <button type="button" onClick={() => { if (active) safely(() => api.cancel(projectPath, active.id)); }}>停止</button>}<button className="primary" disabled={temporaryDraft || unfinishedAttachments || pastePending || !active || pendingPermission || pendingWebSearchMode || (!running && busy) || implementationBusy || active.archived || !chosen || (!chat.draft.trim() && !currentEntries.length)}>发送</button></span></footer>
         {references.length > 0 && <select aria-label="选择引用资料" defaultValue="" onChange={(e) => { chat.setDraft(chat.draft + `\n@${e.target.value}\n`); setReferences([]); }}><option value="" disabled>选择资料</option>{references.map((p) => <option key={p} value={p}>{p}</option>)}</select>}
         <AttachmentTray entries={currentEntries} onRemove={(id) => { if (currentTarget) ingest.remove(currentTarget, id); }} />
         <input type="file" accept="*/*" multiple hidden ref={attachment} aria-label="添加附件文件" onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ""; const target = pickerTarget.current ?? currentTargetRef.current; pickerTarget.current = undefined; if (target && targetDraft(target) && files.length) safely(() => ingest.addFiles(target, files)); }} />
       </form>
+      {scopeRequest && (
+        <ImplementationScopeCard
+          initialGoal={scopeRequest.goal}
+          busy={implementationBusy}
+          onClose={() => {
+            setScopeRequest(undefined);
+            pendingImplementation.current = undefined;
+          }}
+          onStart={(input) => { safely(() => startFromScope(input)); }}
+        />
+      )}
       {pendingDelete && <Modal title="删除会话" onClose={() => { if (!deleting) setPendingDelete(undefined); }}>
         <p>{pendingDelete.taskId ? "删除此会话显示记录？任务审计、运行检查点和项目文件会保留，可从历史页重新进入任务。" : "删除此会话及聊天历史？项目文件会保留。"}</p>
         <footer className="form-actions">

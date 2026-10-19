@@ -1,6 +1,6 @@
 import { ShieldCheck } from "lucide-react";
 import { useState } from "react";
-import type { TaskScopeSpec } from "../shared/contracts";
+import { MAX_TASK_GOAL_LENGTH, type TaskScopeSpec } from "../shared/contracts";
 import { Modal } from "./ui";
 
 export const defaultScope: Omit<TaskScopeSpec, "id"> = {
@@ -22,6 +22,7 @@ export function ScopeForm({
   onCreate: (scope: Omit<TaskScopeSpec, "id">) => Promise<void>;
 }) {
   const [title, setTitle] = useState(initial.title);
+  const [goal, setGoal] = useState(initial.goal ?? "");
   const [read, setRead] = useState(initial.readPaths.join("\n"));
   const [write, setWrite] = useState(initial.writePaths.join("\n"));
   const [mode, setMode] = useState(initial.mode);
@@ -39,6 +40,7 @@ export function ScopeForm({
           event.preventDefault();
           void onCreate({
             title: title.trim(),
+            ...(goal.trim() ? { goal: goal.trim() } : {}),
             readPaths: paths(read),
             writePaths: paths(write),
             mode,
@@ -54,6 +56,21 @@ export function ScopeForm({
             onChange={(event) => setTitle(event.target.value)}
           />
         </label>
+        <label>
+          任务目标
+          <textarea
+            aria-describedby="task-goal-hint"
+            className="path-input"
+            rows={3}
+            maxLength={MAX_TASK_GOAL_LENGTH}
+            placeholder="这次实现要完成什么？留空时使用任务名称。"
+            value={goal}
+            onChange={(event) => setGoal(event.target.value)}
+          />
+        </label>
+        <span id="task-goal-hint" className="field-hint">
+          首次实现消息会启动默认工作流；目标会随任务保存。
+        </span>
         <label>
           可读路径
           <textarea

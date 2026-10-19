@@ -138,6 +138,8 @@ export default function App() {
   const [sessionsRunning, setSessionsRunning] = useState(false);
   const [sessionSelection, setSessionSelection] = useState<{ id: string; sequence: number }>();
   const sessionSelectionSequence = useRef(0);
+  const [workflowRunRequest, setWorkflowRunRequest] = useState<{ runId: string; sequence: number }>();
+  const workflowRunSequence = useRef(0);
   const projectPath = state.project?.path;
   useEffect(() => {
     setMaterialDrafts([]);
@@ -177,6 +179,7 @@ export default function App() {
     if (selected)
       setScope({
         title: selected.scope.title,
+        ...(selected.scope.goal === undefined ? {} : { goal: selected.scope.goal }),
         readPaths: selected.scope.readPaths,
         writePaths: selected.scope.writePaths,
         mode: selected.scope.mode,
@@ -405,6 +408,11 @@ export default function App() {
                 {...(state.sessionModel ? { sessionModel: state.sessionModel } : {})}
                 selectedTaskId={workspace.selectedId} onSelectTask={workspace.setSelectedId} onNewTask={() => setScope(true)}
                 review={review} busy={busy} onError={workspace.reportError} onRunningChange={setSessionsRunning}
+                {...(api.workflow ? { workflow: api.workflow } : {})}
+                onOpenWorkflowRun={(runId) => {
+                  setWorkflowRunRequest({ runId, sequence: ++workflowRunSequence.current });
+                  setTab("workflow");
+                }}
                 onFinished={() => { void workspace.refresh().then(() => workspace.refreshReview()).catch(workspace.reportError); }}
                 documents={() => api.documents()}
                 onReview={async (action) => { if (action === "refresh") await workspace.refreshReview(); else await workspace.reviewAction(action); setRevision((value) => value + 1); }}
@@ -460,6 +468,8 @@ export default function App() {
                   models={state.models}
                   projectPath={state.project.path}
                   onError={workspace.reportError}
+                  {...(workflowRunRequest ? { runRequest: workflowRunRequest } : {})}
+                  onRunRequestHandled={(sequence) => setWorkflowRunRequest((current) => current?.sequence === sequence ? undefined : current)}
                 />
               )}
             </NavigationPage>
@@ -578,6 +588,12 @@ export default function App() {
           onCreate={async (spec) => {
             const task = await workspace.createTask(spec);
             if (task) {
+              // A task owns one persistent conversation; open it so the first
+              // implementation message starts the default workflow there.
+              if (api?.sessions && projectPath) {
+                const session = await api.sessions.create(projectPath, undefined, task.id);
+                setSessionSelection({ id: session.id, sequence: ++sessionSelectionSequence.current });
+              }
               setScope(undefined);
               setTab("workspace");
             }

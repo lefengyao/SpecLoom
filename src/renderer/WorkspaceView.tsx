@@ -310,6 +310,8 @@ export function WorkspaceView({
           <details className="scope-summary">
             <summary>已授权范围</summary>
             <dl>
+              <dt>目标</dt>
+              <dd>{selected.scope.goal ?? selected.scope.title}</dd>
               <dt>读取</dt>
               <dd>
                 {selected.scope.readPaths.map((path) => (

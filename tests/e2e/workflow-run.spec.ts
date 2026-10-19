@@ -52,7 +52,7 @@ test("official workflow runs through approval and records a decision", async () 
   const application = await launchSourceElectron(data);
   try {
     const window = await application.firstWindow();
-    await expect(window.getByRole("heading", { name: "SpecLoom", exact: true })).toBeVisible();
+    await expect(window.getByRole("heading", { name: "SpecLoom", exact: true })).toBeVisible({ timeout: 20000 });
     await window.getByRole("button", { name: "创建示例项目" }).click();
     await expect(window.getByRole("heading", { name: "灯塔守望", exact: true })).toBeVisible();
 
@@ -82,7 +82,7 @@ test("official workflow runs through approval and records a decision", async () 
     await window.getByRole("button", { name: "从官方复制" }).click();
     await expect(window.getByText("Agent 实现", { exact: true })).toBeVisible();
     await window.getByRole("button", { name: "运行", exact: true }).click();
-    await window.getByLabel("目标").fill("实现灯塔交互并完成后端审查");
+    await window.getByLabel("目标", { exact: true }).fill("实现灯塔交互并完成后端审查");
     await window.getByLabel("读取范围").fill("specs");
     await window.getByLabel("修改范围").fill("specs/entities");
     await window.getByRole("button", { name: "开始运行" }).click();

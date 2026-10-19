@@ -68,6 +68,8 @@ const api: DesktopApi = {
     remove: async (id, expectedVersion) => { await invoke("workflowRemove", { id, expectedVersion }); },
     copyOfficial: (id) => invoke("workflowCopyOfficial", { id }),
     start: (definition, inputs) => invoke("workflowStart", { definition, inputs }),
+    startForTask: (taskId, message) => invoke("workflowStartForTask", { taskId, ...(message === undefined ? {} : { message }) }),
+    startForChat: (input) => invoke("workflowStartForChat", { input }),
     getRun: (runId) => invoke("workflowGetRun", { runId }),
     listRuns: () => invoke("workflowListRuns"),
     approve: async (runId, digest) => { await invoke("workflowApprove", { runId, digest }); },

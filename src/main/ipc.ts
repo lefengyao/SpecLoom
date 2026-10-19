@@ -19,7 +19,14 @@ import { DiagnosticQuerySchema } from "../shared/diagnostics";
 import { GodotPluginIdSchema, RevealPluginDirectoryInputSchema } from "../shared/godot-plugins";
 import { CHAT_ATTACHMENT_LIMITS, type ChatAttachmentInput } from "../shared/chat-attachments";
 import { WorkflowDefinitionSchema, WORKFLOW_ID_PATTERN, type WorkflowDefinition } from "../shared/workflow";
-import { WorkflowRunInputsSchema, type WorkflowRetryAction, type WorkflowRunInputs, type WorkflowUpdate } from "../shared/workflow-api";
+import {
+  WorkflowRunInputsSchema,
+  WorkflowTriggerChatInputSchema,
+  type WorkflowRetryAction,
+  type WorkflowRunInputs,
+  type WorkflowTriggerChatInput,
+  type WorkflowUpdate,
+} from "../shared/workflow-api";
 import {
   ORCHESTRATION_ID_PATTERN,
   WorkflowSettingsSchema,
@@ -73,6 +80,13 @@ export const WorkflowRunRequestSchema = z.object({ runId }).strict();
 export const OrchestrationApproveRequestSchema = z.object({ runId, digest: id }).strict();
 export const OrchestrationRetryRequestSchema = z.object({ runId, action: retryAction }).strict();
 export const OrchestrationCancelRequestSchema = z.object({ runId }).strict();
+/** Start the default workflow for a task's first implementation message. */
+export const WorkflowStartForTaskRequestSchema = z.object({
+  taskId: id,
+  message: z.string().max(131072).optional(),
+}).strict();
+/** Start a chat implementation turn with a validated scope and optional workflow. */
+export const WorkflowStartForChatRequestSchema = z.object({ input: WorkflowTriggerChatInputSchema }).strict();
 /** Editor-only entity layout; keys are bounded entity/component ids and finite points. */
 export const EntityLayoutRequestSchema = z.object({
   layout: z.record(
@@ -173,6 +187,8 @@ const operations = {
   workflowRemove: z.object({ id: workflowId, expectedVersion: VersionTokenSchema }).strict(),
   workflowCopyOfficial: z.object({ id: workflowId }).strict(),
   workflowStart: z.object({ definition: WorkflowDefinitionSchema, inputs: WorkflowRunInputsSchema }).strict(),
+  workflowStartForTask: WorkflowStartForTaskRequestSchema,
+  workflowStartForChat: WorkflowStartForChatRequestSchema,
   workflowGetRun: WorkflowRunRequestSchema,
   workflowListRuns: z.object({}).strict(),
   workflowApprove: OrchestrationApproveRequestSchema,
@@ -300,6 +316,8 @@ export function registerIpc(ipc: Pick<IpcMain, "handle">, controller: DesktopCon
         case "workflowRemove": await getWorkflow(selectedController).remove(data.id as string, data.expectedVersion as z.infer<typeof VersionTokenSchema>); result = undefined; break;
         case "workflowCopyOfficial": result = await getWorkflow(selectedController).copyOfficial(data.id as string); break;
         case "workflowStart": result = await getWorkflow(selectedController).start(data.definition as WorkflowDefinition, data.inputs as WorkflowRunInputs); break;
+        case "workflowStartForTask": result = await getWorkflow(selectedController).startForTask(data.taskId as string, data.message as string | undefined); break;
+        case "workflowStartForChat": result = await getWorkflow(selectedController).startForChat(data.input as WorkflowTriggerChatInput); break;
         case "workflowGetRun": result = await getWorkflow(selectedController).getRun(data.runId as string); break;
         case "workflowListRuns": result = await getWorkflow(selectedController).listRuns(); break;
         case "workflowApprove": await getWorkflow(selectedController).approve(data.runId as string, data.digest as string); result = undefined; break;

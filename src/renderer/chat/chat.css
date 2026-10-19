@@ -153,3 +153,15 @@
 .context-usage-ring { --context-progress: 0deg; position: relative; display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: conic-gradient(var(--accent) var(--context-progress), var(--border) var(--context-progress)); cursor: help; }
 .context-usage-ring::after { content: ""; position: absolute; inset: 3px; border-radius: 50%; background: var(--bg-surface); }
 .context-usage-ring > span { position: relative; z-index: 1; font-size: 8px; line-height: 1; color: var(--text); }
+.composer-workflow { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 6px 8px; border-bottom: 1px solid var(--border-faint); background: var(--bg-subtle); }
+.composer-workflow-mode { display: inline-flex; padding: 2px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg-surface); }
+.composer-workflow-mode button { padding: 4px 12px; border: 0; border-radius: 5px; background: transparent; font-size: 11px; color: var(--muted); }
+.composer-workflow-mode button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-text); }
+.composer-workflow-default { display: inline-flex; align-items: center; gap: 7px; min-width: 0; color: var(--muted); font-size: 11px; }
+.composer-workflow-default select { width: auto; max-width: 220px; min-height: 27px; font-size: 11px; padding: 2px 5px; }
+.workflow-run-cards { display: flex; flex-direction: column; gap: 8px; padding: 0 24px 8px; flex-shrink: 0; }
+.workflow-run-card { display: flex; flex-direction: column; gap: 6px; padding: 11px 14px; border: 1px solid var(--accent-border); border-radius: 10px; background: var(--bg-subtle); }
+.workflow-run-card header { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.workflow-run-card p { margin: 0; }
+.workflow-run-card-id { font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
+.workflow-run-card button { align-self: flex-start; font-size: 11px; padding: 4px 9px; }
