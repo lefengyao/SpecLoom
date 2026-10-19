@@ -3,7 +3,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { WorkflowView } from "../../src/renderer/WorkflowView";
-import type { DesktopApi, WorkflowApi } from "../../src/shared/desktop-api";
+import type { DesktopApi, WorkflowApi, WorkflowDefaultsApi } from "../../src/shared/desktop-api";
 import type { WorkflowDefinition } from "../../src/shared/workflow";
 import type { WorkflowRun, WorkflowSummary } from "../../src/shared/workflow-api";
 
@@ -11,8 +11,8 @@ const version = `sha256:${"a".repeat(64)}` as const;
 
 const definition: WorkflowDefinition = {
   schemaVersion: 1,
-  id: "wf_official_development_review",
-  title: "官方开发审查",
+  id: "wf_review_demo",
+  title: "项目审查流程",
   description: "读取规范、规划、实现、校验、人工审查并记录决策。",
   version: 1,
   inputs: [
@@ -49,6 +49,15 @@ const summary: WorkflowSummary = {
   fileVersion: version,
 };
 
+const release: WorkflowSummary = {
+  id: "wf_release",
+  title: "我的发布审查",
+  nodeCount: 6,
+  writeCount: 1,
+  definitionVersion: 1,
+  fileVersion: version,
+};
+
 const run: WorkflowRun = {
   schemaVersion: 1,
   runId: "run-1",
@@ -64,9 +73,14 @@ const run: WorkflowRun = {
   startedAt: "2026-10-18T10:00:00.000Z",
 };
 
-function workflowApi(): WorkflowApi {
-  return {
-    list: vi.fn(async () => [summary]),
+function workflowApi(): { workflow: WorkflowApi; defaults: WorkflowDefaultsApi } {
+  const defaults: WorkflowDefaultsApi = {
+    read: vi.fn(async () => ({ schemaVersion: 1 as const })),
+    save: vi.fn(async (settings) => settings),
+    clear: vi.fn(async () => ({ schemaVersion: 1 as const })),
+  };
+  const workflow: WorkflowApi = {
+    list: vi.fn(async () => [summary, release]),
     read: vi.fn(async () => ({ definition, fileVersion: version, source: "schemaVersion: 1" })),
     save: vi.fn(async () => ({ fileVersion: version })),
     remove: vi.fn(async () => undefined),
@@ -79,14 +93,16 @@ function workflowApi(): WorkflowApi {
     retry: vi.fn(async () => undefined),
     cancel: vi.fn(async () => undefined),
     onUpdate: vi.fn(() => () => undefined),
+    defaults,
   };
+  return { workflow, defaults };
 }
 
-function renderView(): WorkflowApi {
-  const workflow = workflowApi();
-  const api = { workflow } as unknown as DesktopApi;
+function renderView(): { workflow: WorkflowApi; defaults: WorkflowDefaultsApi } {
+  const mocked = workflowApi();
+  const api = { workflow: mocked.workflow } as unknown as DesktopApi;
   render(<WorkflowView api={api} models={[]} projectPath="E:/demo" onError={vi.fn()} />);
-  return workflow;
+  return mocked;
 }
 
 beforeAll(() => {
@@ -115,12 +131,13 @@ afterEach(() => {
 });
 
 describe("WorkflowView", () => {
-  it("renders the official six-node definition in build mode", async () => {
-    const workflow = renderView();
+  it("renders the definition in workflow mode with three mode tabs", async () => {
+    const { workflow } = renderView();
 
     expect(screen.getByRole("heading", { name: "工作流" })).toBeInTheDocument();
     expect(screen.getByText("官方开发审查流程可复制、可编辑、可运行")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "编排" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "工作流" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "编排" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "运行" })).toBeInTheDocument();
 
     expect(await screen.findByText("Agent 实现")).toBeInTheDocument();
@@ -186,8 +203,26 @@ describe("WorkflowView", () => {
     await waitFor(() => expect(screen.queryByText("只读 Agent")).not.toBeInTheDocument());
   });
 
+  it("pins the official global default and restores it after a project override", async () => {
+    const { defaults } = renderView();
+
+    const official = await screen.findByRole("region", { name: "默认工作流" });
+    expect(within(official).getByText("官方开发审查")).toBeInTheDocument();
+    expect(within(official).getByText("全局默认")).toBeInTheDocument();
+
+    fireEvent.click(await screen.findByRole("button", { name: "设为默认：我的发布审查" }));
+    await waitFor(() =>
+      expect(defaults.save).toHaveBeenCalledWith({ schemaVersion: 1, defaultWorkflowId: "wf_release" }),
+    );
+    expect(await screen.findByText("项目默认")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "恢复全局默认" }));
+    await waitFor(() => expect(defaults.clear).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.queryByText("项目默认")).not.toBeInTheDocument());
+  });
+
   it("deletes the selected workflow after confirmation", async () => {
-    const workflow = renderView();
+    const { workflow } = renderView();
     await screen.findByText("Agent 实现");
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
 

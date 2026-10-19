@@ -3,6 +3,7 @@ import { stringify } from "yaml";
 import type { VersionToken } from "../../shared/contracts";
 import type { DesktopApi, WorkflowApi } from "../../shared/desktop-api";
 import { errorMessage } from "../../shared/error-message";
+import { OFFICIAL_WORKFLOW_ID, type WorkflowSettings } from "../../shared/orchestration";
 import type { WorkflowDefinition, WorkflowNode } from "../../shared/workflow";
 import { addReadAgent as addReadAgentToDefinition, canRemoveNode, connectSuccess, deleteEdges as deleteEdgesFromDefinition, removeReadAgent } from "./workflow-editing";
 import type {
@@ -15,8 +16,8 @@ import type {
   WorkflowUpdate,
 } from "../../shared/workflow-api";
 
-/** The page has two modes: authoring the definition and running it. */
-export type WorkflowMode = "build" | "run";
+/** The page has three modes: authoring a definition, composing orchestrations, and running. */
+export type WorkflowMode = "workflow" | "orchestration" | "run";
 
 export const workflowRunStatusLabels: Record<WorkflowRun["status"], string> = {
   queued: "排队中",
@@ -122,10 +123,20 @@ export interface UseWorkflowResult {
   loading: boolean;
   error: string | undefined;
   mode: WorkflowMode;
+  /** True when the host exposes the workflow defaults namespace. */
+  defaultsAvailable: boolean;
+  /** The project workflow settings; empty when no override exists. */
+  settings: WorkflowSettings;
+  /** The project override id, or undefined when the official global default applies. */
+  projectDefaultId: string | undefined;
+  /** True when the stored project default no longer resolves to a listed workflow. */
+  defaultMissing: boolean;
   run: WorkflowRun | undefined;
   runs: WorkflowRun[];
   runLoading: boolean;
   setMode: (mode: WorkflowMode) => void;
+  setDefault: (id: string) => Promise<void>;
+  restoreDefault: () => Promise<void>;
   select: (id: string) => Promise<void>;
   openRun: (run: WorkflowRun) => Promise<void>;
   refresh: () => Promise<void>;
@@ -175,10 +186,12 @@ export function useWorkflow(
   const [dirty, setDirty] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
-  const [mode, setMode] = useState<WorkflowMode>("build");
+  const [mode, setMode] = useState<WorkflowMode>("workflow");
+  const [settings, setSettings] = useState<WorkflowSettings>({ schemaVersion: 1 });
   const [run, setRun] = useState<WorkflowRun | undefined>(undefined);
   const [runs, setRuns] = useState<WorkflowRun[]>([]);
   const [runLoading, setRunLoading] = useState(false);
+  const defaults = workflow?.defaults;
 
   useEffect(() => {
     mounted.current = true;
@@ -199,6 +212,17 @@ export function useWorkflow(
     if (mounted.current) setError(errorMessage(cause));
     onErrorRef.current?.(cause);
   }, []);
+
+  /** Read the project default settings; an unavailable defaults API is a no-op. */
+  const refreshDefaults = useCallback(async (): Promise<void> => {
+    if (!defaults) return;
+    try {
+      const loaded = await defaults.read();
+      if (mounted.current) setSettings(loaded);
+    } catch (cause) {
+      fail(cause);
+    }
+  }, [defaults, fail]);
 
   /** Load the definition into the draft and mark it clean. */
   const openWorkflow = useCallback(
@@ -263,6 +287,43 @@ export function useWorkflow(
     },
     [openWorkflow, fail],
   );
+
+  const setDefault = useCallback(
+    async (id: string): Promise<void> => {
+      if (!defaults) {
+        setError("当前桌面版本不支持设置默认工作流。");
+        return;
+      }
+      setLoading(true);
+      setError(undefined);
+      try {
+        const saved = await defaults.save({ schemaVersion: 1, defaultWorkflowId: id });
+        if (mounted.current) setSettings(saved);
+      } catch (cause) {
+        fail(cause);
+      } finally {
+        if (mounted.current) setLoading(false);
+      }
+    },
+    [defaults, fail],
+  );
+
+  const restoreDefault = useCallback(async (): Promise<void> => {
+    if (!defaults) {
+      setError("当前桌面版本不支持恢复全局默认。");
+      return;
+    }
+    setLoading(true);
+    setError(undefined);
+    try {
+      const cleared = await defaults.clear();
+      if (mounted.current) setSettings(cleared);
+    } catch (cause) {
+      fail(cause);
+    } finally {
+      if (mounted.current) setLoading(false);
+    }
+  }, [defaults, fail]);
 
   const select = useCallback(
     async (id: string): Promise<void> => {
@@ -588,6 +649,17 @@ export function useWorkflow(
     void refreshRuns();
   }, [refreshRuns]);
 
+  useEffect(() => {
+    void refreshDefaults();
+  }, [refreshDefaults]);
+
+  const projectDefaultId =
+    settings.defaultWorkflowId !== undefined && settings.defaultWorkflowId !== OFFICIAL_WORKFLOW_ID
+      ? settings.defaultWorkflowId
+      : undefined;
+  const defaultMissing =
+    projectDefaultId !== undefined && !loading && !summaries.some((item) => item.id === projectDefaultId);
+
   return {
     available: Boolean(workflow),
     summaries,
@@ -599,10 +671,16 @@ export function useWorkflow(
     loading,
     error,
     mode,
+    defaultsAvailable: Boolean(defaults),
+    settings,
+    projectDefaultId,
+    defaultMissing,
     run,
     runs,
     runLoading,
     setMode,
+    setDefault,
+    restoreDefault,
     select,
     openRun,
     refresh,
