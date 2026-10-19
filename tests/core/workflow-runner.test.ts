@@ -9,6 +9,7 @@ import { ProjectError } from "../../src/main/core/errors";
 import { FileStore } from "../../src/main/core/file-store";
 import { loadOfficialWorkflow } from "../../src/main/core/workflow-official";
 import { WorkflowRunner, type WorkflowRun, type WorkflowRunInputs } from "../../src/main/core/workflow-runner";
+import { MAX_RUN_CONTEXT_LENGTH } from "../../src/shared/workflow-api";
 import { FakeWorkflowTaskAdapter } from "../helpers/fake-workflow-task-adapter";
 
 const profile: ModelProfile = {
@@ -154,6 +155,7 @@ function inputs(overrides: Partial<WorkflowRunInputs> & { omitModel?: boolean } 
     writePaths: rest.writePaths ?? ["specs/entities"],
   };
   if (!omitModel) value.model = rest.model ?? "model-1";
+  if (rest.context !== undefined) value.context = rest.context;
   return value;
 }
 
@@ -301,6 +303,123 @@ describe("workflow runner", () => {
     const second = runner.createRun(definition, value);
     await expect(runner.start(second.runId)).rejects.toThrow(/active/i);
     expect(adapter.agents).toEqual([title, title]);
+  });
+
+  test("an auto approval workflow approves the review and completes the run", async () => {
+    const root = await tempRoot();
+    const adapter = new FakeWorkflowTaskAdapter();
+    const runner = new WorkflowRunner({ adapter, root });
+    const definition = structuredClone(await loadOfficialWorkflow());
+    definition.settings.approvalPolicy = "auto";
+    const run = runner.createRun(definition, inputs());
+
+    await runner.start(run.runId);
+    const completed = await runner.waitForRun(run.runId, (candidate) => candidate.status === "completed");
+
+    expect(adapter.approvals).toEqual([{ taskId: completed.writeTaskId, digest: adapter.digest }]);
+    expect(completed.approval).toMatchObject({
+      digest: adapter.digest,
+      autoApproved: true,
+      approvedBy: "orchestrator",
+    });
+    expect(completed.approval?.approvedAt).toBeDefined();
+    expect(stateStatus(completed, "review")).toBe("completed");
+    expect(stateStatus(completed, "decide")).toBe("completed");
+    expect(completed.decisionPath).toBeDefined();
+    expect(completed.finishedAt).toBeDefined();
+    expect(completed.error).toBeUndefined();
+
+    const record = await readRunRecord(root, run.runId);
+    expect(record.status).toBe("completed");
+    expect(record.approval).toMatchObject({ digest: adapter.digest, autoApproved: true, approvedBy: "orchestrator" });
+  });
+
+  test("a manual approval policy still waits for a human decision", async () => {
+    const root = await tempRoot();
+    const adapter = new FakeWorkflowTaskAdapter();
+    const runner = new WorkflowRunner({ adapter, root });
+    const definition = structuredClone(await loadOfficialWorkflow());
+    definition.settings.approvalPolicy = "manual";
+    const run = runner.createRun(definition, inputs());
+
+    await runner.start(run.runId);
+    const waiting = await runner.waitForRun(run.runId, (candidate) => candidate.status === "waiting_approval");
+
+    expect(adapter.approvals).toHaveLength(0);
+    expect(waiting.approval).toEqual({ digest: adapter.digest });
+    expect(waiting.approval?.autoApproved).toBeUndefined();
+    expect(stateStatus(waiting, "review")).toBe("waiting_approval");
+    expect(stateStatus(waiting, "decide")).toBe("pending");
+  });
+
+  test("run context is appended to the plan and implement prompts", async () => {
+    const root = await tempRoot();
+    const adapter = new FakeWorkflowTaskAdapter();
+    const runner = new WorkflowRunner({ adapter, root });
+    const context = "上一步摘要：模型参数已确认";
+    const run = runner.createRun(await loadOfficialWorkflow(), inputs({ context }));
+
+    await runner.start(run.runId);
+    await runner.waitForRun(run.runId, (candidate) => candidate.status === "waiting_approval");
+
+    expect(adapter.prompts).toHaveLength(2);
+    const planPrompt = adapter.prompts[0];
+    const implementPrompt = adapter.prompts[1];
+    if (planPrompt === undefined || implementPrompt === undefined) {
+      throw new Error("expected a plan prompt and an implement prompt");
+    }
+    expect(planPrompt).toContain("Context:");
+    expect(planPrompt).toContain(context);
+    expect(implementPrompt).toContain("Context:");
+    expect(implementPrompt).toContain(context);
+    // The implement prompt keeps goal and plan before the context block.
+    expect(implementPrompt).toContain("Goal:");
+    expect(implementPrompt.indexOf("Plan:")).toBeLessThan(implementPrompt.indexOf("Context:"));
+  });
+
+  test("run context is persisted in the record and survives a reload", async () => {
+    const root = await tempRoot();
+    const adapter = new FakeWorkflowTaskAdapter();
+    const runner = new WorkflowRunner({ adapter, root });
+    const context = "previous step summary";
+    const run = runner.createRun(await loadOfficialWorkflow(), inputs({ context }));
+
+    await runner.start(run.runId);
+    await runner.waitForRun(run.runId, (candidate) => candidate.status === "waiting_approval");
+
+    const record = await readRunRecord(root, run.runId);
+    expect((record.inputs as { context?: string }).context).toBe(context);
+
+    const fresh = new WorkflowRunner({ adapter: new FakeWorkflowTaskAdapter(), root });
+    expect((await fresh.getRun(run.runId)).inputs.context).toBe(context);
+  });
+
+  test("no context block is appended when the run has no context", async () => {
+    const root = await tempRoot();
+    const adapter = new FakeWorkflowTaskAdapter();
+    const runner = new WorkflowRunner({ adapter, root });
+    const definition = await loadOfficialWorkflow();
+    const run = runner.createRun(definition, inputs());
+
+    await runner.start(run.runId);
+    await runner.waitForRun(run.runId, (candidate) => candidate.status === "waiting_approval");
+
+    const planNode = definition.nodes.find((node) => node.type === "agent" && node.config.access === "read");
+    if (!planNode || planNode.type !== "agent") throw new Error("expected a plan node");
+    expect(adapter.prompts[0]).toBe(planNode.config.prompt);
+    expect(adapter.prompts[0]).not.toContain("Context:");
+    expect(adapter.prompts[1]).not.toContain("Context:");
+  });
+
+  test("run context is bounded to the shared character cap", async () => {
+    const root = await tempRoot();
+    const runner = new WorkflowRunner({ adapter: new FakeWorkflowTaskAdapter(), root });
+    const definition = await loadOfficialWorkflow();
+    const atLimit = "x".repeat(MAX_RUN_CONTEXT_LENGTH);
+
+    const accepted = runner.createRun(definition, inputs({ context: atLimit }));
+    expect(accepted.inputs.context).toHaveLength(MAX_RUN_CONTEXT_LENGTH);
+    expect(() => runner.createRun(definition, inputs({ context: atLimit + "x" }))).toThrow(/32768/);
   });
 
   test("start returns while the run is still executing in the background", async () => {

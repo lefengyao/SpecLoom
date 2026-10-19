@@ -119,6 +119,10 @@ export interface WorkflowApproval {
   digest: string;
   /** Set only after approve() succeeded. */
   approvedAt?: string;
+  /** True when the approval policy approved the change set without a human. */
+  autoApproved?: boolean;
+  /** Who granted the approval; "orchestrator" for an auto approval. */
+  approvedBy?: string;
 }
 
 /** A durable workflow run record. */

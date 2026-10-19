@@ -12,7 +12,7 @@ import {
   type WorkflowDefinition,
   type WorkflowNode,
 } from "../../shared/workflow";
-import { WorkflowRunInputsSchema } from "../../shared/workflow-api";
+import { MAX_RUN_CONTEXT_LENGTH, WorkflowRunInputsSchema } from "../../shared/workflow-api";
 import { ProjectError } from "./errors";
 import { FileStore } from "./file-store";
 import type { WorkflowTaskAdapter } from "./workflow-task-adapter";
@@ -64,6 +64,10 @@ export interface WorkflowApproval {
   digest: string;
   /** Set only after approve() succeeded. */
   approvedAt?: string;
+  /** True when the approval policy approved the change set without a human. */
+  autoApproved?: boolean;
+  /** Who granted the approval; "orchestrator" for an auto approval. */
+  approvedBy?: string;
 }
 
 /**
@@ -146,6 +150,8 @@ const WorkflowApprovalRecordSchema = z
   .object({
     digest: z.string().min(1).max(4096),
     approvedAt: z.string().datetime().optional(),
+    autoApproved: z.boolean().optional(),
+    approvedBy: z.string().trim().min(1).max(120).optional(),
   })
   .strict();
 
@@ -194,6 +200,20 @@ function boundOutput(value: string): string {
 
 function boundError(value: string): string {
   return value.length > MAX_NODE_ERROR_LENGTH ? value.slice(0, MAX_NODE_ERROR_LENGTH) : value;
+}
+
+/**
+ * Append the optional previous-step context to a node prompt.
+ *
+ * WorkflowRunInputsSchema already bounds context, but a record can also be
+ * hydrated or mutated in memory, so the prompt builder applies the same cap
+ * again. An absent or empty context adds nothing at all: no blank block.
+ */
+function promptWithContext(prompt: string, context: string | undefined): string {
+  const value = context?.trim();
+  if (value === undefined || value.length === 0) return prompt;
+  const bounded = value.length > MAX_RUN_CONTEXT_LENGTH ? value.slice(0, MAX_RUN_CONTEXT_LENGTH) : value;
+  return prompt + "\n\nContext:\n" + bounded;
 }
 
 /** Redact and bound one error message before storing it in a record. */
@@ -306,6 +326,11 @@ function validationFailureMessage(result: ValidationResult): string {
 
 function isTerminal(status: WorkflowRunStatus): boolean {
   return TERMINAL_STATUSES.includes(status);
+}
+
+/** Cancellation check that a caller can make after an await re-narrows status. */
+function isCancelled(status: WorkflowRunStatus): boolean {
+  return status === "cancelled";
 }
 
 /**
@@ -561,7 +586,7 @@ export class WorkflowRunner {
     await this.assertNoOtherActiveRun(runId, { allowSelfActive: true });
 
     await this.adapter.approve(taskId, digest);
-    run.approval = { digest, approvedAt: this.timestamp() };
+    run.approval = { ...approval, approvedAt: this.timestamp() };
     const review = run.definitionSnapshot.nodes.find((node) => node.type === "approval");
     if (review) {
       const state = this.nodeState(run, review.id);
@@ -714,8 +739,7 @@ export class WorkflowRunner {
           await this.runValidationNode(run, state, signal);
           break;
         case "approval":
-          await this.runReviewNode(run, state, signal);
-          return "stop";
+          return (await this.runReviewNode(run, state, signal)) ? "stop" : "continue";
         case "decision":
           await this.runDecisionNode(run, node, state);
           break;
@@ -750,7 +774,12 @@ export class WorkflowRunner {
     state.taskId = task.id;
     await this.persist(run);
     try {
-      const result = await this.adapter.runAgent(task.id, profile, node.config.prompt, signal);
+      const result = await this.adapter.runAgent(
+        task.id,
+        profile,
+        promptWithContext(node.config.prompt, run.inputs.context),
+        signal,
+      );
       if (!signal.aborted) state.output = boundOutput(result.summary);
     } finally {
       try {
@@ -786,15 +815,18 @@ export class WorkflowRunner {
     state.taskId = taskId;
 
     const planOutput = this.agentOutput(run, "read") ?? "";
-    const prompt = [
-      node.config.prompt,
-      "",
-      "Goal:",
-      run.inputs.goal,
-      "",
-      "Plan:",
-      planOutput.length > 0 ? planOutput : "(no plan output)",
-    ].join("\n");
+    const prompt = promptWithContext(
+      [
+        node.config.prompt,
+        "",
+        "Goal:",
+        run.inputs.goal,
+        "",
+        "Plan:",
+        planOutput.length > 0 ? planOutput : "(no plan output)",
+      ].join("\n"),
+      run.inputs.context,
+    );
 
     const result = await this.adapter.runAgent(taskId, profile, prompt, signal);
     if (!signal.aborted) state.output = boundOutput(result.summary);
@@ -821,24 +853,52 @@ export class WorkflowRunner {
     }
   }
 
-  private async runReviewNode(run: WorkflowRun, state: WorkflowNodeState, signal: AbortSignal): Promise<void> {
+  /**
+   * Preview the change set and either wait for a human or auto-approve it.
+   *
+   * Returns true only when the run is now waiting for a human: the caller then
+   * stops the graph. An auto approval marks the review node completed, records
+   * the orchestrator as approver, persists, and lets the same run continue to
+   * the decision node.
+   */
+  private async runReviewNode(run: WorkflowRun, state: WorkflowNodeState, signal: AbortSignal): Promise<boolean> {
     const taskId = run.writeTaskId;
     if (taskId === undefined) {
       throw new ProjectError("VALIDATION_FAILED", "Workflow run " + run.runId + " has no write task to review");
     }
     const review = await this.adapter.preview(taskId);
-    if (signal.aborted || run.status === "cancelled") return;
+    if (signal.aborted || run.status === "cancelled") return false;
     if (review.validation !== undefined) run.validation = review.validation;
     const digest = review.changeSet.digest;
     if (typeof digest !== "string" || digest.length === 0) {
       throw new ProjectError("VALIDATION_FAILED", "Change review has no digest");
     }
+
+    if (run.definitionSnapshot.settings.approvalPolicy === "auto") {
+      await this.adapter.approve(taskId, digest);
+      // Re-read after the await; the helper keeps TypeScript's pre-await
+      // narrowing of run.status from turning the comparison into a dead branch.
+      if (signal.aborted || isCancelled(run.status)) return false;
+      run.approval = {
+        digest,
+        approvedAt: this.timestamp(),
+        autoApproved: true,
+        approvedBy: "orchestrator",
+      };
+      state.status = "completed";
+      state.finishedAt = this.timestamp();
+      state.output = boundOutput("approval auto-approved: " + digest);
+      await this.persist(run);
+      return false;
+    }
+
     run.approval = { digest };
     state.status = "waiting_approval";
     state.output = boundOutput("approval pending: " + digest);
     run.status = "waiting_approval";
     delete run.finishedAt;
     await this.persist(run);
+    return true;
   }
 
   private async runDecisionNode(
@@ -851,7 +911,7 @@ export class WorkflowRunner {
       throw new ProjectError("VALIDATION_FAILED", "Workflow run " + run.runId + " has no approval to record");
     }
     const approvedAt = approval.approvedAt ?? this.timestamp();
-    run.approval = { digest: approval.digest, approvedAt };
+    run.approval = { ...approval, approvedAt };
     const model = await this.ensureResolvedModel(run);
     const planSummary = this.agentOutput(run, "read") ?? "(no plan output)";
     const implementationSummary = this.agentOutput(run, "write") ?? "(no implementation output)";
