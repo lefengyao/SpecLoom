@@ -64,9 +64,22 @@ export const ChangeSetDataSchema = z.object({
 }).strict();
 export type ChangeSetData = z.infer<typeof ChangeSetDataSchema>;
 
+/** Hard cap for the optional task goal; it is a prompt, never a permission. */
+export const MAX_TASK_GOAL_LENGTH = 8192;
+
 export const TaskScopeSpecSchema = z.object({
   id: z.string().min(1),
   title: z.string().min(1),
+  /**
+   * Optional implementation goal used only to start the default workflow.
+   * It never participates in task path matching; old tasks simply omit it and
+   * fall back to their title.
+   */
+  goal: z
+    .string()
+    .trim()
+    .max(MAX_TASK_GOAL_LENGTH, "goal must be at most " + MAX_TASK_GOAL_LENGTH + " characters")
+    .optional(),
   readPaths: z.array(z.string().min(1)),
   writePaths: z.array(z.string().min(1)),
   allowDelete: z.boolean().default(false),

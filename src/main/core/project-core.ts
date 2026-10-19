@@ -100,6 +100,8 @@ export class ProjectCore {
   }
 
   listTasks(): TaskView[] { return [...this.tasks.values()].map((task) => this.taskView(task)); }
+  /** The persisted scope of one task, including its optional goal. */
+  taskScope(taskId: string): TaskScopeSpec { return this.task(taskId).scope.describe(); }
   /** Removes one finished task and its persisted history record. */
   async removeTask(taskId: string): Promise<void> {
     const task = this.task(taskId);

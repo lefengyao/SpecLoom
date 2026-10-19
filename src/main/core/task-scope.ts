@@ -49,8 +49,12 @@ export class TaskScope {
   constructor(specification: TaskScopeSpec) {
     const parsed = TaskScopeSpecSchema.safeParse(specification);
     if (!parsed.success) throw new ProjectError("TASK_SCOPE_DENIED", "A task requires an explicit valid scope");
+    const { goal, ...rest } = parsed.data;
     this.#specification = immutableDescription({
-      ...parsed.data,
+      ...rest,
+      // The goal is prompt data only: it is normalized here and never read by
+      // assertRead/assertWrite, so it cannot widen a task's permissions.
+      ...(goal === undefined || goal.length === 0 ? {} : { goal }),
       readPaths: [...new Set(parsed.data.readPaths.map((pattern) => normalizeTaskPattern(pattern, true)))],
       writePaths: [...new Set(parsed.data.writePaths.map((pattern) => normalizeTaskPattern(pattern)))],
     });

@@ -23,6 +23,11 @@ import { loadOfficialWorkflow } from "./workflow-official";
 import { WorkflowOrchestrator } from "./workflow-orchestrator";
 import { ProjectCoreWorkflowTaskAdapter } from "./workflow-task-adapter";
 import { WorkflowRunner, type WorkflowRunnerOptions } from "./workflow-runner";
+import {
+  WorkflowTrigger,
+  type WorkflowTriggerChatInput,
+  type WorkflowTriggerResult,
+} from "./workflow-trigger";
 import { WorkflowSettingsStore } from "./workflow-settings-store";
 import type { OfficialWorkflowLoader } from "./workflow-store";
 import { WorkflowStore } from "./workflow-store";
@@ -55,6 +60,8 @@ export class WorkflowService {
   private readonly orchestrations: OrchestrationStore;
   private readonly runner: WorkflowRunner;
   private readonly orchestrator: WorkflowOrchestrator;
+  /** Starts the project default workflow for task and chat implementation turns. */
+  readonly trigger: WorkflowTrigger;
 
   constructor(options: WorkflowServiceOptions) {
     this.root = options.core.metadata.path;
@@ -78,6 +85,15 @@ export class WorkflowService {
       loadOfficial,
       runner: this.runner,
       ...(options.onOrchestrationUpdate === undefined ? {} : { onUpdate: options.onOrchestrationUpdate }),
+    });
+
+    // The trigger shares this service, so its runs land in the same runner and
+    // are reported through the same durable onUpdate stream as every other run.
+    this.trigger = new WorkflowTrigger({
+      root: this.root,
+      service: this,
+      resolveTaskScope: (taskId) => options.core.taskScope(taskId),
+      loadOfficial,
     });
   }
 
@@ -110,6 +126,22 @@ export class WorkflowService {
     const run = this.runner.createRun(definition, inputs);
     await this.runner.start(run.runId);
     return await this.runner.getRun(run.runId);
+  }
+
+  /**
+   * Start the project default workflow for a task's first implementation
+   * message. The task starts at most once; a later call returns its bound run.
+   */
+  startForTask(taskId: string, message?: string): Promise<WorkflowTriggerResult> {
+    return this.trigger.startForTask(taskId, message);
+  }
+
+  /**
+   * Start a chat implementation run with an explicit scope. An explicit
+   * workflow id overrides the project default; the run never self-approves.
+   */
+  startForChat(input: WorkflowTriggerChatInput): Promise<WorkflowTriggerResult> {
+    return this.trigger.startForChat(input);
   }
 
   getRun(runId: string): Promise<WorkflowRun> {

@@ -38,6 +38,7 @@ import type { WorkflowUpdate } from "../shared/workflow-api";
 import type { OrchestrationUpdate } from "../shared/orchestration-api";
 import { createWorkflowToolRuntime } from "./core/workflow-tool-runtime";
 import { WorkflowService } from "./core/workflow-service";
+import type { WorkflowTriggerChatInput, WorkflowTriggerResult } from "./core/workflow-trigger";
 
 function launchExecutable(executable: string, args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -222,6 +223,18 @@ export class DesktopController {
     });
   }
   async createTask(scope: Omit<TaskScopeSpec, "id">) { return this.currentCore().createTask({ ...scope, id: randomUUID() }); }
+  /**
+   * Start the project default workflow for a task's first implementation
+   * message. The service records a durable binding, so the task starts once;
+   * Task 11 wires this to the task page without changing this contract.
+   */
+  startTaskWorkflow(taskId: string, message?: string): Promise<WorkflowTriggerResult> {
+    return this.workflowService().startForTask(taskId, message);
+  }
+  /** Start a chat implementation run; an explicit workflow overrides the default. */
+  startChatWorkflow(input: WorkflowTriggerChatInput): Promise<WorkflowTriggerResult> {
+    return this.workflowService().startForChat(input);
+  }
   async agent(taskId: string, modelId: string | ModelReference, prompt: string) {
     const core = this.currentCore();
     if (this.runs.has(taskId)) throw new ProjectError("MODEL_ERROR", "该任务已有运行中的智能体");
