@@ -5,6 +5,7 @@ import type { ProviderTool, ParsedToolCall } from "../tool-catalog";
 import { materialToolDefinitions } from "./material-tool-catalog";
 import { OfflineDocumentReadOptionsSchema } from "../../../shared/offline-documents";
 import { godotMcpToolDefinitions } from "../godot-mcp/tool-definitions";
+import { workflowToolDefinitions } from "./workflow-tools";
 
 export interface WorkTool { name: string; description: string; schema: z.ZodType; parameters?: Record<string, unknown>; initial?: boolean }
 const p = z.string().min(1).max(2048);
@@ -13,6 +14,8 @@ const empty = z.object({}).strict();
 const coordinate = z.tuple([z.number().int(), z.number().int()]);
 export const workspaceDefinitions: WorkTool[] = [
   ...materialToolDefinitions,
+  // Workflow/orchestration tools load on demand: ToolSearch must discover them first.
+  ...workflowToolDefinitions,
   { name: "Read", description: "读取项目文件（文本、图片、PDF、Notebook）并记录版本。修改已有文件前必须 Read。", initial: true, schema: z.object({ path: p, offset: z.number().int().min(1).optional(), limit: z.number().int().min(1).max(10000).optional() }).strict() },
   { name: "Write", description: "新建或整文件覆盖；已有文件必须先 Read，外部修改时拒绝覆盖。", initial: true, schema: z.object({ path: p, content: z.string().max(1048576) }).strict() },
   { name: "Edit", description: "按 old_string → new_string 精确替换；先 Read；多次匹配需明确 replace_all。", initial: true, schema: z.object({ path: p, old_string: z.string().min(1).max(262144), new_string: z.string().max(262144), replace_all: z.boolean().optional() }).strict() },

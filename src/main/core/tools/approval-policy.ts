@@ -9,6 +9,8 @@ const localTools = new Set([
   "Glob", "Grep", "ToolSearch", "Skill", "OfflineDocsList", "OfflineDocsRead", "Agent", "Task",
   "TaskCreate", "TaskUpdate", "TaskList", "memory", "MaterialsList", "MaterialRead", "MaterialCreate",
   "MaterialUpdate", "MaterialBindComponent", "MaterialUnbindComponent", "MaterialSetImage",
+  "WorkflowList", "WorkflowRead", "WorkflowCreate", "WorkflowRun", "WorkflowStatus", "WorkflowCancel",
+  "OrchestrationList", "OrchestrationRead", "OrchestrationCreate", "OrchestrationRun", "OrchestrationStatus", "OrchestrationCancel",
   "files_list_versions", "files_read", "files_write", "files_patch", "skills_list", "skills_load", "changes_preview",
 ]);
 const readOnlyDesktop = new Set(["screenshot", "mouse_move", "wait", ...godotMcpToolNames]);

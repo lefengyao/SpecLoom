@@ -34,6 +34,10 @@ import { readProjectText } from "./core/project-files";
 import { ProjectMediaRegistry } from "./project-media-registry";
 import { ChatAttachmentService } from "./core/chat-attachments";
 import type { ChatAttachmentInput } from "../shared/chat-attachments";
+import type { WorkflowUpdate } from "../shared/workflow-api";
+import type { OrchestrationUpdate } from "../shared/orchestration-api";
+import { createWorkflowToolRuntime } from "./core/workflow-tool-runtime";
+import { WorkflowService } from "./core/workflow-service";
 
 function launchExecutable(executable: string, args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -61,6 +65,9 @@ export class DesktopController {
   readonly sessions: DesktopSessions;
   readonly diagnosticsLog: DiagnosticsLogStore;
   private core?: ProjectCore;
+  private workflow?: { core: ProjectCore; service: WorkflowService };
+  private readonly workflowUpdateListeners = new Set<(event: WorkflowUpdate) => void>();
+  private readonly orchestrationUpdateListeners = new Set<(event: OrchestrationUpdate) => void>();
   private readonly runs = new Map<string, AbortController>();
   private readonly chatRuns = new Map<string, AbortController>();
   private readonly runCompletions = new Set<Promise<void>>();
@@ -100,7 +107,7 @@ export class DesktopController {
     async (event, payload, permissions) => {
       const hooks = await this.hooks.list();
       await Promise.allSettled(hooks.filter((hook) => hook.enabled && hook.event === event).map((hook) => this.hooks.run(hook.id, { ...payload, event }, permissions)));
-    }, this.offlineDocuments, this.diagnosticsLog);
+    }, this.offlineDocuments, this.diagnosticsLog, (core) => createWorkflowToolRuntime({ service: this.workflowServiceFor(core) }));
   }
 
   get busy(): boolean { return !!(this.runs.size || this.chatRuns.size || this.sessions.running || this.opening || this.materialWrites); }
@@ -109,6 +116,48 @@ export class DesktopController {
     if (this.opening) throw new ProjectError("MODEL_ERROR", "项目正在切换，请等待打开完成");
     if (!this.core) throw new ProjectError("INVALID_PROJECT", "先打开一个项目工作区");
     return this.core;
+  }
+
+  /**
+   * The one workflow service for a project core.
+   *
+   * The IPC surface and the agent workflow tools share it on purpose: a second
+   * service would own a second runner, so a run started by an agent could be
+   * reported (or approved) at stale state by the renderer's runner and vice
+   * versa. A reopened project builds a new ProjectCore, so the cache is keyed by
+   * identity instead of by path.
+   */
+  workflowServiceFor(core: ProjectCore): WorkflowService {
+    if (this.workflow?.core === core) return this.workflow.service;
+    const root = core.metadata.path;
+    const service = new WorkflowService({
+      core,
+      resolveProfile: (modelId: string) => this.resolveWorkflowProfile(modelId),
+      onUpdate: (run) => this.publishWorkflowUpdate({ projectPath: root, run }),
+      onOrchestrationUpdate: (run) => this.publishOrchestrationUpdate({ projectPath: root, run }),
+    });
+    this.workflow = { core, service };
+    return service;
+  }
+  workflowService(): WorkflowService { return this.workflowServiceFor(this.currentCore()); }
+  /** Observe durable workflow transitions; the IPC bridge forwards them to its window. */
+  subscribeWorkflowUpdates(listener: (event: WorkflowUpdate) => void): () => void {
+    this.workflowUpdateListeners.add(listener);
+    return () => { this.workflowUpdateListeners.delete(listener); };
+  }
+  subscribeOrchestrationUpdates(listener: (event: OrchestrationUpdate) => void): () => void {
+    this.orchestrationUpdateListeners.add(listener);
+    return () => { this.orchestrationUpdateListeners.delete(listener); };
+  }
+  private publishWorkflowUpdate(event: WorkflowUpdate): void {
+    for (const listener of [...this.workflowUpdateListeners]) {
+      try { listener(event); } catch { /* A throwing observer cannot change a transition that is already durable. */ }
+    }
+  }
+  private publishOrchestrationUpdate(event: OrchestrationUpdate): void {
+    for (const listener of [...this.orchestrationUpdateListeners]) {
+      try { listener(event); } catch { /* A throwing observer cannot change a transition that is already durable. */ }
+    }
   }
   async state(): Promise<WorkspaceState> {
     const preferences = await this.preferences.get();

@@ -15,6 +15,7 @@ import type { OfflineDocumentStore } from "./core/offline-documents";
 import { DEFAULT_APPROVAL_MODE, type ApprovalMode, type ToolApprovalInput } from "../shared/approvals";
 import type { DiagnosticsLogStore } from "./core/diagnostics-log";
 import { webSearchGuidance, type WebSearchContext } from "./core/tools/web-search";
+import type { WorkflowToolRuntime } from "./core/tools/workflow-tools";
 
 export interface SessionHookPermissions {
   mode: ApprovalMode;
@@ -30,7 +31,7 @@ export class DesktopSessions {
   private readonly reservations = new Map<string, Promise<void>>();
   private readonly gitInitSuggestions = new Set<string>();
   private shuttingDown = false;
-  constructor(private readonly userData: string, private readonly core: () => ProjectCore | undefined, private readonly profile: (model?: SessionModelPreference) => Promise<RuntimeModelProfile>, private readonly instructions: () => Promise<string>, private readonly resolveCredential: (profile: RuntimeModelProfile) => Promise<string | undefined>, private readonly runHook?: SessionHookRunner, private readonly offlineDocuments?: OfflineDocumentStore, private readonly diagnostics?: DiagnosticsLogStore) {}
+  constructor(private readonly userData: string, private readonly core: () => ProjectCore | undefined, private readonly profile: (model?: SessionModelPreference) => Promise<RuntimeModelProfile>, private readonly instructions: () => Promise<string>, private readonly resolveCredential: (profile: RuntimeModelProfile) => Promise<string | undefined>, private readonly runHook?: SessionHookRunner, private readonly offlineDocuments?: OfflineDocumentStore, private readonly diagnostics?: DiagnosticsLogStore, private readonly workflowTools?: (core: ProjectCore) => WorkflowToolRuntime) {}
   get running(): boolean { return this.reservations.size > 0; }
   /** Acquire before any await so a send cannot enter a session being deleted or reconfigured. */
   private reserve(projectPath: string, id: string): () => void {
@@ -84,7 +85,7 @@ export class DesktopSessions {
     const pending = (async () => {
       const runs = await this.workspace(projectPath); const session = runs.store.get(sessionId); const core = this.core();
       const root = projectPath || await new FileStore(this.userData).policy.resolve("conversations", true);
-      const tools = new WorkspaceTools(root, sessionId, { ...(session.taskId && core ? { legacyExecute: (name: string, input: Record<string, unknown>, signal?: AbortSignal) => core.executeTool(session.taskId!, name, input, signal) } : {}), ...(this.offlineDocuments ? { offlineDocuments: this.offlineDocuments } : {}), globalMcpConfigPath: path.join(this.userData, "mcp.json") });
+      const tools = new WorkspaceTools(root, sessionId, { ...(session.taskId && core ? { legacyExecute: (name: string, input: Record<string, unknown>, signal?: AbortSignal) => core.executeTool(session.taskId!, name, input, signal) } : {}), ...(this.offlineDocuments ? { offlineDocuments: this.offlineDocuments } : {}), ...(core && this.workflowTools ? { workflowTools: this.workflowTools(core) } : {}), globalMcpConfigPath: path.join(this.userData, "mcp.json") });
       tools.setPermissions(session.approvalMode ?? DEFAULT_APPROVAL_MODE);
       tools.setWebSearch({ mode: session.webSearchMode ?? "off" });
       return tools;
@@ -206,7 +207,7 @@ export class DesktopSessions {
         const delegate = (parentTools: WorkspaceTools, depth: number) => parentTools.setDelegate(async (childPrompt, signal, progress) => {
           assertCurrent(); signal?.throwIfAborted();
           if (depth >= 8) throw new ProjectError("MODEL_ERROR", "子智能体嵌套过深，请拆分任务");
-          const childId = `${id}:agent:${crypto.randomUUID()}`; const child = new WorkspaceTools(tools.files.store.root, childId, { ...(this.offlineDocuments ? { offlineDocuments: this.offlineDocuments } : {}), globalMcpConfigPath: path.join(this.userData, "mcp.json") });
+          const childId = `${id}:agent:${crypto.randomUUID()}`; const child = new WorkspaceTools(tools.files.store.root, childId, { ...(this.offlineDocuments ? { offlineDocuments: this.offlineDocuments } : {}), ...(core && this.workflowTools ? { workflowTools: this.workflowTools(core) } : {}), globalMcpConfigPath: path.join(this.userData, "mcp.json") });
           child.setPermissions(mode, options.onApproval); child.setWebSearch(webSearch); delegate(child, depth + 1);
           try {
             await child.capabilities(signal);

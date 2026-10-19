@@ -27,7 +27,6 @@ import {
 } from "../shared/orchestration";
 import type { OrchestrationUpdate } from "../shared/orchestration-api";
 import { readChatClipboard, type ClipboardReader } from "./chat-clipboard";
-import type { ProjectCore } from "./core/project-core";
 import { WorkflowService } from "./core/workflow-service";
 import { EntityLayoutStore } from "./core/entity-layout-store";
 import type { EntityLayout } from "../shared/entity-layout";
@@ -242,38 +241,27 @@ export function registerIpc(ipc: Pick<IpcMain, "handle">, controller: DesktopCon
     // The event bridge only publishes to the currently trusted top-level renderer.
     if (target?.webContents.mainFrame.url === rendererUrl && !target.webContents.isDestroyed()) target.webContents.send("specloom:session", event);
   });
-  // A workflow service binds a definition store and a run runner to one project,
-  // so it is cached for the current project core and rebuilt whenever that core
-  // changes: a project switch, or reopening the same path with a new core. Its
-  // updates are delivered as runner transitions become durable and only to the
-  // currently trusted top-level renderer.
-  let workflowService: WorkflowService | undefined;
-  let workflowCore: ProjectCore | undefined;
+  // A workflow service binds a definition store and a run runner to one project.
+  // The controller owns that single instance so the renderer and the agent
+  // workflow tools observe the same runner; this bridge only forwards its durable
+  // transitions to the currently trusted top-level renderer.
+  let workflowWatcher: { controller: DesktopController; stop: () => void } | undefined;
+  const sendWorkflowEvent = (channel: "specloom:workflow" | "specloom:orchestration", event: WorkflowUpdate | OrchestrationUpdate): void => {
+    const target = window();
+    if (!target || target.isDestroyed() || target.webContents.isDestroyed()) return;
+    if (target.webContents.mainFrame.url !== rendererUrl) return;
+    target.webContents.send(channel, event);
+  };
+  const watchWorkflow = (selected: DesktopController): void => {
+    if (workflowWatcher?.controller === selected) return;
+    workflowWatcher?.stop();
+    const stopRuns = selected.subscribeWorkflowUpdates((event) => sendWorkflowEvent("specloom:workflow", event));
+    const stopOrchestrations = selected.subscribeOrchestrationUpdates((event) => sendWorkflowEvent("specloom:orchestration", event));
+    workflowWatcher = { controller: selected, stop: () => { stopRuns(); stopOrchestrations(); } };
+  };
   const getWorkflow = (selected: DesktopController): WorkflowService => {
-    const core = selected.currentCore();
-    if (workflowService && workflowCore === core) return workflowService;
-    const root = core.metadata.path;
-    const service = new WorkflowService({
-      core,
-      resolveProfile: (modelId: string) => selected.resolveWorkflowProfile(modelId),
-      onUpdate: (run) => {
-        const target = window();
-        if (!target || target.isDestroyed() || target.webContents.isDestroyed()) return;
-        if (target.webContents.mainFrame.url !== rendererUrl) return;
-        const event: WorkflowUpdate = { projectPath: root, run };
-        target.webContents.send("specloom:workflow", event);
-      },
-      onOrchestrationUpdate: (run) => {
-        const target = window();
-        if (!target || target.isDestroyed() || target.webContents.isDestroyed()) return;
-        if (target.webContents.mainFrame.url !== rendererUrl) return;
-        const event: OrchestrationUpdate = { projectPath: root, run };
-        target.webContents.send("specloom:orchestration", event);
-      },
-    });
-    workflowService = service;
-    workflowCore = core;
-    return service;
+    watchWorkflow(selected);
+    return selected.workflowService();
   };
   ipc.handle("specloom:invoke", async (event, operation: unknown, payload: unknown, requestController?: DesktopController) => {
     try {
@@ -354,7 +342,14 @@ export function registerIpc(ipc: Pick<IpcMain, "handle">, controller: DesktopCon
       return { ok: true, data: result };
     } catch (error) { return { ok: false, error: serializeError(error) }; }
   });
-  return () => { unsubscribe?.(); unsubscribeMaterials(); revoke(); contents?.removeListener?.("render-process-gone", revoke); contents?.removeListener?.("destroyed", revoke); contents?.removeListener?.("did-start-navigation", navigate); };
+  return () => {
+    workflowWatcher?.stop();
+    workflowWatcher = undefined;
+    unsubscribe?.(); unsubscribeMaterials(); revoke();
+    contents?.removeListener?.("render-process-gone", revoke);
+    contents?.removeListener?.("destroyed", revoke);
+    contents?.removeListener?.("did-start-navigation", navigate);
+  };
 }
 
 async function dispatch(operation: string, input: Record<string, unknown>, controller: DesktopController, selectDirectory: () => Promise<string | undefined>, selectFiles: () => Promise<string[]>, selectOfflineDirectory: () => Promise<string | undefined>, selectSkillDirectory: () => Promise<string | undefined>, selectSkillArchive: () => Promise<string | undefined>, projects?: ProjectActions, selectDiagnosticsExport?: () => Promise<string | undefined>, revealDirectory?: (path: string) => Promise<void> | void): Promise<unknown> {

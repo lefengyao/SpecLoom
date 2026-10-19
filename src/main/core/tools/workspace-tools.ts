@@ -18,6 +18,14 @@ import { DEFAULT_APPROVAL_MODE, type ApprovalMode, type ToolApprovalInput } from
 import { toolApproval, mcpConnectionApproval } from "./approval-policy";
 import { ExternalFiles } from "./external-files";
 import { WorkWebSearch, isWebSearchTool, webSearchDefinitions, type WebSearchContext } from "./web-search";
+import {
+  explicitRunInputs,
+  requestedWorkflowId,
+  workflowRunView,
+  workflowToolDefinitions,
+  type WorkflowRunToolInput,
+  type WorkflowToolRuntime,
+} from "./workflow-tools";
 
 export interface WorkspaceToolOptions {
   legacyExecute?: (name: string, input: Record<string, unknown>, signal?: AbortSignal) => Promise<unknown>;
@@ -25,6 +33,12 @@ export interface WorkspaceToolOptions {
   offlineDocuments?: OfflineDocumentStore;
   globalMcpConfigPath?: string;
   godotMcpHosts?: GodotMcpHostRegistry;
+  /**
+   * Runtime behind the Workflow* and Orchestration* tools. The main wiring injects
+   * one per project; sessions without a project service stay without workflow
+   * tools, and calling one reports that instead of silently doing nothing.
+   */
+  workflowTools?: WorkflowToolRuntime;
 }
 export class WorkspaceTools {
   readonly catalog = new WorkspaceCatalog();
@@ -101,6 +115,7 @@ export class WorkspaceTools {
     if (approval) await this.approve(approval, signal);
     signal?.throwIfAborted();
     if (isWebSearchTool(name)) return this.webSearch.execute(name, input, signal);
+    if (workflowToolDefinitions.some(tool => tool.name === name)) return this.workflowTool(name, input);
     if (materialToolDefinitions.some(tool => tool.name === name)) return this.materials.execute(name, input);
     if (name === "Read") return this.externalFiles.read(input as unknown as Parameters<WorkFiles["read"]>[0]);
     if (name === "Write") return this.externalFiles.write(String(input.path), String(input.content));
@@ -151,6 +166,33 @@ export class WorkspaceTools {
       if (legacy) return this.options.legacyExecute(legacy.name, input, signal);
     }
     throw new ProjectError("MODEL_ERROR", "工具未注册执行器");
+  }
+  /**
+   * Route one workflow/orchestration tool to the injected runtime.
+   *
+   * There is intentionally no approve case: an approval only happens through a
+   * definition's approvalPolicy or an orchestration step's approval setting.
+   * Run inputs are explicit; a call that omits goal or scope fails readably
+   * instead of borrowing an unrelated session/task scope.
+   */
+  private async workflowTool(name: string, input: Record<string, unknown>): Promise<unknown> {
+    const runtime = this.options.workflowTools;
+    if (!runtime) throw new ProjectError("MODEL_ERROR", "工作流工具不可用：当前宿主没有配置工作流服务");
+    switch (name) {
+      case "WorkflowList": return runtime.list();
+      case "WorkflowRead": return runtime.read(String(input.id));
+      case "WorkflowCreate": return runtime.create(input.definition);
+      case "WorkflowRun": return workflowRunView(await runtime.run(explicitRunInputs(name, input as WorkflowRunToolInput), requestedWorkflowId(input.id === undefined ? undefined : String(input.id))));
+      case "WorkflowStatus": return workflowRunView(await runtime.status(String(input.runId)));
+      case "WorkflowCancel": return workflowRunView(await runtime.cancel(String(input.runId)));
+      case "OrchestrationList": return runtime.orchestrationList();
+      case "OrchestrationRead": return runtime.orchestrationRead(String(input.id));
+      case "OrchestrationCreate": return runtime.orchestrationCreate(input.definition);
+      case "OrchestrationRun": return runtime.orchestrationRun(String(input.id), explicitRunInputs(name, input as WorkflowRunToolInput));
+      case "OrchestrationStatus": return runtime.orchestrationStatus(String(input.runId));
+      case "OrchestrationCancel": return runtime.orchestrationCancel(String(input.runId));
+      default: throw new ProjectError("MODEL_ERROR", "工具未注册执行器");
+    }
   }
   async close(): Promise<void> { await Promise.allSettled([this.processes.close(), this.mcp.close()]); }
   async cancelProcesses(): Promise<void> { await this.processes.close(); }
