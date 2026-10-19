@@ -35,6 +35,13 @@ import type {
   WorkflowSummary,
   WorkflowUpdate,
 } from "./workflow-api";
+import type { OrchestrationRun, WorkflowSettings } from "./orchestration";
+import type {
+  OrchestrationSaveResult,
+  OrchestrationSource,
+  OrchestrationSummary,
+  OrchestrationUpdate,
+} from "./orchestration-api";
 
 export interface TaskView {
   id: string;
@@ -136,6 +143,29 @@ export interface OfflineDocumentsApi {
   selectFiles?(): Promise<string[]>;
   selectDirectory?(): Promise<string | undefined>;
 }
+/** Project-level default workflow settings. */
+export interface WorkflowDefaultsApi {
+  /** The stored settings; a missing or invalid file reads as schema version 1. */
+  read(): Promise<WorkflowSettings>;
+  /** Validate and replace the project override. */
+  save(settings: WorkflowSettings): Promise<WorkflowSettings>;
+  /** Remove the project override, restoring the global (official) default. */
+  clear(): Promise<WorkflowSettings>;
+}
+/** Sequential orchestration definition and run operations for one project. */
+export interface OrchestrationsApi {
+  list(): Promise<OrchestrationSummary[]>;
+  read(id: string): Promise<OrchestrationSource>;
+  save(id: string, content: string, expectedVersion: VersionToken): Promise<OrchestrationSaveResult>;
+  remove(id: string, expectedVersion: VersionToken): Promise<void>;
+  start(id: string, inputs: WorkflowRunInputs): Promise<OrchestrationRun>;
+  getRun(orchestrationRunId: string): Promise<OrchestrationRun>;
+  listRuns(): Promise<OrchestrationRun[]>;
+  approveStep(orchestrationRunId: string, digest: string): Promise<void>;
+  rejectStep(orchestrationRunId: string): Promise<void>;
+  retryStep(orchestrationRunId: string, action: WorkflowRetryAction): Promise<void>;
+  cancel(orchestrationRunId: string): Promise<void>;
+}
 /** Workflow definition and run operations for one project workspace. */
 export interface WorkflowApi {
   list(): Promise<WorkflowSummary[]>;
@@ -150,7 +180,13 @@ export interface WorkflowApi {
   reject(runId: string): Promise<void>;
   retry(runId: string, action: WorkflowRetryAction): Promise<void>;
   cancel(runId: string): Promise<void>;
+  /** Project defaults; hosts that predate this feature omit the namespace. */
+  defaults?: WorkflowDefaultsApi;
+  /** Sequential orchestrations; hosts that predate this feature omit the namespace. */
+  orchestrations?: OrchestrationsApi;
   onUpdate(listener: (event: WorkflowUpdate) => void): () => void;
+  /** Durable orchestration transitions; hosts that predate this feature omit it. */
+  onOrchestrationUpdate?: (listener: (event: OrchestrationUpdate) => void) => () => void;
 }
 export interface EntityLayoutApi {
   read(): Promise<EntityLayout>;

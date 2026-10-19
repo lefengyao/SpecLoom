@@ -3,6 +3,7 @@ import type { DesktopApi, MaterialChange } from "../shared/desktop-api";
 import type { OfflineDocumentImportOptions } from "../shared/offline-documents";
 import type { SessionEvent } from "../shared/chat";
 import type { WorkflowUpdate } from "../shared/workflow-api";
+import type { OrchestrationUpdate } from "../shared/orchestration-api";
 
 async function invoke<T>(operation: string, payload: unknown = {}): Promise<T> {
   const reply = await ipcRenderer.invoke("specloom:invoke", operation, payload) as { ok: true; data: T } | { ok: false; error: { message: string; code: string; details?: Record<string, unknown> } };
@@ -73,10 +74,33 @@ const api: DesktopApi = {
     reject: async (runId) => { await invoke("workflowReject", { runId }); },
     retry: async (runId, action) => { await invoke("workflowRetry", { runId, action }); },
     cancel: async (runId) => { await invoke("workflowCancel", { runId }); },
+    defaults: {
+      read: () => invoke("workflowDefaultsRead"),
+      save: (settings) => invoke("workflowDefaultsSave", { settings }),
+      clear: () => invoke("workflowDefaultsClear"),
+    },
+    orchestrations: {
+      list: () => invoke("orchestrationList"),
+      read: (id) => invoke("orchestrationRead", { id }),
+      save: (id, content, expectedVersion) => invoke("orchestrationSave", { id, content, expectedVersion }),
+      remove: async (id, expectedVersion) => { await invoke("orchestrationRemove", { id, expectedVersion }); },
+      start: (id, inputs) => invoke("orchestrationStart", { id, inputs }),
+      getRun: (runId) => invoke("orchestrationGetRun", { runId }),
+      listRuns: () => invoke("orchestrationListRuns"),
+      approveStep: async (runId, digest) => { await invoke("orchestrationApproveStep", { runId, digest }); },
+      rejectStep: async (runId) => { await invoke("orchestrationRejectStep", { runId }); },
+      retryStep: async (runId, action) => { await invoke("orchestrationRetryStep", { runId, action }); },
+      cancel: async (runId) => { await invoke("orchestrationCancel", { runId }); },
+    },
     onUpdate: (listener) => {
       const receive = (_event: Electron.IpcRendererEvent, payload: WorkflowUpdate) => listener(payload);
       ipcRenderer.on("specloom:workflow", receive);
       return () => { ipcRenderer.removeListener("specloom:workflow", receive); };
+    },
+    onOrchestrationUpdate: (listener) => {
+      const receive = (_event: Electron.IpcRendererEvent, payload: OrchestrationUpdate) => listener(payload);
+      ipcRenderer.on("specloom:orchestration", receive);
+      return () => { ipcRenderer.removeListener("specloom:orchestration", receive); };
     },
   },
   diagnostics: {

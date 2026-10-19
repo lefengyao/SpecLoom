@@ -20,6 +20,12 @@ import { GodotPluginIdSchema, RevealPluginDirectoryInputSchema } from "../shared
 import { CHAT_ATTACHMENT_LIMITS, type ChatAttachmentInput } from "../shared/chat-attachments";
 import { WorkflowDefinitionSchema, WORKFLOW_ID_PATTERN, type WorkflowDefinition } from "../shared/workflow";
 import { WorkflowRunInputsSchema, type WorkflowRetryAction, type WorkflowRunInputs, type WorkflowUpdate } from "../shared/workflow-api";
+import {
+  ORCHESTRATION_ID_PATTERN,
+  WorkflowSettingsSchema,
+  type WorkflowSettings,
+} from "../shared/orchestration";
+import type { OrchestrationUpdate } from "../shared/orchestration-api";
 import { readChatClipboard, type ClipboardReader } from "./chat-clipboard";
 import type { ProjectCore } from "./core/project-core";
 import { WorkflowService } from "./core/workflow-service";
@@ -30,6 +36,14 @@ const id = z.string().min(1).max(256);
 const conversationMessages = z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().max(131072) }).strict()).max(64).optional();
 /** Workflow ids are file ids; the store applies the same rule to the YAML name. */
 const workflowId = z.string().regex(WORKFLOW_ID_PATTERN);
+/** Orchestration ids are file ids; the store applies the same rule to the YAML name. */
+const orchestrationId = z.string().regex(ORCHESTRATION_ID_PATTERN);
+/**
+ * Workflow and orchestration run ids name files under .specloom/workflows, so
+ * they use the store's file-name rule and reject traversal up front.
+ */
+const runId = z.string().min(1).max(128).regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/);
+const retryAction = z.enum(["plan", "implement", "validate"]);
 /**
  * The run inputs contract is owned by the shared workflow API and reused here
  * (re-exported for the existing IPC tests) and by the runner for both input and
@@ -42,6 +56,24 @@ export const WorkflowSaveRequestSchema = z.object({
   content: z.string().max(1_048_576),
   expectedVersion: VersionTokenSchema,
 }).strict();
+/** Project workflow defaults: one settings document, validated by the shared schema. */
+export const WorkflowSettingsRequestSchema = z.object({ settings: WorkflowSettingsSchema }).strict();
+/** One orchestration definition document against a version token. */
+export const OrchestrationSaveRequestSchema = z.object({
+  id: orchestrationId,
+  content: z.string().max(1_048_576),
+  expectedVersion: VersionTokenSchema,
+}).strict();
+/** Start one orchestration with the same run inputs a workflow run accepts. */
+export const OrchestrationStartRequestSchema = z.object({
+  id: orchestrationId,
+  inputs: WorkflowRunInputsSchema,
+}).strict();
+/** A run id used by both workflow and orchestration run operations. */
+export const WorkflowRunRequestSchema = z.object({ runId }).strict();
+export const OrchestrationApproveRequestSchema = z.object({ runId, digest: id }).strict();
+export const OrchestrationRetryRequestSchema = z.object({ runId, action: retryAction }).strict();
+export const OrchestrationCancelRequestSchema = z.object({ runId }).strict();
 /** Editor-only entity layout; keys are bounded entity/component ids and finite points. */
 export const EntityLayoutRequestSchema = z.object({
   layout: z.record(
@@ -142,12 +174,26 @@ const operations = {
   workflowRemove: z.object({ id: workflowId, expectedVersion: VersionTokenSchema }).strict(),
   workflowCopyOfficial: z.object({ id: workflowId }).strict(),
   workflowStart: z.object({ definition: WorkflowDefinitionSchema, inputs: WorkflowRunInputsSchema }).strict(),
-  workflowGetRun: z.object({ runId: id }).strict(),
+  workflowGetRun: WorkflowRunRequestSchema,
   workflowListRuns: z.object({}).strict(),
-  workflowApprove: z.object({ runId: id, digest: id }).strict(),
-  workflowReject: z.object({ runId: id }).strict(),
-  workflowRetry: z.object({ runId: id, action: z.enum(["plan", "implement", "validate"]) }).strict(),
-  workflowCancel: z.object({ runId: id }).strict(),
+  workflowApprove: OrchestrationApproveRequestSchema,
+  workflowReject: WorkflowRunRequestSchema,
+  workflowRetry: OrchestrationRetryRequestSchema,
+  workflowCancel: OrchestrationCancelRequestSchema,
+  workflowDefaultsRead: z.object({}).strict(),
+  workflowDefaultsSave: WorkflowSettingsRequestSchema,
+  workflowDefaultsClear: z.object({}).strict(),
+  orchestrationList: z.object({}).strict(),
+  orchestrationRead: z.object({ id: orchestrationId }).strict(),
+  orchestrationSave: OrchestrationSaveRequestSchema,
+  orchestrationRemove: z.object({ id: orchestrationId, expectedVersion: VersionTokenSchema }).strict(),
+  orchestrationStart: OrchestrationStartRequestSchema,
+  orchestrationGetRun: WorkflowRunRequestSchema,
+  orchestrationListRuns: z.object({}).strict(),
+  orchestrationApproveStep: OrchestrationApproveRequestSchema,
+  orchestrationRejectStep: WorkflowRunRequestSchema,
+  orchestrationRetryStep: OrchestrationRetryRequestSchema,
+  orchestrationCancel: OrchestrationCancelRequestSchema,
   entityLayoutRead: z.object({}).strict(),
   entityLayoutSave: EntityLayoutRequestSchema,
 };
@@ -217,6 +263,13 @@ export function registerIpc(ipc: Pick<IpcMain, "handle">, controller: DesktopCon
         const event: WorkflowUpdate = { projectPath: root, run };
         target.webContents.send("specloom:workflow", event);
       },
+      onOrchestrationUpdate: (run) => {
+        const target = window();
+        if (!target || target.isDestroyed() || target.webContents.isDestroyed()) return;
+        if (target.webContents.mainFrame.url !== rendererUrl) return;
+        const event: OrchestrationUpdate = { projectPath: root, run };
+        target.webContents.send("specloom:orchestration", event);
+      },
     });
     workflowService = service;
     workflowCore = core;
@@ -230,7 +283,7 @@ export function registerIpc(ipc: Pick<IpcMain, "handle">, controller: DesktopCon
       if (typeof operation !== "string" || !Object.hasOwn(operations, operation)) throw new ProjectError("VALIDATION_FAILED", "Unknown desktop operation");
       // A workflow start carries a full definition snapshot plus run inputs, which
       // must stay inside the default 1 MiB document budget.
-      const payloadLimit = operation === "sessionsImport" ? sessionFileLimit * 2 + 8192 : operation === "importMaterialImage" ? materialImagePayloadLimit + 8192 : operation === "sessionsSend" || operation === "sessionsGuide" ? 64 * 1024 * 1024 : operation === "saveDocument" ? 2_097_152 : 1_048_576;
+      const payloadLimit = operation === "sessionsImport" ? sessionFileLimit * 2 + 8192 : operation === "importMaterialImage" ? materialImagePayloadLimit + 8192 : operation === "sessionsSend" || operation === "sessionsGuide" ? 64 * 1024 * 1024 : operation === "saveDocument" || operation === "workflowSave" || operation === "orchestrationSave" ? 2_097_152 : 1_048_576;
       if (operation !== "chatAttachmentPrepare" && JSON.stringify(payload)?.length > payloadLimit) throw new ProjectError("VALIDATION_FAILED", "IPC payload exceeds the size limit");
       const schema = operations[operation as keyof typeof operations];
       const parsed = schema.safeParse(payload);
@@ -265,6 +318,20 @@ export function registerIpc(ipc: Pick<IpcMain, "handle">, controller: DesktopCon
         case "workflowReject": await getWorkflow(selectedController).reject(data.runId as string); result = undefined; break;
         case "workflowRetry": await getWorkflow(selectedController).retry(data.runId as string, data.action as WorkflowRetryAction); result = undefined; break;
         case "workflowCancel": await getWorkflow(selectedController).cancel(data.runId as string); result = undefined; break;
+        case "workflowDefaultsRead": result = await getWorkflow(selectedController).defaultsRead(); break;
+        case "workflowDefaultsSave": result = await getWorkflow(selectedController).defaultsSave(data.settings as WorkflowSettings); break;
+        case "workflowDefaultsClear": result = await getWorkflow(selectedController).defaultsClear(); break;
+        case "orchestrationList": result = await getWorkflow(selectedController).orchestrationList(); break;
+        case "orchestrationRead": result = await getWorkflow(selectedController).orchestrationRead(data.id as string); break;
+        case "orchestrationSave": result = await getWorkflow(selectedController).orchestrationSave(data.id as string, data.content as string, data.expectedVersion as z.infer<typeof VersionTokenSchema>); break;
+        case "orchestrationRemove": await getWorkflow(selectedController).orchestrationRemove(data.id as string, data.expectedVersion as z.infer<typeof VersionTokenSchema>); result = undefined; break;
+        case "orchestrationStart": result = await getWorkflow(selectedController).orchestrationStart(data.id as string, data.inputs as WorkflowRunInputs); break;
+        case "orchestrationGetRun": result = await getWorkflow(selectedController).orchestrationGetRun(data.runId as string); break;
+        case "orchestrationListRuns": result = await getWorkflow(selectedController).orchestrationListRuns(); break;
+        case "orchestrationApproveStep": await getWorkflow(selectedController).orchestrationApproveStep(data.runId as string, data.digest as string); result = undefined; break;
+        case "orchestrationRejectStep": await getWorkflow(selectedController).orchestrationRejectStep(data.runId as string); result = undefined; break;
+        case "orchestrationRetryStep": await getWorkflow(selectedController).orchestrationRetryStep(data.runId as string, data.action as WorkflowRetryAction); result = undefined; break;
+        case "orchestrationCancel": await getWorkflow(selectedController).orchestrationCancel(data.runId as string); result = undefined; break;
         case "entityLayoutRead": result = await new EntityLayoutStore(selectedController.currentCore().metadata.path).read(); break;
         case "entityLayoutSave": result = await new EntityLayoutStore(selectedController.currentCore().metadata.path).save(data.layout as EntityLayout); break;
         default: result = await dispatch(operation, data, selectedController, selectDirectory, selectFiles, selectOfflineDirectory, selectSkillDirectory, selectSkillArchive, options.projectActions, options.selectDiagnosticsExport, options.revealDirectory);
