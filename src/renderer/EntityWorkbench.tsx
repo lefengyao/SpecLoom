@@ -304,7 +304,7 @@ function EntityCanvas({
         id: `entity-edge:${binding.id}`,
         source: ENTITY_NODE_ID,
         target: componentNodeId(binding.id),
-        type: "smoothstep",
+        type: "default",
         style: binding.own
           ? { stroke: "var(--accent)" }
           : { stroke: "var(--text-faint)", strokeDasharray: "5 4" },

@@ -14,6 +14,7 @@ import {
   type NodeProps,
   type NodeTypes,
   type ReactFlowInstance,
+  useNodesState,
 } from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import "@xyflow/react/dist/style.css";
@@ -109,7 +110,7 @@ function buildEdges(definition: WorkflowDefinition): Edge[] {
       id: edge.id,
       source: edge.from,
       target: edge.to,
-      type: "smoothstep",
+      type: "default",
       ...(reject ? { label: "驳回" } : {}),
       style: reject
         ? { stroke: "var(--danger-text)", strokeDasharray: "6 4" }
@@ -135,7 +136,7 @@ export function WorkflowCanvas({
   onConnect,
   onEdgesDelete,
 }: WorkflowCanvasProps) {
-  const nodes = useMemo<WorkflowFlowNode[]>(
+  const modelNodes = useMemo<WorkflowFlowNode[]>(
     () =>
       definition.nodes.map((node) => {
         const status = nodeStatuses?.[node.id];
@@ -159,6 +160,8 @@ export function WorkflowCanvas({
       }),
     [definition, selectedNodeId, nodeStatuses, readOnly],
   );
+  const [nodes, setNodes, onNodesChange] = useNodesState<WorkflowFlowNode>(modelNodes);
+  useEffect(() => { setNodes(modelNodes); }, [modelNodes, setNodes]);
 
   const edges = useMemo(() => buildEdges(definition), [definition]);
 
@@ -195,6 +198,7 @@ export function WorkflowCanvas({
           aria-label="工作流画布"
           nodes={nodes}
           edges={edges}
+          onNodesChange={onNodesChange}
           nodeTypes={nodeTypes}
           onInit={(instance) => {
             flowRef.current = instance;
