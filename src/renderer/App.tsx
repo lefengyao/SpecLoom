@@ -8,6 +8,7 @@ import {
   Gamepad2,
   Globe2,
   History,
+  Home,
   Layers3,
   Map,
   PanelLeftClose,
@@ -129,6 +130,7 @@ export default function App() {
   const [revision, setRevision] = useState(0);
   const [materialDrafts, setMaterialDrafts] = useState<MaterialDraft[]>([]);
   const [pendingProjectOpen, setPendingProjectOpen] = useState<boolean>();
+  const [pendingProjectExit, setPendingProjectExit] = useState(false);
   const [pendingMaterialReload, setPendingMaterialReload] = useState<string>();
   const [materialReload, setMaterialReload] = useState<{ path: string; sequence: number }>();
   const reloadSequence = useRef(0);
@@ -190,6 +192,10 @@ export default function App() {
     if (materialDrafts.length) setPendingProjectOpen(example);
     else void workspace.openProject(example);
   }
+  function exitProject() {
+    if (materialDrafts.length) setPendingProjectExit(true);
+    else void workspace.closeProject();
+  }
   return (
     <ContextMenu onError={workspace.reportError}>
       <div className="application">
@@ -204,20 +210,13 @@ export default function App() {
           <button
             disabled={!api || busy || anyRunning}
             onClick={() => {
-              openProject();
+              if (state.project) exitProject();
+              else openProject();
             }}
           >
-            <FolderOpen size={16} />
-            {state.project ? "切换项目" : "打开项目"}
+            {state.project ? <Home size={16} /> : <FolderOpen size={16} />}
+            {state.project ? "返回初始界面" : "打开项目"}
           </button>
-          {state.project && materialDrafts.length > 0 && (
-            <button
-              className="project-switch-a11y-alias"
-              aria-label="打开项目"
-              tabIndex={-1}
-              onClick={() => openProject()}
-            />
-          )}
           {state.project && (
             <>
               <button disabled={!api || busy} onClick={() => void api?.openGodot().catch(workspace.reportError)}>
@@ -599,6 +598,18 @@ export default function App() {
             }
           }}
         />
+      )}
+      {pendingProjectExit && (
+        <Modal title="未保存的资料修改" onClose={() => setPendingProjectExit(false)}>
+          <p>有 {materialDrafts.length} 份资料尚未保存。返回初始界面会丢弃这些修改。</p>
+          <footer className="form-actions">
+            <button onClick={() => setPendingProjectExit(false)}>继续编辑</button>
+            <button onClick={() => {
+              setPendingProjectExit(false);
+              void workspace.closeProject();
+            }}>返回初始界面并丢弃修改</button>
+          </footer>
+        </Modal>
       )}
       {pendingProjectOpen !== undefined && (
         <Modal title="未保存的资料修改" onClose={() => setPendingProjectOpen(undefined)}>

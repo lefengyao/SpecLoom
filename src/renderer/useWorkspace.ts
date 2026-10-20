@@ -142,6 +142,10 @@ export function useWorkspace(api?: DesktopApi) {
     if (!api) return;
     await selectProject(() => example ? api.createExample() : api.selectProject());
   }
+  async function closeProject() {
+    if (!api) return;
+    await selectProject(() => api.closeProject());
+  }
   async function selectProject(action: () => Promise<WorkspaceState>) {
     const selection = ++projectSelectionSeq.current;
     refreshSeq.current++;
@@ -311,6 +315,7 @@ export function useWorkspace(api?: DesktopApi) {
     refresh,
     perform,
     openProject,
+    closeProject,
     openRecent,
     forgetRecent,
     updatePreferences,

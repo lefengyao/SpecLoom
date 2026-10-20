@@ -430,6 +430,7 @@ describe("desktop workspace workflows", () => {
     const f = fixture({ project: true });
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "实体" }));
+    fireEvent.click(screen.getByRole("tab", { name: "详情" }));
     fireEvent.click(screen.getByRole("button", { name: "新建实体" }));
     const dialog = screen.getByRole("dialog", { name: "新建实体" });
     expect(within(dialog).getAllByRole("textbox")).toHaveLength(1);
@@ -463,6 +464,7 @@ describe("desktop workspace workflows", () => {
     );
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "实体" }));
+    fireEvent.click(screen.getByRole("tab", { name: "详情" }));
     fireEvent.click(screen.getByRole("button", { name: "新建实体" }));
     const dialog = screen.getByRole("dialog", { name: "新建实体" });
     fireEvent.change(within(dialog).getByLabelText("名称"), { target: { value: "脉冲步枪" } });
@@ -486,6 +488,7 @@ describe("desktop workspace workflows", () => {
     const f = fixture({ project: true });
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "实体" }));
+    fireEvent.click(screen.getByRole("tab", { name: "详情" }));
     fireEvent.click(screen.getByRole("button", { name: "新建实体" }));
     let dialog = screen.getByRole("dialog", { name: "新建实体" });
     fireEvent.change(within(dialog).getByLabelText("名称"), { target: { value: "待配置的小怪" } });
@@ -521,6 +524,7 @@ describe("desktop workspace workflows", () => {
     f.api.readDocument.mockResolvedValue({ path, version, content });
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "实体" }));
+    fireEvent.click(screen.getByRole("tab", { name: "详情" }));
     fireEvent.click(screen.getByRole("button", { name: "项目树" }));
     fireEvent.click(await within(screen.getByRole("tree", { name: "实体关系树" })).findByRole("button", { name: "守灯人" }));
     const name = await screen.findByLabelText("名称");
@@ -537,15 +541,11 @@ describe("desktop workspace workflows", () => {
     const write = f.api.saveDocument.mock.calls[0]!;
     expect(parse(String(write[2]).split("---")[1]!)).toMatchObject({ title: "受伤的守灯人", description: "在战斗后撤回灯塔" });
   });
-  it("protects unstaged material edits in the workspace and confirms a project switch", async () => {
+  it("protects unstaged material edits when returning to the launcher", async () => {
     const f = fixture({ project: true });
-    f.api.selectProject.mockImplementation(async () => {
-      const next = { ...f.state(), project: { ...f.state().project!, path: "C:/Godot/roguelike", name: "肉鸽原型" } };
-      f.setState(next);
-      return structuredClone(next);
-    });
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "实体" }));
+    fireEvent.click(screen.getByRole("tab", { name: "详情" }));
     fireEvent.click(screen.getByRole("button", { name: "新建实体" }));
     const creation = screen.getByRole("dialog", { name: "新建实体" });
     fireEvent.change(within(creation).getByLabelText("名称"), { target: { value: "未完成的哥布林" } });
@@ -556,16 +556,16 @@ describe("desktop workspace workflows", () => {
     const unloading = new Event("beforeunload", { cancelable: true });
     window.dispatchEvent(unloading);
     expect(unloading.defaultPrevented).toBe(true);
-    fireEvent.click(screen.getByRole("button", { name: "切换项目" }));
+    fireEvent.click(screen.getByRole("button", { name: "返回初始界面" }));
     const warning = screen.getByRole("dialog", { name: "未保存的资料修改" });
-    expect(f.api.selectProject).not.toHaveBeenCalled();
+    expect(f.api.closeProject).not.toHaveBeenCalled();
     fireEvent.click(within(warning).getByRole("button", { name: "继续编辑" }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(f.api.selectProject).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "打开项目" }));
-    fireEvent.click(screen.getByRole("button", { name: "切换项目并丢弃修改" }));
-    await screen.findByRole("heading", { name: "肉鸽原型" });
-    expect(f.api.selectProject).toHaveBeenCalledOnce();
+    expect(f.api.closeProject).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "返回初始界面" }));
+    fireEvent.click(screen.getByRole("button", { name: "返回初始界面并丢弃修改" }));
+    await screen.findByRole("button", { name: "创建示例项目" });
+    expect(f.api.closeProject).toHaveBeenCalledOnce();
     await waitFor(() => {
       const afterSwitch = new Event("beforeunload", { cancelable: true });
       window.dispatchEvent(afterSwitch);
@@ -588,6 +588,7 @@ describe("desktop workspace workflows", () => {
     });
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "实体" }));
+    fireEvent.click(screen.getByRole("tab", { name: "详情" }));
     fireEvent.click(screen.getByRole("button", { name: "项目树" }));
     fireEvent.click(await within(screen.getByRole("tree", { name: "实体关系树" })).findByRole("button", { name: "守灯人" }));
     await screen.findByLabelText("名称");

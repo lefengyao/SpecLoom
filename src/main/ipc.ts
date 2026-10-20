@@ -118,6 +118,7 @@ const operations = {
   sessionsApprove: z.object({ projectPath: z.string().max(4096), sessionId: id, runId: id, approvalId: id, approved: z.boolean() }).strict(),
   state: z.object({}).strict(), selectProject: z.object({}).strict(), openGodot: z.object({}).strict(), openExternalEditor: z.object({}).strict(), removeTask: z.object({ taskId: id }).strict(), createExample: z.object({}).strict(),
   openProject: z.object({ path: z.string().min(1).max(4096) }).strict(),
+  closeProject: z.object({}).strict(),
   forgetProject: z.object({ path: z.string().min(1).max(4096) }).strict(),
   updatePreferences: z.object({ patch: PreferencesPatchSchema }).strict(),
   createTask: z.object({ scope: TaskScopeSpecSchema.omit({ id: true }) }).strict(),
@@ -406,6 +407,7 @@ async function dispatch(operation: string, input: Record<string, unknown>, contr
     case "state": return controller.state();
     case "selectProject": { const root = await selectDirectory(); return root ? projects ? projects.open(root) : controller.openProject(root) : controller.state(); }
     case "openProject": return projects ? projects.open(input.path as string) : controller.openProject(input.path as string);
+    case "closeProject": return controller.closeProject();
     case "forgetProject": return controller.forgetProject(input.path as string);
     case "updatePreferences": return controller.updatePreferences(input.patch as Partial<Preferences>);
     case "openGodot": return controller.openGodot();

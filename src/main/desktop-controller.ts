@@ -168,6 +168,18 @@ export class DesktopController {
     return { ...base, ...(defaultModel ? { defaultModel } : {}), ...(sessionModel ? { sessionModel } : {}), ...(this.core ? { project: this.core.metadata, recoveryIssues: structuredClone(this.core.recoveryIssues) } : {}), ...(this.mcp ? { mcp: this.mcp } : {}) };
   }
   openProject(root: string): Promise<WorkspaceState> { return this.transition(async () => root); }
+  /** Close the current project and return to the launcher without opening another one. */
+  async closeProject(): Promise<WorkspaceState> {
+    if (this.busy) throw new ProjectError("MODEL_ERROR", "先等待当前操作结束，再返回初始界面");
+    this.opening = true;
+    try {
+      const previous = this.core;
+      delete this.core;
+      delete this.workflow;
+      await previous?.close();
+      return await this.state();
+    } finally { this.opening = false; }
+  }
   /** Drops a remembered project from the home list without touching the project itself. */
   forgetProject(root: string): Promise<WorkspaceState> { return this.recentProjects.forget(root).then(() => this.state()); }
   async updatePreferences(patch: Partial<Preferences>): Promise<WorkspaceState> {

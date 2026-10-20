@@ -133,6 +133,11 @@ export function fixture(
       state = { ...state, project };
       return structuredClone(state);
     }),
+    closeProject: vi.fn(async () => {
+      const { project: _project, ...rest } = state;
+      state = rest;
+      return structuredClone(state);
+    }),
     forgetProject: vi.fn(async (forgotten: string) => {
       state = {
         ...state,

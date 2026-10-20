@@ -234,6 +234,7 @@ export interface DesktopApi {
   onStateChanged?: (listener: () => void) => () => void;
   selectProject(): Promise<WorkspaceState>;
   openProject(path: string): Promise<WorkspaceState>;
+  closeProject(): Promise<WorkspaceState>;
   forgetProject(path: string): Promise<WorkspaceState>;
   updatePreferences(patch: Partial<Preferences>): Promise<WorkspaceState>;
   openGodot(): Promise<void>;

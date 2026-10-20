@@ -162,5 +162,5 @@ test("presents a generic project without empty Godot metadata and offers a gener
   fireEvent.click(projectDetails);
   expect(screen.getByText("通用项目")).toBeVisible();
   expect(screen.queryByText("未配置主场景")).not.toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "切换项目" })).toBeVisible();
+  expect(screen.getByRole("button", { name: "返回初始界面" })).toBeVisible();
 });
