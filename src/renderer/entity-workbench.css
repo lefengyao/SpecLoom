@@ -120,6 +120,14 @@
   min-height: 0;
 }
 
+.ewb-layout.is-inspector-empty {
+  grid-template-columns: 208px 208px minmax(0, 1fr);
+}
+
+.ewb-layout.is-inspector-empty .ewb-inspector {
+  display: none;
+}
+
 .ewb-panel {
   display: flex;
   flex-direction: column;
@@ -603,6 +611,10 @@
 @media (max-width: 1180px) {
   .ewb-layout {
     grid-template-columns: 188px 188px minmax(0, 1fr) 258px;
+  }
+
+  .ewb-layout.is-inspector-empty {
+    grid-template-columns: 188px 188px minmax(0, 1fr);
   }
 
   .ewb-card {

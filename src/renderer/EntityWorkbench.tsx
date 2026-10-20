@@ -254,7 +254,7 @@ function EntityCanvas({
   bindings: ResolvedBinding[];
   storedPositions: Record<string, EntityPoint>;
   selectedBindingId: string | undefined;
-  onSelectBinding: (bindingId: string) => void;
+  onSelectBinding: (bindingId: string | undefined) => void;
   onMoveBinding: (bindingId: string, position: EntityPoint) => void;
 }) {
   const model = useMemo(() => {
@@ -355,8 +355,12 @@ function EntityCanvas({
   }, [fitCanvas]);
 
   const selectNode = (node: WorkbenchFlowNode) => {
-    if (node.id === ENTITY_NODE_ID) return;
-    onSelectBinding(node.id.slice(COMPONENT_NODE_PREFIX.length));
+    if (node.id === ENTITY_NODE_ID) {
+      onSelectBinding(undefined);
+      return;
+    }
+    const bindingId = node.id.slice(COMPONENT_NODE_PREFIX.length);
+    onSelectBinding(selectedBindingId === bindingId ? undefined : bindingId);
   };
   const moveNode = (node: WorkbenchFlowNode) => {
     if (node.id === ENTITY_NODE_ID) return;
@@ -382,6 +386,7 @@ function EntityCanvas({
             fitCanvas();
           }}
           onNodeClick={(_event, node) => selectNode(node)}
+          onPaneClick={() => onSelectBinding(undefined)}
           onNodeDrag={(_event, node) => moveNode(node)}
           onNodeDragStop={(_event, node) => moveNode(node)}
         >
@@ -398,7 +403,7 @@ export interface EntityComponentBoardProps {
   bindings: ResolvedBinding[];
   storedPositions: Record<string, EntityPoint>;
   selectedBindingId: string | undefined;
-  onSelectBinding: (bindingId: string) => void;
+  onSelectBinding: (bindingId: string | undefined) => void;
   onMoveBinding: (bindingId: string, position: EntityPoint) => void;
 }
 
@@ -942,7 +947,7 @@ export function EntityWorkbench({ api, projectPath, onError }: EntityWorkbenchPr
         </div>
       )}
 
-      <div className="ewb-layout">
+      <div className={"ewb-layout" + (selectedBinding ? "" : " is-inspector-empty")}>
         <aside className="ewb-panel ewb-entities" aria-label="实体列表">
           <header className="ewb-panel-head">
             <h2>实体</h2>

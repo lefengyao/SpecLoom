@@ -40,7 +40,7 @@ export interface WorkflowCanvasProps {
   /** Latest run status per node id; empty when no run matches this definition. */
   nodeStatuses?: Record<string, WorkflowNodeStatus> | undefined;
   readOnly?: boolean;
-  onSelectNode?: ((id: string) => void) | undefined;
+  onSelectNode?: ((id: string | undefined) => void) | undefined;
   onMoveNode?: ((id: string, position: { x: number; y: number }) => void) | undefined;
   onConnect?: ((connection: Connection) => void) | undefined;
   onEdgesDelete?: ((edges: Edge[]) => void) | undefined;
@@ -211,7 +211,8 @@ export function WorkflowCanvas({
           nodesFocusable={!readOnly}
           edgesFocusable={!readOnly}
           elementsSelectable={!readOnly}
-          onNodeClick={(_event, node) => onSelectNode?.(node.id)}
+          onNodeClick={(_event, node) => onSelectNode?.(selectedNodeId === node.id ? undefined : node.id)}
+          onPaneClick={() => onSelectNode?.(undefined)}
           onNodeDragStop={(_event, node) => onMoveNode?.(node.id, { x: node.position.x, y: node.position.y })}
           onConnect={(connection) => onConnect?.(connection)}
           onEdgesDelete={(deleted) => onEdgesDelete?.(deleted)}
