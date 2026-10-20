@@ -4,7 +4,9 @@ import {
   Background,
   BackgroundVariant,
   Controls,
+  Handle,
   MarkerType,
+  Position,
   ReactFlow,
   ReactFlowProvider,
   useEdgesState,
@@ -210,6 +212,10 @@ function EntityCard({ data }: NodeProps) {
       <strong className="ewb-card-title">{card.title}</strong>
       <span className="ewb-card-meta">{card.meta}</span>
       {card.path && <code className="ewb-card-path">{card.path}</code>}
+      <Handle type="source" position={Position.Top} id="source-top" className="ewb-handle" />
+      <Handle type="source" position={Position.Bottom} id="source-bottom" className="ewb-handle" />
+      <Handle type="source" position={Position.Left} id="source-left" className="ewb-handle" />
+      <Handle type="source" position={Position.Right} id="source-right" className="ewb-handle" />
     </div>
   );
 }
@@ -231,6 +237,10 @@ function ComponentCard({ data }: NodeProps) {
           继承
         </span>
       )}
+      <Handle type="target" position={Position.Top} id="target-top" className="ewb-handle" />
+      <Handle type="target" position={Position.Bottom} id="target-bottom" className="ewb-handle" />
+      <Handle type="target" position={Position.Left} id="target-left" className="ewb-handle" />
+      <Handle type="target" position={Position.Right} id="target-right" className="ewb-handle" />
     </div>
   );
 }
@@ -281,10 +291,20 @@ function EntityCanvas({
     for (const binding of bindings) {
       const title = binding.component?.title ?? binding.id;
       const meta = binding.component ? `${binding.component.fields.length} 个字段` : "组件定义缺失";
+      const position = storedPositions[binding.id] ?? defaults[binding.id] ?? { x: ENTITY_CENTER.x, y: ENTITY_CENTER.y + 220 };
+      const dx = position.x - ENTITY_CENTER.x;
+      const dy = position.y - ENTITY_CENTER.y;
+      const horizontal = Math.abs(dx) > Math.abs(dy);
+      const sourceHandle = horizontal
+        ? dx > 0 ? "source-right" : "source-left"
+        : dy > 0 ? "source-bottom" : "source-top";
+      const targetHandle = horizontal
+        ? dx > 0 ? "target-left" : "target-right"
+        : dy > 0 ? "target-top" : "target-bottom";
       nodes.push({
         id: componentNodeId(binding.id),
         type: "component",
-        position: storedPositions[binding.id] ?? defaults[binding.id] ?? { x: ENTITY_CENTER.x, y: ENTITY_CENTER.y + 220 },
+        position,
         data: {
           kind: "component",
           title,
@@ -303,7 +323,9 @@ function EntityCanvas({
       edges.push({
         id: `entity-edge:${binding.id}`,
         source: ENTITY_NODE_ID,
+        sourceHandle,
         target: componentNodeId(binding.id),
+        targetHandle,
         type: "default",
         style: binding.own
           ? { stroke: "var(--accent)" }

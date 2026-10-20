@@ -484,6 +484,22 @@
   padding: 7px 9px;
 }
 
+.ewb-card .ewb-handle {
+  width: 8px;
+  height: 8px;
+  border: 2px solid var(--bg-surface);
+  background: var(--accent);
+  opacity: 0;
+}
+
+.ewb-card:hover .ewb-handle {
+  opacity: 1;
+}
+
+.ewb-card .ewb-handle:hover {
+  background: var(--accent-text);
+}
+
 .ewb-card-select {
   display: flex;
   flex-direction: column;
