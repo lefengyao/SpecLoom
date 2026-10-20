@@ -208,39 +208,42 @@ export function WorkflowView({ api, models, projectPath, onError, runRequest, on
         <div className={"workflow-layout" + (inspectorEmpty ? " is-inspector-empty" : "")}>
           <aside className="workflow-sidebar" aria-label="我的工作流">
             <header className="workflow-sidebar-head">
-              <h2>我的工作流</h2>
-              <span className="subtle">{workflow.summaries.length + 1} 个</span>
+              <h2>我的工作流 <span className="workflow-count">{workflow.summaries.length + 1}</span></h2>
+              <div className="workflow-sidebar-tools">
+                <button type="button" aria-label="新建空白" title="新建空白工作流" disabled={loading} onClick={() => void workflow.newBlank()}>
+                  <Plus size={14} />
+                </button>
+                <button type="button" aria-label="从官方复制" title="从官方模板复制" disabled={loading} onClick={() => void workflow.copyOfficial()}>
+                  <Copy size={14} />
+                </button>
+              </div>
             </header>
 
-            <section className="workflow-defaults" aria-label="默认工作流">
-              <div className="workflow-default-row">
-                <Star size={14} fill="currentColor" aria-hidden="true" className="workflow-default-star" />
-                <div className="workflow-default-copy">
-                  <span className="workflow-list-title">{OFFICIAL_TITLE}</span>
-                  <span className="workflow-badge">全局默认</span>
-                </div>
+            <section className="workflow-official-row" aria-label="默认工作流">
+              <Star size={13} fill="currentColor" aria-hidden="true" className="workflow-default-star" />
+              <div className="workflow-official-main">
+                <span className="workflow-list-title">官方模板</span>
+                <span className="workflow-list-meta">官方开发审查 · 6 节点</span>
               </div>
-              {workflow.projectDefaultId !== undefined ? (
-                <div className="workflow-default-project">
-                  <span className="workflow-hint">项目默认：{projectDefaultTitle}</span>
-                  {workflow.defaultsAvailable && (
-                    <button type="button" onClick={() => void workflow.restoreDefault()}>
-                      恢复全局默认
-                    </button>
-                  )}
-                </div>
-              ) : (
-                <p className="workflow-hint">官方工作流固定为全局默认。可把项目工作流设为项目默认。</p>
-              )}
-              {workflow.defaultMissing && (
-                <p className="workflow-warning" role="alert">
-                  项目默认工作流 {workflow.projectDefaultId} 不可用，已回退到官方工作流。
-                </p>
-              )}
+              <span className="workflow-badge">全局默认</span>
             </section>
 
+            {workflow.projectDefaultId !== undefined && (
+              <div className="workflow-default-note">
+                <span>项目默认：{projectDefaultTitle}</span>
+                {workflow.defaultsAvailable && (
+                  <button type="button" onClick={() => void workflow.restoreDefault()}>恢复全局默认</button>
+                )}
+              </div>
+            )}
+            {workflow.defaultMissing && (
+              <p className="workflow-warning" role="alert">
+                项目默认 {workflow.projectDefaultId} 不可用，已回退官方。
+              </p>
+            )}
+
             {workflow.summaries.length === 0 ? (
-              <p className="workflow-empty">还没有项目工作流。可以新建空白流程，或从官方模板复制一份。</p>
+              <p className="workflow-empty">还没有项目工作流。用右上角按钮新建或复制官方模板。</p>
             ) : (
               <ul className="workflow-list">
                 {workflow.summaries.map((summary) => {
@@ -252,14 +255,16 @@ export function WorkflowView({ api, models, projectPath, onError, runRequest, on
                           type="button"
                           className="workflow-list-item"
                           aria-pressed={summary.id === workflow.selectedId}
+                          title={summary.id}
                           onClick={() => void workflow.select(summary.id)}
                         >
-                          <span className="workflow-list-title">{summary.title}</span>
-                          <code className="workflow-list-id">{summary.id}</code>
-                          <span className="workflow-list-meta">
-                            节点 {summary.nodeCount} · 写入 {summary.writeCount}
+                          <span className="workflow-list-title-line">
+                            <span className="workflow-list-title">{summary.title}</span>
+                            {isDefault && <span className="workflow-badge">项目默认</span>}
                           </span>
-                          {isDefault && <span className="workflow-badge">项目默认</span>}
+                          <span className="workflow-list-meta">
+                            {summary.nodeCount} 节点 · {summary.writeCount} 写入
+                          </span>
                         </button>
                         {workflow.defaultsAvailable && (
                           <button
@@ -283,11 +288,13 @@ export function WorkflowView({ api, models, projectPath, onError, runRequest, on
             {(mode === "orchestration" || mode === "run") && (
               <section className="workflow-runs" aria-label="我的编排">
                 <header className="workflow-sidebar-head">
-                  <h2>我的编排</h2>
-                  <span className="subtle">{orchestration.summaries.length} 个</span>
+                  <h2>我的编排 <span className="workflow-count">{orchestration.summaries.length}</span></h2>
+                  <button type="button" className="workflow-new-orchestration" disabled={loading} onClick={startNewOrchestration} aria-label="新建编排">
+                    <Plus size={13} />
+                  </button>
                 </header>
                 {orchestration.summaries.length === 0 ? (
-                  <p className="workflow-hint">还没有编排。新建后按顺序选择工作流。</p>
+                  <p className="workflow-hint">还没有编排。</p>
                 ) : (
                   <ul>
                     {orchestration.summaries.map((summary) => (
@@ -305,10 +312,6 @@ export function WorkflowView({ api, models, projectPath, onError, runRequest, on
                     ))}
                   </ul>
                 )}
-                <button type="button" className="workflow-new-orchestration" disabled={loading} onClick={startNewOrchestration}>
-                  <Plus size={14} />
-                  新建编排
-                </button>
               </section>
             )}
 
@@ -339,7 +342,7 @@ export function WorkflowView({ api, models, projectPath, onError, runRequest, on
               </section>
             )}
 
-            {workflow.runs.length > 0 && (
+            {mode === "run" && workflow.runs.length > 0 && (
               <section className="workflow-runs" aria-label="最近运行">
                 <h2>最近运行</h2>
                 <ul>
@@ -364,34 +367,6 @@ export function WorkflowView({ api, models, projectPath, onError, runRequest, on
                 </ul>
               </section>
             )}
-
-            <div className="workflow-sidebar-actions">
-              <button type="button" disabled={loading} onClick={() => void workflow.newBlank()}>
-                <Plus size={14} />
-                新建空白
-              </button>
-              <button type="button" disabled={loading} onClick={() => void workflow.copyOfficial()}>
-                <Copy size={14} />
-                从官方复制
-              </button>
-            </div>
-
-            {mode === "workflow" && (
-              <section className="workflow-runs workflow-palette" aria-label="节点面板">
-                <h2>节点</h2>
-                <button
-                  type="button"
-                  disabled={loading || !definition}
-                  onClick={() => {
-                    const id = workflow.addReadAgent();
-                    if (id) setSelectedNodeId(id);
-                  }}
-                >
-                  + 添加只读 Agent
-                </button>
-                <p className="workflow-hint">B 流程固定：只读 Agent 可增删，连接节点可重排成功连线。</p>
-              </section>
-            )}
           </aside>
 
           <section className="workflow-main" aria-label="工作流画布">
@@ -402,6 +377,18 @@ export function WorkflowView({ api, models, projectPath, onError, runRequest, on
                     <strong>{definition.title}</strong>
                     <code>{definition.id}</code>
                     {dirty && <span className="workflow-dirty">未保存</span>}
+                    <button
+                      type="button"
+                      className="workflow-add-agent"
+                      aria-label="添加只读 Agent"
+                      disabled={loading}
+                      onClick={() => {
+                        const id = workflow.addReadAgent();
+                        if (id) setSelectedNodeId(id);
+                      }}
+                    >
+                      + 只读 Agent
+                    </button>
                   </div>
                   <WorkflowCanvas
                     definition={definition}

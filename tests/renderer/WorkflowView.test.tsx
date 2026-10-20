@@ -183,6 +183,7 @@ describe("WorkflowView", () => {
     renderView();
     await screen.findByText("Agent 实现");
 
+    fireEvent.click(screen.getByRole("button", { name: "运行" }));
     const history = screen.getByRole("region", { name: "最近运行" });
     expect(within(history).getByText("运行中", { exact: false })).toBeInTheDocument();
     fireEvent.click(within(history).getByRole("button"));
@@ -207,7 +208,7 @@ describe("WorkflowView", () => {
     const { defaults } = renderView();
 
     const official = await screen.findByRole("region", { name: "默认工作流" });
-    expect(within(official).getByText("官方开发审查")).toBeInTheDocument();
+    expect(within(official).getByText("官方模板")).toBeInTheDocument();
     expect(within(official).getByText("全局默认")).toBeInTheDocument();
 
     fireEvent.click(await screen.findByRole("button", { name: "设为默认：我的发布审查" }));

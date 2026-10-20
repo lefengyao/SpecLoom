@@ -79,7 +79,7 @@
 
 .workflow-layout {
   display: grid;
-  grid-template-columns: 232px minmax(0, 1fr) 322px;
+  grid-template-columns: 208px minmax(0, 1fr) 322px;
   gap: 14px;
   flex: 1 1 auto;
   min-height: 0;
@@ -87,7 +87,7 @@
 
 /* In build mode an empty inspector must not steal canvas width. */
 .workflow-layout.is-inspector-empty {
-  grid-template-columns: 232px minmax(0, 1fr);
+  grid-template-columns: 208px minmax(0, 1fr);
 }
 
 .workflow-layout.is-inspector-empty .workflow-side {
@@ -108,7 +108,8 @@
 .workflow-sidebar {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
+  padding: 10px;
 }
 
 .workflow-sidebar-head,
@@ -138,9 +139,9 @@
 .workflow-list-item {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
   width: 100%;
-  padding: 8px 9px;
+  padding: 6px 8px;
   border: 1px solid transparent;
   border-radius: 7px;
   background: var(--bg-raised);
@@ -172,8 +173,126 @@
 }
 
 .workflow-list-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
   color: var(--text-muted);
   font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workflow-list-meta code {
+  overflow: hidden;
+  max-width: 100%;
+  color: var(--text-subtle);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workflow-list-title-line {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.workflow-list-title-line .workflow-list-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workflow-count {
+  margin-left: 3px;
+  color: var(--text-subtle);
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.workflow-sidebar-tools {
+  display: flex;
+  gap: 3px;
+}
+
+.workflow-sidebar-tools button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 25px;
+  height: 25px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-raised);
+  color: var(--text-muted);
+}
+
+.workflow-sidebar-tools button:hover {
+  border-color: var(--accent-border);
+  color: var(--accent-text);
+}
+
+.workflow-official-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 9px;
+  border: 1px solid var(--accent-border);
+  border-radius: 8px;
+  background: var(--accent-soft);
+}
+
+.workflow-official-main {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.workflow-official-row .workflow-list-title {
+  font-size: 12px;
+}
+
+.workflow-official-row .workflow-list-meta {
+  font-size: 9px;
+}
+
+.workflow-default-note {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 0 2px;
+  color: var(--text-subtle);
+  font-size: 10px;
+}
+
+.workflow-default-note button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent-text);
+  font-size: 10px;
+}
+
+.workflow-add-agent {
+  margin-left: auto;
+  padding: 3px 8px;
+  border: 1px dashed var(--accent-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--accent-text);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.workflow-add-agent:hover {
+  background: var(--accent-soft);
 }
 
 .workflow-sidebar-actions {
@@ -948,6 +1067,16 @@
   border-color: var(--accent-border);
   background: var(--accent-soft);
   color: var(--accent-text);
+}
+
+.workflow-sidebar-head .workflow-new-orchestration {
+  width: 25px;
+  height: 25px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-raised);
+  color: var(--text-muted);
 }
 
 .workflow-new-orchestration {

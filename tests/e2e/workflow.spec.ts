@@ -26,7 +26,7 @@ test("workflow page copies the official template and renders its nodes", async (
     await expect(window.getByText("只读 Agent", { exact: true })).toBeVisible();
     await window.getByRole("button", { name: "保存", exact: true }).click();
     await expect(window.getByText("未保存", { exact: true })).toHaveCount(0);
-    await expect(window.getByText(/节点 7 · 写入 1/)).toBeVisible();
+    await expect(window.getByText(/7 节点 · 1 写入/)).toBeVisible();
     await window.screenshot({ path: ".local/workflow-page.png", fullPage: true });
   } finally {
     await application.close();
