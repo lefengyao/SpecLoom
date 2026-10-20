@@ -1,4 +1,4 @@
-import { Puzzle, RefreshCw, Save, Trash2 } from "lucide-react";
+import { ChevronRight, Puzzle, RefreshCw, Save, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Background,
@@ -331,6 +331,7 @@ function EntityCanvas({
   const frameRef = useRef<HTMLDivElement | null>(null);
   const flowRef = useRef<ReactFlowInstance<WorkbenchFlowNode, Edge> | null>(null);
   const fittedEntityRef = useRef<string | undefined>(undefined);
+  const fittedSizeRef = useRef<{ width: number; height: number } | undefined>(undefined);
 
   // The page can mount while its navigation tab is hidden, so fit only once the
   // frame has a real size, and again when another entity is shown.
@@ -340,9 +341,16 @@ function EntityCanvas({
     if (!frame || !flow) return;
     const rect = frame.getBoundingClientRect();
     if (rect.width < 40 || rect.height < 40) return;
-    if (fittedEntityRef.current === entity.id) return;
+    const sizeChanged =
+      fittedSizeRef.current === undefined ||
+      Math.abs(fittedSizeRef.current.width - rect.width) > 16 ||
+      Math.abs(fittedSizeRef.current.height - rect.height) > 16;
+    if (fittedEntityRef.current === entity.id && !sizeChanged) return;
     fittedEntityRef.current = entity.id;
-    void flow.fitView({ padding: 0.18, duration: 0, minZoom: 0.4 });
+    fittedSizeRef.current = { width: rect.width, height: rect.height };
+    const fit = () => void flow.fitView({ padding: 0.2, duration: 0, minZoom: 0.4 });
+    fit();
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(fit);
   }, [entity.id]);
 
   useEffect(() => {
@@ -527,7 +535,7 @@ export function ComponentFillPanel({
   onOverride,
 }: ComponentFillPanelProps) {
   return (
-    <aside className="ewb-panel ewb-inspector" aria-label="组件检查器">
+    <section className="ewb-panel ewb-inspector" role="complementary" aria-label="组件检查器">
       <header className="ewb-panel-head">
         <h2>组件检查器</h2>
       </header>
@@ -581,7 +589,7 @@ export function ComponentFillPanel({
           )}
         </>
       )}
-    </aside>
+    </section>
   );
 }
 
@@ -592,6 +600,10 @@ export function EntityWorkbench({ api, projectPath, onError }: EntityWorkbenchPr
   const [layout, setLayout] = useState<EntityLayout>(() => loadEntityLayout(projectPath));
   const [selectedEntityPath, setSelectedEntityPath] = useState<string | undefined>(undefined);
   const [selectedBindingId, setSelectedBindingId] = useState<string | undefined>(undefined);
+  const [componentDrawerOpen, setComponentDrawerOpen] = useState(false);
+  useEffect(() => {
+    if (selectedBindingId) setComponentDrawerOpen(true);
+  }, [selectedBindingId]);
   const [entityQuery, setEntityQuery] = useState("");
   const [componentQuery, setComponentQuery] = useState("");
   const [loading, setLoading] = useState(false);
@@ -909,6 +921,18 @@ export function EntityWorkbench({ api, projectPath, onError }: EntityWorkbenchPr
           {dirty && <span className="ewb-dirty">未保存</span>}
           <button
             type="button"
+            className="ewb-drawer-toggle"
+            aria-pressed={componentDrawerOpen}
+            aria-label={componentDrawerOpen ? "收起组件栏" : "打开组件栏"}
+            title={componentDrawerOpen ? "收起组件栏" : "打开组件栏"}
+            onClick={() => setComponentDrawerOpen((value) => !value)}
+          >
+            <Puzzle size={15} />
+            组件
+            <span className="ewb-drawer-count">{componentEntries.length}</span>
+          </button>
+          <button
+            type="button"
             className="primary"
             disabled={!entity || !dirty || saving || loading}
             onClick={() => {
@@ -947,7 +971,7 @@ export function EntityWorkbench({ api, projectPath, onError }: EntityWorkbenchPr
         </div>
       )}
 
-      <div className={"ewb-layout" + (selectedBinding ? "" : " is-inspector-empty")}>
+      <div className={"ewb-layout" + (componentDrawerOpen ? " is-drawer-open" : "")}>
         <aside className="ewb-panel ewb-entities" aria-label="实体列表">
           <header className="ewb-panel-head">
             <h2>实体</h2>
@@ -1011,10 +1035,30 @@ export function EntityWorkbench({ api, projectPath, onError }: EntityWorkbenchPr
           )}
         </aside>
 
-        <aside className="ewb-panel ewb-library" aria-label="组件库">
+        <section className="ewb-canvas" aria-label="实体画布">
+          {entity ? (
+            <EntityComponentBoard
+              entity={entity}
+              bindings={bindings}
+              storedPositions={layout[entity.id] ?? EMPTY_POSITIONS}
+              selectedBindingId={selectedBindingId}
+              onSelectBinding={setSelectedBindingId}
+              onMoveBinding={moveBinding}
+            />
+          ) : (
+            <p className="ewb-empty">
+              {loading ? "正在读取资料…" : "还没有实体。可在项目资料的实体页新建实体，再回来挂载组件。"}
+            </p>
+          )}
+        </section>
+
+        {componentDrawerOpen && (
+          <aside className="ewb-drawer" aria-label="组件栏">
+            <section className="ewb-panel ewb-library" role="complementary" aria-label="组件库">
           <header className="ewb-panel-head">
             <h2>组件库</h2>
             <span className="subtle">{componentEntries.length} 个组件</span>
+              <button type="button" className="ewb-drawer-close" aria-label="收起组件栏" title="收起组件栏" onClick={() => setComponentDrawerOpen(false)}><ChevronRight size={15} /></button>
           </header>
           <input
             type="search"
@@ -1065,26 +1109,8 @@ export function EntityWorkbench({ api, projectPath, onError }: EntityWorkbenchPr
               })}
             </ul>
           )}
-        </aside>
-
-        <section className="ewb-canvas" aria-label="实体画布">
-          {entity ? (
-            <EntityComponentBoard
-              entity={entity}
-              bindings={bindings}
-              storedPositions={layout[entity.id] ?? EMPTY_POSITIONS}
-              selectedBindingId={selectedBindingId}
-              onSelectBinding={setSelectedBindingId}
-              onMoveBinding={moveBinding}
-            />
-          ) : (
-            <p className="ewb-empty">
-              {loading ? "正在读取资料…" : "还没有实体。可在项目资料的实体页新建实体，再回来挂载组件。"}
-            </p>
-          )}
-        </section>
-
-        <ComponentFillPanel
+            </section>
+            <ComponentFillPanel
           binding={selectedBinding}
           component={selectedBinding?.component}
           fields={componentFields}
@@ -1095,6 +1121,8 @@ export function EntityWorkbench({ api, projectPath, onError }: EntityWorkbenchPr
           onRemove={removeBinding}
           onOverride={overrideBinding}
         />
+          </aside>
+        )}
       </div>
     </section>
   );

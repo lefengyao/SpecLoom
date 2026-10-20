@@ -53,6 +53,7 @@ test("entity workbench mounts a component, fills a field and saves", async () =>
     await expect(window.getByRole("heading", { name: "实体工作台", exact: true })).toBeVisible();
     await expect(window.getByRole("tab", { name: "工作台", exact: true })).toHaveAttribute("aria-selected", "true");
     await window.getByRole("button", { name: /守灯人/ }).click();
+    await window.getByRole("button", { name: "打开组件栏" }).click();
     await window.getByRole("button", { name: /生命/ }).click();
     const currentInput = window.getByRole("spinbutton", { name: "当前值", exact: true });
     await expect(currentInput).toBeVisible();

@@ -114,18 +114,74 @@
 
 .ewb-layout {
   display: grid;
-  grid-template-columns: 208px 208px minmax(0, 1fr) 288px;
+  grid-template-columns: 208px minmax(0, 1fr);
   gap: 12px;
   flex: 1 1 auto;
   min-height: 0;
 }
 
-.ewb-layout.is-inspector-empty {
-  grid-template-columns: 208px 208px minmax(0, 1fr);
+.ewb-layout.is-drawer-open {
+  grid-template-columns: 208px minmax(0, 1fr) 312px;
 }
 
-.ewb-layout.is-inspector-empty .ewb-inspector {
-  display: none;
+.ewb-drawer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.ewb-drawer .ewb-library {
+  flex: 0 1 42%;
+  min-height: 0;
+}
+
+.ewb-drawer .ewb-inspector {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.ewb-drawer-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-left: auto;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-raised);
+  color: var(--text-muted);
+}
+
+.ewb-drawer-close:hover {
+  border-color: var(--accent-border);
+  color: var(--accent-text);
+}
+
+.ewb-drawer-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.ewb-drawer-toggle[aria-pressed="true"] {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.ewb-drawer-count {
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--bg-raised);
+  color: var(--text-subtle);
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
 }
 
 .ewb-panel {
@@ -610,11 +666,11 @@
 
 @media (max-width: 1180px) {
   .ewb-layout {
-    grid-template-columns: 188px 188px minmax(0, 1fr) 258px;
+    grid-template-columns: 188px minmax(0, 1fr);
   }
 
-  .ewb-layout.is-inspector-empty {
-    grid-template-columns: 188px 188px minmax(0, 1fr);
+  .ewb-layout.is-drawer-open {
+    grid-template-columns: 188px minmax(0, 1fr) 288px;
   }
 
   .ewb-card {
@@ -631,8 +687,14 @@
     padding: 14px 12px 16px;
   }
 
-  .ewb-layout {
+  .ewb-layout,
+  .ewb-layout.is-drawer-open {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ewb-drawer .ewb-library,
+  .ewb-drawer .ewb-inspector {
+    max-height: 320px;
   }
 
   .ewb-panel {

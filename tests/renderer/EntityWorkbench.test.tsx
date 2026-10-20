@@ -96,6 +96,7 @@ describe("EntityWorkbench", () => {
     expect(await within(entities).findByText("实体 1 · 组件 1")).toBeInTheDocument();
     expect(within(entities).getByRole("button", { name: /守灯人/ })).toBeInTheDocument();
 
+    fireEvent.click(screen.getByRole("button", { name: "打开组件栏" }));
     const library = screen.getByRole("complementary", { name: "组件库" });
     const libraryItem = within(library).getByRole("button", { name: /生命/ });
     expect(libraryItem).toHaveAccessibleName(/2 个字段/);
@@ -140,6 +141,7 @@ describe("EntityWorkbench", () => {
       "specs/components/speed.md": componentFile("speed", "速度", speedFields),
     });
 
+    fireEvent.click(await screen.findByRole("button", { name: "打开组件栏" }));
     const library = await screen.findByRole("complementary", { name: "组件库" });
     fireEvent.click(await within(library).findByRole("button", { name: /速度/ }));
 
