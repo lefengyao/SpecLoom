@@ -1,5 +1,5 @@
 import { Copy, Plus, RefreshCw, Save, Star, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { ModelProfile } from "../shared/contracts";
 import type { DesktopApi } from "../shared/desktop-api";
 import { OFFICIAL_WORKFLOW_ID } from "../shared/orchestration";
@@ -34,7 +34,7 @@ const OFFICIAL_TITLE = "官方开发审查";
  * chain. The official workflow is the global default; a project workflow can
  * override it, and an orchestration can never be a default.
  */
-export function WorkflowView({ api, models, projectPath, onError, runRequest, onRunRequestHandled }: WorkflowViewProps) {
+export const WorkflowView = memo(function WorkflowView({ api, models, projectPath, onError, runRequest, onRunRequestHandled }: WorkflowViewProps) {
   const workflow = useWorkflow(api, projectPath, onError);
   const orchestration = useOrchestration(api, projectPath, workflow.summaries, onError);
   const [selectedNodeId, setSelectedNodeId] = useState<string | undefined>(undefined);
@@ -579,4 +579,4 @@ export function WorkflowView({ api, models, projectPath, onError, runRequest, on
       )}
     </section>
   );
-}
+});

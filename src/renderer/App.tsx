@@ -137,6 +137,12 @@ export default function App() {
   const onMaterialReloadHandled = useCallback((sequence: number) => {
     setMaterialReload((current) => current?.sequence === sequence ? undefined : current);
   }, []);
+  const onOpenFileHandled = useCallback((sequence: number) => {
+    setProjectFileSelection((current) => current?.sequence === sequence ? undefined : current);
+  }, []);
+  const onRunRequestHandled = useCallback((sequence: number) => {
+    setWorkflowRunRequest((current) => current?.sequence === sequence ? undefined : current);
+  }, []);
   const [sessionsRunning, setSessionsRunning] = useState(false);
   const [sessionSelection, setSessionSelection] = useState<{ id: string; sequence: number }>();
   const sessionSelectionSequence = useRef(0);
@@ -468,7 +474,7 @@ export default function App() {
                   projectPath={state.project.path}
                   onError={workspace.reportError}
                   {...(workflowRunRequest ? { runRequest: workflowRunRequest } : {})}
-                  onRunRequestHandled={(sequence) => setWorkflowRunRequest((current) => current?.sequence === sequence ? undefined : current)}
+                  onRunRequestHandled={onRunRequestHandled}
                 />
               )}
             </NavigationPage>
@@ -486,7 +492,7 @@ export default function App() {
                 onSavingChange={setMaterialSaving}
                 {...(materialReload ? { reloadRequest: materialReload } : {})}
                 {...(projectFileSelection ? { openFileRequest: projectFileSelection } : {})}
-                onOpenFileHandled={(sequence) => setProjectFileSelection(current => current?.sequence === sequence ? undefined : current)}
+                onOpenFileHandled={onOpenFileHandled}
                 onReloadHandled={onMaterialReloadHandled}
               />
             ) : (
@@ -504,7 +510,7 @@ export default function App() {
                 onDraftsChange={setMaterialDrafts}
                 {...(materialReload ? { reloadRequest: materialReload } : {})}
                 {...(projectFileSelection ? { openFileRequest: projectFileSelection } : {})}
-                onOpenFileHandled={(sequence) => setProjectFileSelection(current => current?.sequence === sequence ? undefined : current)}
+                onOpenFileHandled={onOpenFileHandled}
                 onReloadHandled={onMaterialReloadHandled}
               />
             ))}

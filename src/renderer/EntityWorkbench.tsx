@@ -353,7 +353,6 @@ function EntityCanvas({
   const frameRef = useRef<HTMLDivElement | null>(null);
   const flowRef = useRef<ReactFlowInstance<WorkbenchFlowNode, Edge> | null>(null);
   const fittedEntityRef = useRef<string | undefined>(undefined);
-  const fittedSizeRef = useRef<{ width: number; height: number } | undefined>(undefined);
 
   // The page can mount while its navigation tab is hidden, so fit only once the
   // frame has a real size, and again when another entity is shown.
@@ -363,16 +362,9 @@ function EntityCanvas({
     if (!frame || !flow) return;
     const rect = frame.getBoundingClientRect();
     if (rect.width < 40 || rect.height < 40) return;
-    const sizeChanged =
-      fittedSizeRef.current === undefined ||
-      Math.abs(fittedSizeRef.current.width - rect.width) > 16 ||
-      Math.abs(fittedSizeRef.current.height - rect.height) > 16;
-    if (fittedEntityRef.current === entity.id && !sizeChanged) return;
+    if (fittedEntityRef.current === entity.id) return;
     fittedEntityRef.current = entity.id;
-    fittedSizeRef.current = { width: rect.width, height: rect.height };
-    const fit = () => void flow.fitView({ padding: 0.2, duration: 0, minZoom: 0.4 });
-    fit();
-    if (typeof requestAnimationFrame === "function") requestAnimationFrame(fit);
+    void flow.fitView({ padding: 0.18, duration: 0, minZoom: 0.4 });
   }, [entity.id]);
 
   useEffect(() => {
@@ -1060,6 +1052,7 @@ export function EntityWorkbench({ api, projectPath, onError }: EntityWorkbenchPr
         <section className="ewb-canvas" aria-label="实体画布">
           {entity ? (
             <EntityComponentBoard
+              key={componentDrawerOpen ? "drawer-open" : "drawer-closed"}
               entity={entity}
               bindings={bindings}
               storedPositions={layout[entity.id] ?? EMPTY_POSITIONS}

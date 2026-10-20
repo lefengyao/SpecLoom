@@ -1,4 +1,4 @@
-import { useState, type Dispatch, type SetStateAction } from "react";
+import { memo, useEffect, useState, type Dispatch, type SetStateAction } from "react";
 import type { DesktopApi } from "../shared/desktop-api";
 import { DocumentsView, type DocumentCategory, type MaterialDraft } from "./DocumentsView";
 import { EntityWorkbench } from "./EntityWorkbench";
@@ -32,8 +32,14 @@ const modes: { id: EntityMode; label: string }[] = [
  * source editor stay mounted so switching modes does not discard the workbench
  * draft. DocumentsView receives the source/detail mode from this shell.
  */
-export function EntityWorkspace(props: EntityWorkspaceProps) {
+export const EntityWorkspace = memo(function EntityWorkspace(props: EntityWorkspaceProps) {
   const [mode, setMode] = useState<EntityMode>("workbench");
+  // The detail editor is heavy (catalog + full form). Keep it unmounted until
+  // the user actually opens 详情 / 源码; the workbench is the default view.
+  const [detailVisited, setDetailVisited] = useState(false);
+  useEffect(() => {
+    if (mode !== "workbench") setDetailVisited(true);
+  }, [mode]);
 
   return (
     <section className="entity-workspace" aria-label="实体">
@@ -67,6 +73,7 @@ export function EntityWorkspace(props: EntityWorkspaceProps) {
         />
       </div>
 
+      {detailVisited && (
       <div className="entity-workspace-pane" hidden={mode === "workbench"}>
         <DocumentsView
           key={props.projectPath}
@@ -87,6 +94,7 @@ export function EntityWorkspace(props: EntityWorkspaceProps) {
           {...(props.onOpenFileHandled ? { onOpenFileHandled: props.onOpenFileHandled } : {})}
         />
       </div>
+      )}
     </section>
   );
-}
+});
