@@ -215,6 +215,7 @@ export function SettingsView({
       {activeSection === "tools" && <section className="settings-group" aria-label={tr("外部工具")}>
         <h2>{tr("外部工具")}</h2>
         <p className="field-hint">{tr("头像和外部工具属于本机偏好，应用于所有项目。")}</p>
+        <p className="field-hint">{tr("外部编辑器为可选项；未配置时会打开项目文件夹。")}</p>
         <div className="setting-block">
           <div className="setting-label">
             <span>{tr("可执行文件路径")}</span>

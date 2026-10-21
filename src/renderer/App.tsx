@@ -235,7 +235,11 @@ export default function App() {
                 <Gamepad2 size={16} />
                 {tr("打开 Godot")}
               </button>
-              <button disabled={!api || busy} onClick={() => void api?.openExternalEditor().catch(workspace.reportError)}>
+              <button
+                disabled={!api || busy}
+                title={preferences.externalEditorPath.trim() ? tr("打开外部编辑器") : tr("未配置外部编辑器时打开项目文件夹")}
+                onClick={() => void api?.openExternalEditor().catch(workspace.reportError)}
+              >
                 <Code2 size={16} />
                 {tr("打开外部编辑器")}
               </button>

@@ -6,6 +6,8 @@ export const settingsEnglish: Record<string, string> = {
   "Godot 可执行文件": "Godot executable",
   "外部编辑器可执行文件": "External editor executable",
   "保存外部工具路径": "Save external tool paths",
+  "外部编辑器为可选项；未配置时会打开项目文件夹。": "The external editor is optional; when unset, the project folder opens instead.",
+  "未配置外部编辑器时打开项目文件夹": "Open the project folder when no external editor is configured",
 
   // Agent
   "全局要求跨项目生效，项目要求仅用于当前项目；保存后下一轮会话立即生效。": "Global instructions apply to every project; project instructions apply only to this one. Saved changes take effect on the next chat round.",

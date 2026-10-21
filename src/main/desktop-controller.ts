@@ -195,7 +195,13 @@ export class DesktopController {
   async openExternalEditor(): Promise<void> {
     const project = this.currentCore().metadata.path;
     const executable = (await this.preferences.get()).externalEditorPath.trim();
-    if (!executable) throw new ProjectError("INVALID_PROJECT", "请先在设置中配置外部编辑器路径");
+    // The editor is optional. Without one, open the project folder in the
+    // system file manager instead of blocking the action with a setup error.
+    if (!executable) {
+      const fallback = process.platform === "win32" ? "explorer.exe" : process.platform === "darwin" ? "open" : "xdg-open";
+      await launchExecutable(fallback, [project]);
+      return;
+    }
     await launchExecutable(executable, [project]);
   }
   async removeTask(taskId: string): Promise<WorkspaceState> {
