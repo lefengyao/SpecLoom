@@ -16,3 +16,6 @@ test-results/
 !.env.example
 /website/
 /.runtime-user-data-fresh/
+
+# Local brand and website explorations; not runtime assets.
+design/

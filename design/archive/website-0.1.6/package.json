@@ -1,6 +1,0 @@
-{
-  "type": "module",
-  "scripts": {
-    "preview": "node serve.mjs"
-  }
-}

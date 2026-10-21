@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title" style="color:#17776f">
-  <title id="title">SpecLoom - Shuttle</title>
-  <g transform="rotate(-30 64 64)">
-    <path d="M12 64l30-26h44l30 26-30 26H42zm36-6v12h32V58z" fill="currentColor" fill-rule="evenodd"/>
-    <path d="M27 77l15 13h44l30-26H94L78 77z" fill="#da7859"/>
-  </g>
-</svg>
