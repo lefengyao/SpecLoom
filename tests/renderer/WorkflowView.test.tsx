@@ -205,11 +205,13 @@ describe("WorkflowView", () => {
   });
 
   it("pins the official global default and restores it after a project override", async () => {
-    const { defaults } = renderView();
+    const { defaults, workflow } = renderView();
 
     const official = await screen.findByRole("region", { name: "默认工作流" });
     expect(within(official).getByText("官方模板")).toBeInTheDocument();
     expect(within(official).getByText("全局默认")).toBeInTheDocument();
+    fireEvent.click(within(official).getByRole("button", { name: "复制官方模板" }));
+    await waitFor(() => expect(workflow.copyOfficial).toHaveBeenCalledOnce());
 
     fireEvent.click(await screen.findByRole("button", { name: "设为默认：我的发布审查" }));
     await waitFor(() =>

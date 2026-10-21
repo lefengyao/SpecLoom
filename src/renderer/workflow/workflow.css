@@ -246,6 +246,33 @@
   background: var(--accent-soft);
 }
 
+.workflow-official-button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.workflow-official-button:disabled {
+  opacity: 0.6;
+}
+
+.workflow-official-button:hover .workflow-list-title {
+  color: var(--accent-text);
+}
+
+.workflow-official-copy {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--text-muted);
+}
+
 .workflow-official-main {
   display: flex;
   flex: 1 1 auto;

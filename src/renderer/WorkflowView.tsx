@@ -220,12 +220,15 @@ export const WorkflowView = memo(function WorkflowView({ api, models, projectPat
             </header>
 
             <section className="workflow-official-row" aria-label="默认工作流">
-              <Star size={13} fill="currentColor" aria-hidden="true" className="workflow-default-star" />
-              <div className="workflow-official-main">
-                <span className="workflow-list-title">官方模板</span>
-                <span className="workflow-list-meta">官方开发审查 · 6 节点</span>
-              </div>
-              <span className="workflow-badge">全局默认</span>
+              <button type="button" className="workflow-official-button" aria-label="复制官方模板" title="复制官方模板为项目工作流" disabled={loading} onClick={() => void workflow.copyOfficial()}>
+                <Star size={13} fill="currentColor" aria-hidden="true" className="workflow-default-star" />
+                <div className="workflow-official-main">
+                  <span className="workflow-list-title">官方模板</span>
+                  <span className="workflow-list-meta">官方开发审查 · 6 节点</span>
+                </div>
+                <span className="workflow-badge">全局默认</span>
+                <Copy size={12} aria-hidden="true" className="workflow-official-copy" />
+              </button>
             </section>
 
             {workflow.projectDefaultId !== undefined && (
