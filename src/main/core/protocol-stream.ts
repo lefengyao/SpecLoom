@@ -24,6 +24,20 @@ export function transportCause(error: unknown): { causeName: string; causeCode?:
 function responseObject(value: unknown): value is Record<string, any> { return value !== null && typeof value === "object" && !Array.isArray(value); }
 function malformedStream(): never { throw new ProjectError("MODEL_ERROR", "The model returned a malformed response frame.", { reason: "response_parse_error" }); }
 function optionalString(value: unknown, nullable = false): void { if (value !== undefined && !(nullable && value === null) && typeof value !== "string") malformedStream(); }
+/** OpenAI-compatible providers may return assistant text as a string or text parts. */
+export function openAIText(value: unknown): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value === "string") return value;
+  if (!Array.isArray(value)) malformedStream();
+  let text = "";
+  for (const part of value) {
+    if (typeof part === "string") { text += part; continue; }
+    if (!responseObject(part) || typeof part.text !== "string") malformedStream();
+    if (part.type !== undefined && typeof part.type !== "string") malformedStream();
+    text += part.text;
+  }
+  return text;
+}
 function streamIndex(value: unknown, fallback: number): number {
   if (value === undefined) return fallback;
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) malformedStream();
@@ -116,11 +130,11 @@ export async function readProtocolBody(response: Response, protocol: Protocol, o
       const delta = value.choices?.[0]?.delta;
       if (value.choices !== undefined && !Array.isArray(value.choices)) malformedStream();
       if (delta !== undefined && !responseObject(delta)) malformedStream();
-      optionalString(delta?.content, true); optionalString(delta?.reasoning_content, true); optionalString(delta?.reasoning, true);
-      const reasoning = delta?.reasoning_content ?? delta?.reasoning;
-      if (typeof reasoning === "string") { reasoningContent += reasoning; await emitThinking(reasoning); }
-      if (typeof delta?.content === "string") await emitText(delta.content);
-      if (delta?.tool_calls !== undefined && !Array.isArray(delta.tool_calls)) malformedStream();
+      const reasoning = openAIText(delta?.reasoning_content ?? delta?.reasoning);
+      if (reasoning) { reasoningContent += reasoning; await emitThinking(reasoning); }
+      const textValue = openAIText(delta?.content);
+      if (textValue) await emitText(textValue);
+      if (delta?.tool_calls != null && !Array.isArray(delta.tool_calls)) malformedStream();
       for (const item of delta?.tool_calls ?? []) {
         if (!responseObject(item) || (item.function !== undefined && !responseObject(item.function))) malformedStream();
         optionalString(item.id); optionalString(item.function?.name); optionalString(item.function?.arguments);

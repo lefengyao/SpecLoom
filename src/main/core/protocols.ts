@@ -5,7 +5,7 @@ import { ProjectError } from "./errors";
 import type { AgentMessage } from "./agent-client";
 import type { ProviderTool } from "./tool-catalog";
 import { matchModelFamily, stripVendorPrefix } from "./model-settings";
-import { assertCompletionStatus, readProtocolBody, stringifyResponseValue, transportCause, type CompletionDelta } from "./protocol-stream";
+import { assertCompletionStatus, openAIText, readProtocolBody, stringifyResponseValue, transportCause, type CompletionDelta } from "./protocol-stream";
 import type { DiagnosticEventWithoutId } from "../../shared/diagnostics";
 
 export interface ProtocolSettings {
@@ -343,8 +343,8 @@ export async function requestProtocolCompletion(input: ProtocolRequest): Promise
     if (!Array.isArray(parsed.choices) || !responseObject(parsed.choices[0])) malformedResponse();
     const message = parsed.choices?.[0]?.message;
     if (!responseObject(message) || (message.role !== undefined && message.role !== "assistant")) malformedResponse();
-    if (message.content != null && typeof message.content !== "string") malformedResponse();
-    for (const value of [message.reasoning_content, message.reasoning]) if (value != null && typeof value !== "string") malformedResponse();
+    const content = openAIText(message.content);
+    const reasoning = openAIText(message.reasoning_content ?? message.reasoning);
     if (message.tool_calls != null) {
       if (!Array.isArray(message.tool_calls)) malformedResponse();
       for (const call of message.tool_calls) {
@@ -352,8 +352,7 @@ export async function requestProtocolCompletion(input: ProtocolRequest): Promise
           || !responseName(call.function.name) || typeof call.function.arguments !== "string") malformedResponse();
       }
     }
-    const reasoning = message.reasoning_content ?? message.reasoning;
-    const normalized = { role: "assistant" as const, content: message.content ?? null, ...(typeof reasoning === "string" ? { reasoning_content: reasoning } : {}), ...(message.tool_calls?.length ? { tool_calls: message.tool_calls } : {}) };
+    const normalized = { role: "assistant" as const, content: content ?? null, ...(reasoning ? { reasoning_content: reasoning } : {}), ...(message.tool_calls?.length ? { tool_calls: message.tool_calls } : {}) };
     if (!normalized.content && !normalized.tool_calls?.length) throw new ProjectError("MODEL_ERROR", "The model returned an empty completion.", { reason: "response_parse_error" });
     const normalizedUsage = usage(parsed.usage, input.protocol);
     return { message: normalized, ...(normalizedUsage ? { usage: normalizedUsage } : {}) };

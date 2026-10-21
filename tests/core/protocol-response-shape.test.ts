@@ -78,6 +78,11 @@ describe("provider response shape validation", () => {
       .rejects.toMatchObject({ message: "The model output limit interrupted the response.", details: undefined });
   });
 
+  it("accepts OpenAI assistant text parts in non-stream responses", async () => {
+    const result = await completion("openai", { choices: [{ message: { role: "assistant", content: [{ type: "text", text: "answer" }] } }] });
+    expect(result.message.content).toBe("answer");
+  });
+
   it("retains signed Anthropic thinking and valid tool arguments", async () => {
     const thinking = { type: "thinking", thinking: "private", signature: "signature" };
     const redacted = { type: "redacted_thinking", data: "opaque" };

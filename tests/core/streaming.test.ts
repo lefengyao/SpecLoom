@@ -15,6 +15,21 @@ test.each(["openai", "anthropic", "gemini"] as const)("%s forwards provider thin
   expect(result.message.content).toBe("回答");
 });
 
+test("accepts MiMo text parts and null optional tool_calls", async () => {
+  const frames = [
+    { choices: [{ index: 0, delta: { content: "", role: "assistant", tool_calls: null, reasoning_content: null }, finish_reason: null }] },
+    { choices: [{ index: 0, delta: { content: null, role: null, tool_calls: null, reasoning_content: "Hmm" }, finish_reason: null }] },
+    { choices: [{ index: 0, delta: { content: [{ type: "text", text: "Hello" }], tool_calls: null, reasoning_content: null }, finish_reason: "stop" }] },
+    { choices: [], usage: { prompt_tokens: 1, completion_tokens: 2, total_tokens: 3 } },
+  ];
+  const deltas: unknown[] = [];
+  const result = await requestProtocolCompletion({ ...base, protocol: "openai", onDelta: (delta) => { deltas.push(delta); }, fetcher: async () => new Response(frames.map(sse).join("") + "data: [DONE]\n\n", { headers: { "content-type": "text/event-stream" } }) });
+  expect(deltas).toContainEqual({ type: "thinking-delta", text: "Hmm" });
+  expect(deltas).toContainEqual({ type: "text-delta", text: "Hello" });
+  expect(result.message.content).toBe("Hello");
+  expect(result.usage).toMatchObject({ promptTokens: 1, completionTokens: 2 });
+});
+
 test("retains arbitrary Anthropic JSON fragments for each tool block", async () => {
   const frames = [
     { type: "content_block_start", index: 1, content_block: { type: "tool_use", id: "c1", name: "files_read", input: {} } },
