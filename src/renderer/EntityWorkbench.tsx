@@ -30,6 +30,7 @@ import {
   type ComponentValue,
 } from "../shared/project-materials";
 import { categoryForPath, referenceId } from "./materials-model";
+import { useI18n } from "./i18n";
 import {
   ENTITY_CENTER,
   ENTITY_NODE_ID,
@@ -549,19 +550,20 @@ export function ComponentFillPanel({
   onRemove,
   onOverride,
 }: ComponentFillPanelProps) {
+  const tr = useI18n();
   return (
-    <section className="ewb-panel ewb-inspector" role="complementary" aria-label="组件检查器">
+    <section className="ewb-panel ewb-inspector" role="complementary" aria-label={tr("组件检查器")}>
       <header className="ewb-panel-head">
-        <h2>组件检查器</h2>
+        <h2>{tr("组件检查器")}</h2>
       </header>
       {!binding ? (
-        <p className="ewb-empty">选择画布中的组件查看字段</p>
+        <p className="ewb-empty">{tr("选择画布中的组件查看字段")}</p>
       ) : (
         <>
           <div className="ewb-inspector-title">
             <strong>{component?.title ?? binding.id}</strong>
             <span className={binding.own ? "ewb-badge is-own" : "ewb-badge"}>
-              {binding.own ? "本实体" : "继承自 " + (binding.inheritedFrom ?? "父实体")}
+              {binding.own ? tr("本实体") : tr("继承自") + " " + (binding.inheritedFrom ?? tr("父实体"))}
             </span>
           </div>
           <code className="ewb-inspector-path">{component?.path ?? "找不到组件定义"}</code>
@@ -589,11 +591,11 @@ export function ComponentFillPanel({
             {binding.own ? (
               <button type="button" className="danger-ghost" onClick={() => onRemove(binding)}>
                 <Trash2 size={13} />
-                移除组件
+                {tr("移除组件")}
               </button>
             ) : (
               <button type="button" onClick={() => onOverride(binding)}>
-                覆盖继承组件
+                {tr("覆盖继承组件")}
               </button>
             )}
           </div>
@@ -610,6 +612,7 @@ export function ComponentFillPanel({
 
 /** Reusable field-fill and inheritance panel for one mounted component binding. */
 export function EntityWorkbench({ api, projectPath, onError }: EntityWorkbenchProps) {
+  const tr = useI18n();
   const [files, setFiles] = useState<FileReadResult[]>([]);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [layout, setLayout] = useState<EntityLayout>(() => loadEntityLayout(projectPath));
@@ -919,7 +922,7 @@ export function EntityWorkbench({ api, projectPath, onError }: EntityWorkbenchPr
     <section className="entity-workbench" aria-label="实体工作台">
       <header className="ewb-header">
         <div className="ewb-heading">
-          <h1>实体工作台</h1>
+          <h1>{tr("实体工作台")}</h1>
           <p className="ewb-subtitle subtle">
             {entity ? (
               <>
@@ -927,19 +930,19 @@ export function EntityWorkbench({ api, projectPath, onError }: EntityWorkbenchPr
                 <code>{entity.path}</code>
               </>
             ) : (
-              "选择实体后编辑它的组件绑定"
+              tr("选择实体后编辑它的组件绑定")
             )}
           </p>
         </div>
         <div className="ewb-toolbar">
-          {savedNotice && !dirty && <span className="ewb-saved">已保存</span>}
-          {dirty && <span className="ewb-dirty">未保存</span>}
+          {savedNotice && !dirty && <span className="ewb-saved">{tr("已保存")}</span>}
+          {dirty && <span className="ewb-dirty">{tr("未保存")}</span>}
           <button
             type="button"
             className="ewb-drawer-toggle"
             aria-pressed={componentDrawerOpen}
-            aria-label={componentDrawerOpen ? "收起组件栏" : "打开组件栏"}
-            title={componentDrawerOpen ? "收起组件栏" : "打开组件栏"}
+            aria-label={componentDrawerOpen ? tr("收起组件栏") : tr("打开组件栏")}
+            title={componentDrawerOpen ? tr("收起组件栏") : tr("打开组件栏")}
             onClick={() => setComponentDrawerOpen((value) => !value)}
           >
             <Puzzle size={15} />
@@ -955,7 +958,7 @@ export function EntityWorkbench({ api, projectPath, onError }: EntityWorkbenchPr
             }}
           >
             <Save size={15} />
-            {saving ? "保存中…" : "保存资料"}
+            {saving ? tr("保存中…") : tr("保存资料")}
           </button>
           <button
             type="button"
@@ -989,15 +992,15 @@ export function EntityWorkbench({ api, projectPath, onError }: EntityWorkbenchPr
       <div className={"ewb-layout" + (componentDrawerOpen ? " is-drawer-open" : "")}>
         <aside className="ewb-panel ewb-entities" aria-label="实体列表">
           <header className="ewb-panel-head">
-            <h2>实体</h2>
+            <h2>{tr("实体")}</h2>
             <span className="subtle">
               实体 {entityEntries.length} · 组件 {componentEntries.length}
             </span>
           </header>
           <input
             type="search"
-            aria-label="搜索实体"
-            placeholder="搜索实体"
+            aria-label={tr("搜索实体")}
+            placeholder={tr("搜索实体")}
             value={entityQuery}
             onChange={(event) => setEntityQuery(event.target.value)}
           />
@@ -1006,8 +1009,8 @@ export function EntityWorkbench({ api, projectPath, onError }: EntityWorkbenchPr
               {loading
                 ? "正在读取资料…"
                 : entityEntries.length
-                  ? "没有匹配的实体"
-                  : "还没有实体。可在项目资料的实体页新建实体。"}
+                  ? tr("没有匹配的实体")
+                  : tr("还没有实体。可在项目资料的实体页新建实体。")}
             </p>
           ) : (
             <div className="ewb-tree">
@@ -1037,7 +1040,7 @@ export function EntityWorkbench({ api, projectPath, onError }: EntityWorkbenchPr
                             <span className="ewb-item-meta">
                               {item.id}
                               {item.extendsRef ? " · 继承" : ""}
-                              {itemDirty && <span className="ewb-badge is-own">未保存</span>}
+                              {itemDirty && <span className="ewb-badge is-own">{tr("未保存")}</span>}
                             </span>
                           </button>
                         </li>
@@ -1063,30 +1066,30 @@ export function EntityWorkbench({ api, projectPath, onError }: EntityWorkbenchPr
             />
           ) : (
             <p className="ewb-empty">
-              {loading ? "正在读取资料…" : "还没有实体。可在项目资料的实体页新建实体，再回来挂载组件。"}
+              {loading ? tr("正在读取资料…") : tr("还没有实体。可在项目资料的实体页新建实体，再回来挂载组件。")}
             </p>
           )}
         </section>
 
         {componentDrawerOpen && (
           <aside className="ewb-drawer" aria-label="组件栏">
-            <section className="ewb-panel ewb-library" role="complementary" aria-label="组件库">
+            <section className="ewb-panel ewb-library" role="complementary" aria-label={tr("组件库")}>
           <header className="ewb-panel-head">
-            <h2>组件库</h2>
-            <span className="subtle">{componentEntries.length} 个组件</span>
-              <button type="button" className="ewb-drawer-close" aria-label="收起组件栏" title="收起组件栏" onClick={() => setComponentDrawerOpen(false)}><ChevronRight size={15} /></button>
+            <h2>{tr("组件库")}</h2>
+            <span className="subtle">{componentEntries.length} {tr("个组件")}</span>
+              <button type="button" className="ewb-drawer-close" aria-label={tr("收起组件栏")} title={tr("收起组件栏")} onClick={() => setComponentDrawerOpen(false)}><ChevronRight size={15} /></button>
           </header>
           <input
             type="search"
-            aria-label="搜索组件"
-            placeholder="搜索组件"
+            aria-label={tr("搜索组件")}
+            placeholder={tr("搜索组件")}
             value={componentQuery}
             onChange={(event) => setComponentQuery(event.target.value)}
           />
           {componentEntries.length === 0 ? (
             <p className="ewb-empty">{loading ? "正在读取资料…" : "还没有组件。可在项目资料的组件页新建组件。"}</p>
           ) : filteredComponents.length === 0 ? (
-            <p className="ewb-empty">没有匹配的组件</p>
+            <p className="ewb-empty">{tr("没有匹配的组件")}</p>
           ) : (
             <ul className="ewb-library-list" aria-label="组件列表">
               {filteredComponents.map((component) => {
@@ -1116,8 +1119,8 @@ export function EntityWorkbench({ api, projectPath, onError }: EntityWorkbenchPr
                       </span>
                       <span className="ewb-item-meta">
                         {component.fields.length} 个字段
-                        {inherited && <span className="ewb-badge">已继承</span>}
-                        {own && <span className="ewb-badge is-own">已添加</span>}
+                        {inherited && <span className="ewb-badge">{tr("已继承")}</span>}
+                        {own && <span className="ewb-badge is-own">{tr("已添加")}</span>}
                       </span>
                     </button>
                   </li>

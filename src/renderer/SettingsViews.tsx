@@ -21,6 +21,8 @@ import {
   accents,
   customInstructionsLimit,
   defaultPreferences,
+  localeLabels,
+  locales,
   styleLabels,
   themeLabels,
   themeModes,
@@ -37,6 +39,7 @@ import { GodotMcpStatus, ProjectMcpInventory } from "./ProjectMcpInventory";
 import type { ChatSessionsApi } from "../shared/chat";
 import { useStateChangeRefresh } from "./useWorkspace";
 import { DiagnosticsView } from "./DiagnosticsView";
+import { useI18n } from "./i18n";
 
 const themeIcons = { paper: FileText, system: Monitor, light: Sun, dark: Moon } as const;
 type SettingsSectionId = "appearance" | "personalization" | "tools" | "agent" | "diagnostics";
@@ -71,6 +74,7 @@ export function SettingsView({
   api?: DesktopApi | undefined;
   project?: ProjectMetadata | undefined;
 }) {
+  const tr = useI18n();
   const [draft, setDraft] = useState(preferences.customInstructions);
   const [godotPath, setGodotPath] = useState(preferences.godotPath);
   const [externalEditorPath, setExternalEditorPath] = useState(preferences.externalEditorPath);
@@ -85,18 +89,18 @@ export function SettingsView({
     <section className="standard-view settings-view">
       <header className="section-heading">
         <div>
-          <h1>设置</h1>
-          <span className="subtle">本机偏好与当前项目的智能体要求</span>
+          <h1>{tr("设置")}</h1>
+          <span className="subtle">{tr("本机偏好与当前项目的智能体要求")}</span>
         </div>
         {onBack && (
-          <button onClick={onBack} aria-label={standalone ? "返回主界面" : "返回工作区"}>
+          <button onClick={onBack} aria-label={standalone ? tr("返回主界面") : tr("返回工作区")}>
             <ArrowLeft size={15} />
-            {standalone ? "返回主界面" : "返回工作区"}
+            {standalone ? tr("返回主界面") : tr("返回工作区")}
           </button>
         )}
       </header>
 
-      <nav className="settings-section-nav" aria-label="设置分区">
+      <nav className="settings-section-nav" aria-label={tr("设置分区")}>
         {settingsSections.filter((section) => section.id !== "diagnostics" || api?.diagnostics).map((section) => (
           <button
             key={section.id}
@@ -104,21 +108,21 @@ export function SettingsView({
             aria-current={activeSection === section.id ? "page" : undefined}
             onClick={() => setActiveSection(section.id)}
           >
-            {section.label}
+            {tr(section.label)}
           </button>
         ))}
       </nav>
 
       <div className="settings-sections">
-      {activeSection === "appearance" && <section className="settings-group" aria-label="外观">
-        <h2>外观</h2>
-        <p className="field-hint">决定界面怎么显示，与项目内容无关。</p>
+      {activeSection === "appearance" && <section className="settings-group" aria-label={tr("外观")}>
+        <h2>{tr("外观")}</h2>
+        <p className="field-hint">{tr("决定界面怎么显示，与项目内容无关。")}</p>
         <div className="setting-row">
           <div className="setting-label">
-            <span>外观模式</span>
-            <span className="field-hint">纸墨为官方配色；也可选择浅色、深色，或跟随操作系统</span>
+            <span>{tr("外观模式")}</span>
+            <span className="field-hint">{tr("纸墨为官方配色；也可选择浅色、深色，或跟随操作系统")}</span>
           </div>
-          <div className="segmented" role="radiogroup" aria-label="外观模式">
+          <div className="segmented" role="radiogroup" aria-label={tr("外观模式")}>
             {themeModes.map((mode: ThemeMode) => {
               const Icon = themeIcons[mode];
               return (
@@ -133,7 +137,7 @@ export function SettingsView({
                   }}
                 >
                   <Icon size={15} />
-                  {themeLabels[mode]}
+                  {tr(themeLabels[mode])}
                 </button>
               );
             })}
@@ -141,10 +145,10 @@ export function SettingsView({
         </div>
         <div className="setting-row">
           <div className="setting-label">
-            <span>主题色</span>
-            <span className="field-hint">按钮、选中项与运行状态使用的主色</span>
+            <span>{tr("主题色")}</span>
+            <span className="field-hint">{tr("按钮、选中项与运行状态使用的主色")}</span>
           </div>
-          <div className="accent-options" role="radiogroup" aria-label="主题色">
+          <div className="accent-options" role="radiogroup" aria-label={tr("主题色")}>
             {accentIds.map((id) => (
               <button
                 key={id}
@@ -152,8 +156,8 @@ export function SettingsView({
                 className="accent-swatch"
                 role="radio"
                 aria-checked={preferences.accent === id}
-                aria-label={accents[id].label}
-                title={accents[id].label}
+                aria-label={tr(accents[id].label)}
+                title={tr(accents[id].label)}
                 disabled={busy}
                 style={{ "--swatch": accents[id].color } as CSSProperties}
                 onClick={() => {
@@ -165,10 +169,10 @@ export function SettingsView({
         </div>
         <div className="setting-row">
           <div className="setting-label">
-            <span>界面风格</span>
-            <span className="field-hint">紧凑风格缩小间距、控件高度与圆角</span>
+            <span>{tr("界面风格")}</span>
+            <span className="field-hint">{tr("紧凑风格缩小间距、控件高度与圆角")}</span>
           </div>
-          <div className="segmented" role="radiogroup" aria-label="界面风格">
+          <div className="segmented" role="radiogroup" aria-label={tr("界面风格")}>
             {uiStyles.map((style) => (
               <button
                 key={style}
@@ -180,7 +184,27 @@ export function SettingsView({
                   void onUpdate({ style });
                 }}
               >
-                {styleLabels[style]}
+                {tr(styleLabels[style])}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="setting-row">
+          <div className="setting-label">
+            <span>{tr("语言 / Language")}</span>
+            <span className="field-hint">{tr("界面语言；切换后立即生效。")}</span>
+          </div>
+          <div className="segmented" role="radiogroup" aria-label={tr("界面语言")}>
+            {locales.map((locale) => (
+              <button
+                key={locale}
+                type="button"
+                role="radio"
+                aria-checked={preferences.locale === locale}
+                disabled={busy}
+                onClick={() => void onUpdate({ locale })}
+              >
+                {tr(localeLabels[locale])}
               </button>
             ))}
           </div>
@@ -306,7 +330,7 @@ export function SettingsView({
           }}
         >
           <RotateCcw size={15} />
-          恢复默认设置
+          {tr("恢复默认设置")}
         </button>
       </footer>
     </section>

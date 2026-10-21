@@ -4,6 +4,7 @@ import type { ModelProfile } from "../shared/contracts";
 import type { DesktopApi } from "../shared/desktop-api";
 import { OFFICIAL_WORKFLOW_ID } from "../shared/orchestration";
 import type { WorkflowNodeStatus } from "../shared/workflow-api";
+import { useI18n } from "./i18n";
 import { OrchestrationBuilder, OrchestrationInspector } from "./workflow/OrchestrationBuilder";
 import { OrchestrationChain, OrchestrationRunPanel } from "./workflow/OrchestrationRunPanel";
 import { WorkflowCanvas } from "./workflow/WorkflowCanvas";
@@ -35,6 +36,7 @@ const OFFICIAL_TITLE = "官方开发审查";
  * override it, and an orchestration can never be a default.
  */
 export const WorkflowView = memo(function WorkflowView({ api, models, projectPath, onError, runRequest, onRunRequestHandled }: WorkflowViewProps) {
+  const tr = useI18n();
   const workflow = useWorkflow(api, projectPath, onError);
   const orchestration = useOrchestration(api, projectPath, workflow.summaries, onError);
   const [selectedNodeId, setSelectedNodeId] = useState<string | undefined>(undefined);
@@ -122,25 +124,25 @@ export const WorkflowView = memo(function WorkflowView({ api, models, projectPat
     <section className="workflow-view" aria-label="工作流">
       <header className="workflow-header">
         <div className="workflow-heading">
-          <h1>工作流</h1>
-          <p className="subtle">官方开发审查流程可复制、可编辑、可运行</p>
+          <h1>{tr("工作流")}</h1>
+          <p className="subtle">{tr("官方开发审查流程可复制、可编辑、可运行")}</p>
         </div>
         <div className="workflow-toolbar">
           <div className="workflow-mode" role="group" aria-label="工作流模式">
             <button type="button" aria-pressed={mode === "workflow"} onClick={() => workflow.setMode("workflow")}>
-              工作流
+              {tr("工作流")}
             </button>
             <button type="button" aria-pressed={mode === "orchestration"} onClick={() => workflow.setMode("orchestration")}>
-              编排
+              {tr("编排")}
             </button>
             <button type="button" aria-pressed={mode === "run"} onClick={() => workflow.setMode("run")}>
-              运行
+              {tr("运行")}
             </button>
           </div>
           {mode === "workflow" && (
             <button type="button" className="primary" disabled={!dirty || !definition || loading} onClick={() => void workflow.save()}>
               <Save size={15} />
-              保存
+              {tr("保存")}
             </button>
           )}
           {mode === "orchestration" && (
@@ -151,7 +153,7 @@ export const WorkflowView = memo(function WorkflowView({ api, models, projectPat
               onClick={() => void orchestration.save()}
             >
               <Save size={15} />
-              保存编排
+              {tr("保存")}
             </button>
           )}
           <button
@@ -164,7 +166,7 @@ export const WorkflowView = memo(function WorkflowView({ api, models, projectPat
             }}
           >
             <RefreshCw size={15} />
-            刷新
+            {tr("刷新")}
           </button>
           {mode === "workflow" && (
             <button
@@ -178,7 +180,7 @@ export const WorkflowView = memo(function WorkflowView({ api, models, projectPat
               }}
             >
               <Trash2 size={15} />
-              删除
+              {tr("删除")}
             </button>
           )}
           {mode === "orchestration" && (
@@ -194,7 +196,7 @@ export const WorkflowView = memo(function WorkflowView({ api, models, projectPat
               }}
             >
               <Trash2 size={15} />
-              删除编排
+              {tr("删除")}
             </button>
           )}
         </div>
@@ -208,12 +210,12 @@ export const WorkflowView = memo(function WorkflowView({ api, models, projectPat
         <div className={"workflow-layout" + (inspectorEmpty ? " is-inspector-empty" : "")}>
           <aside className="workflow-sidebar" aria-label="我的工作流">
             <header className="workflow-sidebar-head">
-              <h2>我的工作流 <span className="workflow-count">{workflow.summaries.length + 1}</span></h2>
+              <h2>{tr("我的工作流")} <span className="workflow-count">{workflow.summaries.length + 1}</span></h2>
               <div className="workflow-sidebar-tools">
-                <button type="button" aria-label="新建空白" title="新建空白工作流" disabled={loading} onClick={() => void workflow.newBlank()}>
+                <button type="button" aria-label={tr("新建空白")} title={tr("新建空白")} disabled={loading} onClick={() => void workflow.newBlank()}>
                   <Plus size={14} />
                 </button>
-                <button type="button" aria-label="从官方复制" title="从官方模板复制" disabled={loading} onClick={() => void workflow.copyOfficial()}>
+                <button type="button" aria-label={tr("从官方复制")} title={tr("从官方模板复制")} disabled={loading} onClick={() => void workflow.copyOfficial()}>
                   <Copy size={14} />
                 </button>
               </div>
@@ -223,10 +225,10 @@ export const WorkflowView = memo(function WorkflowView({ api, models, projectPat
               <button type="button" className="workflow-official-button" aria-label="复制官方模板" title="复制官方模板为项目工作流" disabled={loading} onClick={() => void workflow.copyOfficial()}>
                 <Star size={13} fill="currentColor" aria-hidden="true" className="workflow-default-star" />
                 <div className="workflow-official-main">
-                  <span className="workflow-list-title">官方模板</span>
+                  <span className="workflow-list-title">{tr("官方模板")}</span>
                   <span className="workflow-list-meta">官方开发审查 · 6 节点</span>
                 </div>
-                <span className="workflow-badge">全局默认</span>
+                <span className="workflow-badge">{tr("全局默认")}</span>
                 <Copy size={12} aria-hidden="true" className="workflow-official-copy" />
               </button>
             </section>
@@ -235,7 +237,7 @@ export const WorkflowView = memo(function WorkflowView({ api, models, projectPat
               <div className="workflow-default-note">
                 <span>项目默认：{projectDefaultTitle}</span>
                 {workflow.defaultsAvailable && (
-                  <button type="button" onClick={() => void workflow.restoreDefault()}>恢复全局默认</button>
+                  <button type="button" onClick={() => void workflow.restoreDefault()}>{tr("恢复全局默认")}</button>
                 )}
               </div>
             )}
@@ -289,10 +291,10 @@ export const WorkflowView = memo(function WorkflowView({ api, models, projectPat
             )}
 
             {(mode === "orchestration" || mode === "run") && (
-              <section className="workflow-runs" aria-label="我的编排">
+              <section className="workflow-runs" aria-label={tr("我的编排")}>
                 <header className="workflow-sidebar-head">
-                  <h2>我的编排 <span className="workflow-count">{orchestration.summaries.length}</span></h2>
-                  <button type="button" className="workflow-new-orchestration" disabled={loading} onClick={startNewOrchestration} aria-label="新建编排">
+                  <h2>{tr("我的编排")} <span className="workflow-count">{orchestration.summaries.length}</span></h2>
+                  <button type="button" className="workflow-new-orchestration" disabled={loading} onClick={startNewOrchestration} aria-label={tr("新建编排")}>
                     <Plus size={13} />
                   </button>
                 </header>
@@ -319,8 +321,8 @@ export const WorkflowView = memo(function WorkflowView({ api, models, projectPat
             )}
 
             {workflow.mode !== "workflow" && orchestration.runs.length > 0 && (
-              <section className="workflow-runs" aria-label="最近编排运行">
-                <h2>最近编排运行</h2>
+              <section className="workflow-runs" aria-label={tr("最近编排运行")}>
+                <h2>{tr("最近编排运行")}</h2>
                 <ul>
                   {orchestration.runs.slice(0, 6).map((item) => (
                     <li key={item.orchestrationRunId}>
@@ -346,8 +348,8 @@ export const WorkflowView = memo(function WorkflowView({ api, models, projectPat
             )}
 
             {mode === "run" && workflow.runs.length > 0 && (
-              <section className="workflow-runs" aria-label="最近运行">
-                <h2>最近运行</h2>
+              <section className="workflow-runs" aria-label={tr("最近运行")}>
+                <h2>{tr("最近运行")}</h2>
                 <ul>
                   {workflow.runs.slice(0, 6).map((item) => (
                     <li key={item.runId}>
@@ -383,14 +385,14 @@ export const WorkflowView = memo(function WorkflowView({ api, models, projectPat
                     <button
                       type="button"
                       className="workflow-add-agent"
-                      aria-label="添加只读 Agent"
+                      aria-label={tr("添加只读 Agent")}
                       disabled={loading}
                       onClick={() => {
                         const id = workflow.addReadAgent();
                         if (id) setSelectedNodeId(id);
                       }}
                     >
-                      + 只读 Agent
+                      {tr("添加只读 Agent")}
                     </button>
                   </div>
                   <WorkflowCanvas

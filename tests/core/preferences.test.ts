@@ -107,6 +107,7 @@ describe("application preferences", () => {
       "utf8",
     );
     expect(await new PreferencesStore(root).get()).toEqual({
+      locale: defaultPreferences.locale,
       theme: "light",
       accent: "violet",
       style: "compact",

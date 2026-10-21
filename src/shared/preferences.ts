@@ -19,10 +19,12 @@ export const accentIds = [
   "graphite",
 ] as const;
 export const uiStyles = ["default", "compact"] as const;
+export const locales = ["zh-CN", "en"] as const;
 
 export type ThemeMode = (typeof themeModes)[number];
 export type AccentId = (typeof accentIds)[number];
 export type UiStyle = (typeof uiStyles)[number];
+export type Locale = (typeof locales)[number];
 
 /**
  * Accent base colors. Light and dark tints are derived from the base with
@@ -50,7 +52,14 @@ export const styleLabels: Record<UiStyle, string> = {
   compact: "紧凑",
 };
 
+export const localeLabels: Record<Locale, string> = {
+  "zh-CN": "中文",
+  en: "English",
+};
+
 export interface Preferences {
+  /** Interface language. Chinese remains the default. */
+  locale: Locale;
   theme: ThemeMode;
   accent: AccentId;
   style: UiStyle;
@@ -87,6 +96,7 @@ export const defaultAgentTemperature = 50;
 const AvatarSchema = z.string().max(Math.ceil(avatarByteLimit / 3) * 4 + 32).refine(isAvatarDataUrl, "头像必须是256KB以内的PNG、JPEG或WebP图片");
 
 export const defaultPreferences: Preferences = {
+  locale: "zh-CN",
   theme: "paper",
   accent: "loom",
   style: "default",
@@ -103,6 +113,7 @@ export const defaultPreferences: Preferences = {
 
 export const PreferencesSchema = z
   .object({
+    locale: z.enum(locales),
     theme: z.enum(themeModes),
     accent: z.enum(accentIds),
     style: z.enum(uiStyles),
@@ -144,6 +155,7 @@ export function normalizePreferences(value: unknown): Preferences {
       ? (candidate as T)
       : fallback;
   const repaired: Preferences = {
+    locale: pick(locales, source.locale, defaultPreferences.locale),
     theme: pick(themeModes, source.theme, defaultPreferences.theme),
     accent: pick(accentIds, source.accent, defaultPreferences.accent),
     style: pick(uiStyles, source.style, defaultPreferences.style),

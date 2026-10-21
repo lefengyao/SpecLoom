@@ -65,6 +65,8 @@ npm run dev
 
 The dev launcher picks an available port and opens Electron. Source mode reuses the installed app's user-data directory by default; set SPECLOOM_USER_DATA_DIR to use an isolated debugging profile.
 
+The interface supports Chinese and English. Switch it in **Settings → Appearance → Language**; the choice is stored locally. Core screens are translated first, with remaining pages being filled in.
+
 Verification:
 
 ~~~powershell

@@ -6,6 +6,7 @@ import { MaterialThumbnail } from "./MaterialImage";
 import { MaterialGroupTree, type MaterialGroupSelection } from "./MaterialGroupTree";
 import { MaterialHierarchyList } from "./MaterialHierarchyList";
 import { MaterialRelationshipGraph } from "./MaterialRelationshipGraph";
+import { useI18n } from "./i18n";
 import { componentScope, componentScopeLabels, materialTree, projectMaterialTree, resolveMaterial, type DocumentCategory, type MaterialNode, type MaterialSummary } from "./materials-model";
 import "./navigation-materials.css";
 
@@ -26,6 +27,7 @@ export function MaterialExplorer({ materials, groups, groupsSaving, onGroupsChan
   groupsSaving: boolean; onGroupsChange: (groups: MaterialGroup[]) => Promise<void>;
   api: DesktopApi; projectPath: string; loading: boolean; category?: DocumentCategory;
 }) {
+  const tr = useI18n();
   const [query, setQuery] = useState("");
   const deferredQuery = useDeferredValue(query);
   const [selection, setSelection] = useState<MaterialGroupSelection>({ kind: "all" });
@@ -114,10 +116,10 @@ export function MaterialExplorer({ materials, groups, groupsSaving, onGroupsChan
   return <section className={`material-explorer ${groupPaneOpen ? "group-pane-open" : "group-pane-closed"}`} aria-label="资料浏览器">
     <div className="explorer-toolbar">
       <button type="button" className="group-pane-toggle" aria-label={groupPaneOpen ? "收起分组栏" : "展开分组栏"} aria-expanded={groupPaneOpen} onClick={() => setGroupPaneOpen((open) => !open)}><PanelLeft size={16} /></button>
-      <label className="material-search"><Search size={16} /><input aria-label="搜索资料" placeholder="搜索名称、说明或分组" value={query} onChange={(event) => setQuery(event.target.value)} /></label>
-      {category === "entity" && <select aria-label="筛选实体类型" value={entityType} onChange={(event) => setEntityType(event.target.value)}><option value="*">全部实体类型</option>{entityTypes.map((type) => <option key={type} value={type}>{typeLabels[type]}</option>)}</select>}
-      {category === "component" && <select aria-label="组件来源" value={componentSource} onChange={(event) => setComponentSource(event.target.value as ComponentSource)}><option value="*">全部组件</option><option value="system">官方组件</option><option value="user">自定义组件</option></select>}
-      <div className="toolbar material-view-controls" role="group" aria-label="资料显示方式"><button type="button" aria-label="图标显示" title="图标显示" aria-pressed={view === "icons"} onClick={() => changeView("icons")}><LayoutGrid size={16} /></button><button type="button" aria-label="列表显示" title="列表显示" aria-pressed={view === "list"} onClick={() => changeView("list")}><List size={16} /></button><button type="button" aria-label="关系图显示" title="关系图显示" aria-pressed={view === "graph"} onClick={() => changeView("graph")}><GitBranch size={16} /></button></div>
+      <label className="material-search"><Search size={16} /><input aria-label={tr("搜索资料")} placeholder={tr("搜索名称、说明或分组")} value={query} onChange={(event) => setQuery(event.target.value)} /></label>
+      {category === "entity" && <select aria-label="筛选实体类型" value={entityType} onChange={(event) => setEntityType(event.target.value)}><option value="*">{tr("全部实体类型")}</option>{entityTypes.map((type) => <option key={type} value={type}>{typeLabels[type]}</option>)}</select>}
+      {category === "component" && <select aria-label="组件来源" value={componentSource} onChange={(event) => setComponentSource(event.target.value as ComponentSource)}><option value="*">{tr("全部组件")}</option><option value="system">{tr("官方组件")}</option><option value="user">{tr("自定义组件")}</option></select>}
+      <div className="toolbar material-view-controls" role="group" aria-label={tr("资料显示方式")}><button type="button" aria-label={tr("图标显示")} title={tr("图标显示")} aria-pressed={view === "icons"} onClick={() => changeView("icons")}><LayoutGrid size={16} /></button><button type="button" aria-label={tr("列表显示")} title={tr("列表显示")} aria-pressed={view === "list"} onClick={() => changeView("list")}><List size={16} /></button><button type="button" aria-label={tr("关系图显示")} title={tr("关系图显示")} aria-pressed={view === "graph"} onClick={() => changeView("graph")}><GitBranch size={16} /></button></div>
     </div>
     <div className="material-explorer-layout">
       <div className="material-group-pane" hidden={!groupPaneOpen} inert={!groupPaneOpen}>

@@ -5,6 +5,7 @@ import { type StateMachine } from "../shared/state-machine";
 import { materialGroupPath, resolveLegacyGroup, type MaterialGroup } from "../shared/material-groups";
 import { categoryForPath, componentScope, componentScopeLabels, referenceId, resolveMaterial, wouldCycle, type MaterialSummary } from "./materials-model";
 import { StateMachineEditor } from "./StateMachineEditor";
+import { useI18n } from "./i18n";
 
 type FieldValue = ComponentField["default"];
 function stateMachineValue(value: unknown): StateMachine | undefined {
@@ -42,6 +43,7 @@ export function MaterialDetails({ material, catalog, groups = [], onChange, disa
   onChange: (data: Record<string, unknown>, body?: string) => void; disabled: boolean;
   originalFields?: string[];
 }) {
+  const tr = useI18n();
   const { data, body } = material;
   const relationshipId = useId();
   const [componentId, setComponentId] = useState("");
@@ -162,7 +164,7 @@ export function MaterialDetails({ material, catalog, groups = [], onChange, disa
   };
   return <fieldset className="material-details form-stack" disabled={disabled}>
     <div className="form-row">
-      <label>名称<input required maxLength={200} value={String(data.title ?? "")} onChange={(event) => {
+      <label>{tr("名称")}<input required maxLength={200} value={String(data.title ?? "")} onChange={(event) => {
         const title = event.target.value;
         emit({ ...data, title }, /^#\s+.+$/m.test(body) ? body.replace(/^#\s+.+$/m, `# ${title}`) : body);
       }} /></label>
@@ -170,10 +172,10 @@ export function MaterialDetails({ material, catalog, groups = [], onChange, disa
         <option value="entity">通用实体</option><option value="character">角色</option><option value="enemy">敌人</option><option value="item">物品</option><option value="system">系统</option><option value="event">事件</option>
       </select></label>}
     </div>
-    <label>说明<textarea rows={2} value={String(data.description ?? "")} onChange={(event) => patch({ description: event.target.value })} /></label>
+    <label>{tr("说明")}<textarea rows={2} value={String(data.description ?? "")} onChange={(event) => patch({ description: event.target.value })} /></label>
     <div className="material-relationships">
-      <section className="material-relationship" aria-label="资料层级">
-        <h3>资料层级</h3>
+      <section className="material-relationship" aria-label={tr("资料层级")}>
+        <h3>{tr("资料层级")}</h3>
         {selectRelationship("parent", "父级资料", parentChoices)}
         <p id={`${relationshipId}-parent`} className="material-relationship-hint">父级资料决定列表和关系图中的层级。</p>
       </section>
@@ -182,14 +184,14 @@ export function MaterialDetails({ material, catalog, groups = [], onChange, disa
         {selectRelationship("extends", "继承自", baseChoices)}
         <p id={`${relationshipId}-extends`} className="material-relationship-hint">继承实体模板的数据和组件，与父级资料层级独立。</p>
       </section>}
-      <section className="material-relationship" aria-label="资料分组">
-        <h3>资料分组</h3>
-        <label>分组<select aria-label="分组" aria-describedby={`${relationshipId}-group`} value={currentGroupId} onChange={(event) => {
+      <section className="material-relationship" aria-label={tr("资料分组")}>
+        <h3>{tr("资料分组")}</h3>
+        <label>{tr("分组")}<select aria-label={tr("分组")} aria-describedby={`${relationshipId}-group`} value={currentGroupId} onChange={(event) => {
           const updated = { ...data };
           if (event.target.value) { updated.groupId = event.target.value; delete updated.group; }
           else { delete updated.groupId; delete updated.group; }
           emit(updated);
-        }}><option value="">未分组</option>{groupOptions.map(({ group, label }) => <option key={group.id} value={group.id}>{label}</option>)}</select></label>
+        }}><option value="">{tr("未分组")}</option>{groupOptions.map(({ group, label }) => <option key={group.id} value={group.id}>{label}</option>)}</select></label>
         <p id={`${relationshipId}-group`} className="material-relationship-hint">分组用于归档和筛选，与资料层级独立。</p>
       </section>
     </div>
@@ -200,14 +202,14 @@ export function MaterialDetails({ material, catalog, groups = [], onChange, disa
     {entity && stateMachine && <button className="state-machine-remove" type="button" disabled={disabled} onClick={() => updateStateMachine(undefined)}><Trash2 size={15} />移除状态机</button>}
     {entity && <section className="material-section" aria-label="实体组件">
       <header><h3>组件</h3><span className="subtle">组件绑定用于组合数据和能力，不决定父级资料层级。</span></header>
-      <div className="component-picker"><label>选择组件<select aria-label="选择组件" value={componentId} onChange={(event) => setComponentId(event.target.value)}><option value="">请选择</option>{componentOptions.map((section) => <optgroup key={section.scope} label={section.title}>{section.items.map((item) => <option key={item.path} value={item.id}>{item.title}</option>)}</optgroup>)}</select></label>
+      <div className="component-picker"><label>{tr("选择组件")}<select aria-label={tr("选择组件")} value={componentId} onChange={(event) => setComponentId(event.target.value)}><option value="">{tr("请选择")}</option>{componentOptions.map((section) => <optgroup key={section.scope} label={section.title}>{section.items.map((item) => <option key={item.path} value={item.id}>{item.title}</option>)}</optgroup>)}</select></label>
         <button type="button" disabled={!componentId} onClick={() => {
           const definition = components.find((item) => item.id === componentId);
           if (!definition || bindings.some((item) => item.id === componentId)) return;
           const values = Object.fromEntries(definition.fields.map((field) => [field.key, field.default]));
           patch({ components: [...rawBindings, { id: componentId, values: { ...values, ...inherited.get(componentId)?.binding.values } }] });
           setComponentId("");
-        }}><Plus size={16} />添加组件</button>
+        }}><Plus size={16} />{tr("添加组件")}</button>
       </div>
       {!components.length && <p className="subtle">先在左侧“组件”页创建生命值、坐标、速度等组件。</p>}
       {!bindings.length && !inherited.size && <p className="subtle">尚未添加组件</p>}
@@ -215,11 +217,11 @@ export function MaterialDetails({ material, catalog, groups = [], onChange, disa
       {[...inherited.values()].filter(({ binding }) => !bindings.some((item) => item.id === binding.id)).map(({ binding, source }) => bindingCard(binding, source))}
     </section>}
     {isComponent && <section className="material-section" aria-label="组件字段">
-      <header><h3>字段与默认值</h3><button type="button" onClick={() => {
+      <header><h3>{tr("字段与默认值")}</h3><button type="button" onClick={() => {
         let index = fields.length + 1;
         while (fields.some((field) => field.key === `field_${index}`)) index++;
         patch({ fields: [...fields, { key: `field_${index}`, type: "number", default: 0 }] });
-      }}><Plus size={16} />添加字段</button></header>
+      }}><Plus size={16} />{tr("添加字段")}</button></header>
       {!fields.length && <p className="subtle">添加组件所需的数据字段，实体挂载时可以覆盖默认值。</p>}
       {consumers.length > 0 && <p className="field-hint">已被 {consumers.length} 个实体使用。先从这些实体移除组件，再修改字段名称、类型或删除字段：{consumers.map((item) => item.title).join("、")}。</p>}
       {fields.map((field, index) => <div key={index} className="component-field">
@@ -235,6 +237,6 @@ export function MaterialDetails({ material, catalog, groups = [], onChange, disa
         <button type="button" disabled={fieldLocked(index)} aria-label={`移除字段 ${index + 1}`} onClick={() => patch({ fields: fields.filter((_, position) => position !== index) })}><Trash2 size={15} /></button>
       </div>)}
     </section>}
-    <label>Markdown 正文<textarea className="material-body" rows={16} value={body} spellCheck={false} onChange={(event) => emit(data, event.target.value)} /></label>
+    <label>{tr("Markdown 正文")}<textarea className="material-body" rows={16} value={body} spellCheck={false} onChange={(event) => emit(data, event.target.value)} /></label>
   </fieldset>;
 }

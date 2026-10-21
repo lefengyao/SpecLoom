@@ -2,6 +2,7 @@ import { memo, useEffect, useState, type Dispatch, type SetStateAction } from "r
 import type { DesktopApi } from "../shared/desktop-api";
 import { DocumentsView, type DocumentCategory, type MaterialDraft } from "./DocumentsView";
 import { EntityWorkbench } from "./EntityWorkbench";
+import { useI18n } from "./i18n";
 import "./entity-workspace.css";
 
 type EntityMode = "workbench" | "detail" | "source";
@@ -33,6 +34,7 @@ const modes: { id: EntityMode; label: string }[] = [
  * draft. DocumentsView receives the source/detail mode from this shell.
  */
 export const EntityWorkspace = memo(function EntityWorkspace(props: EntityWorkspaceProps) {
+  const tr = useI18n();
   const [mode, setMode] = useState<EntityMode>("workbench");
   // The detail editor is heavy (catalog + full form). Keep it unmounted until
   // the user actually opens 详情 / 源码; the workbench is the default view.
@@ -45,8 +47,8 @@ export const EntityWorkspace = memo(function EntityWorkspace(props: EntityWorksp
     <section className="entity-workspace" aria-label="实体">
       <header className="entity-workspace-header">
         <div>
-          <h1>实体</h1>
-          <p className="subtle">在画布上拼接组件，或在详情 / 源码中编辑同一份资料。</p>
+          <h1>{tr("实体")}</h1>
+          <p className="subtle">{tr("在画布上拼接组件，或在详情 / 源码中编辑同一份资料。")}</p>
         </div>
         <div className="entity-workspace-modes" role="tablist" aria-label="实体视图">
           {modes.map((item) => (
@@ -58,7 +60,7 @@ export const EntityWorkspace = memo(function EntityWorkspace(props: EntityWorksp
               aria-pressed={mode === item.id}
               onClick={() => setMode(item.id)}
             >
-              {item.label}
+              {tr(item.label)}
             </button>
           ))}
         </div>

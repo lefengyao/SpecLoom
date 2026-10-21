@@ -65,6 +65,8 @@ npm run dev
 
 开发启动器会自动选择可用端口并打开 Electron。源码版默认复用安装版的用户数据目录；显式设置 SPECLOOM_USER_DATA_DIR 可使用独立调试目录。
 
+界面支持中文和 English。在 **设置 → 外观 → 语言 / Language** 切换，偏好保存在本机；当前核心界面已提供英文，其余页面继续补齐。
+
 验证：
 
 ~~~powershell

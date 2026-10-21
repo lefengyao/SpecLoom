@@ -10,6 +10,7 @@ import { DEFAULT_APPROVAL_MODE, type ApprovalMode } from "../../shared/approvals
 import { DEFAULT_WEB_SEARCH_MODE, WEB_SEARCH_MODE_LABELS, WebSearchModeSchema, type WebSearchMode } from "../../shared/web-search";
 import { sessionFileLimit } from "../../shared/chat";
 import { estimateTokens, resolveModelSettings } from "../../main/core/model-settings";
+import { useI18n } from "../i18n";
 import { ReviewPane } from "../ReviewPane";
 import { AuditEvents } from "../WorkspaceView";
 import { CopyButton, Modal, Status, registerEditablePaste } from "../ui";
@@ -76,6 +77,7 @@ export function ChatWorkbench({ api, attachments, projectPath, windowId, tasks, 
   onOpenWorkflowRun?: (runId: string) => void;
   preferences?: Pick<Preferences, "userAvatar" | "assistantAvatar" | "hideAgentDetails" | "showOutputRate" | "showFirstTokenLatency" | "showThinkingDuration"> | undefined;
 }) {
+  const tr = useI18n();
   const [, setAttachmentTick] = useState(0);
   const [ingest] = useState(() => new AttachmentIngest(projectPath, attachments, () => setAttachmentTick(value => value + 1)));
   useEffect(() => { ingest.activate(); return () => ingest.dispose(); }, [ingest]);
@@ -122,7 +124,7 @@ export function ChatWorkbench({ api, attachments, projectPath, windowId, tasks, 
     ? projectDefaultId
     : OFFICIAL_WORKFLOW_ID;
   const defaultWorkflowTitle = defaultWorkflowId === OFFICIAL_WORKFLOW_ID
-    ? "官方开发审查"
+    ? tr("官方开发审查")
     : (workflowSummaries.find((summary) => summary.id === defaultWorkflowId)?.title ?? defaultWorkflowId);
   const implementationAvailable = Boolean(workflow?.startForTask ?? workflow?.startForChat);
   const implementationMode = composerMode === "implementation";
@@ -524,7 +526,7 @@ export function ChatWorkbench({ api, attachments, projectPath, windowId, tasks, 
   }
   const activeReview = task && review?.changeSet.taskId === task.id ? review : undefined;
   return <div className={`chat-workbench${sidebar?.sessionId === active?.id && active ? " has-agent-sidebar" : ""}`}>
-    <aside className="session-sidebar"><header><h2>会话</h2><button type="button" disabled={chat.creating} aria-label="新建会话" onClick={() => safely(createSession)}>＋</button></header>
+    <aside className="session-sidebar"><header><h2>{tr("会话")}</h2><button type="button" disabled={chat.creating} aria-label={tr("新建会话")} onClick={() => safely(createSession)}>＋</button></header>
       <div className="session-list">{chat.sessions.filter((s) => showArchived || !s.archived).map((s) => {
         const sessionRunning = chat.sending.includes(s.id) || ["running", "waiting"].includes(s.status);
         return <div key={s.id} className={`session-row${active?.id === s.id ? " active" : ""}`}>
@@ -536,14 +538,14 @@ export function ChatWorkbench({ api, attachments, projectPath, windowId, tasks, 
           }} onExport={() => exportSession(s.id)} onRemove={async () => { setPendingDelete(s); }} />}
         </div>;
       })}</div>
-      <footer><button type="button" onClick={() => setShowArchived((s) => !s)}>{showArchived ? "隐藏归档" : "显示归档"}</button><button type="button" onClick={() => importFile.current?.click()}>导入会话</button><button type="button" onClick={onNewTask}>新建任务</button></footer>
+      <footer><button type="button" onClick={() => setShowArchived((s) => !s)}>{showArchived ? tr("隐藏归档") : tr("显示归档")}</button><button type="button" onClick={() => importFile.current?.click()}>{tr("导入会话")}</button><button type="button" onClick={onNewTask}>{tr("新建任务")}</button></footer>
       <input type="file" accept="application/json,.json" hidden ref={importFile} aria-label="导入会话文件" onChange={(e) => { const file = e.target.files?.[0]; if (file) safely(async () => { if (file.size > sessionFileLimit) throw new Error("会话文件超过导入上限"); const imported = await api.import(projectPath, await file.text()); chat.apply(imported); select(imported.id); }); e.target.value = ""; }} />
     </aside>
     <section className="conversation-pane">
-      <header className="conversation-heading"><div><h2 title={active?.title ?? "智能体对话"}>{active?.title ?? "智能体对话"}</h2><span className="subtle">{task ? <Status status={task.status} /> : "项目智能体会话"}{active?.status === "waiting" && (pendingApproval ? " · 等待你的审批" : " · 等待你的回答")}</span></div>{active && <button type="button" className="agent-sidebar-toggle" aria-label="打开智能体侧栏" aria-expanded={sidebar?.sessionId === active.id} onClick={() => setSidebar(current => current?.sessionId === active.id ? undefined : { sessionId: active.id })}><PanelRightOpen size={16} /><span>侧栏</span></button>}</header>
+      <header className="conversation-heading"><div><h2 title={active?.title ?? tr("智能体对话")}>{active?.title ?? tr("智能体对话")}</h2><span className="subtle">{task ? <Status status={task.status} /> : tr("项目智能体会话")}{active?.status === "waiting" && (pendingApproval ? " · 等待你的审批" : " · 等待你的回答")}</span></div>{active && <button type="button" className="agent-sidebar-toggle" aria-label="打开智能体侧栏" aria-expanded={sidebar?.sessionId === active.id} onClick={() => setSidebar(current => current?.sessionId === active.id ? undefined : { sessionId: active.id })}><PanelRightOpen size={16} /><span>侧栏</span></button>}</header>
       {task && <details className="scope-summary"><summary>已授权范围</summary>{task.scope.goal && <p>目标：{task.scope.goal}</p>}<p>读取：{task.scope.readPaths.join("、")} · 写入：{task.scope.writePaths.join("、") || "无"} · {task.scope.mode === "manual" ? "手动审查" : "自动提交"}</p>{task.events.length > 0 && <details><summary>任务审计历史 · {task.events.length}</summary><AuditEvents task={task} /></details>}</details>}
       <ChatTimeline sessionId={active?.id ?? ""} runId={active?.runId} running={active?.status === "running" || active?.status === "waiting"} items={active?.items ?? []} avatars={preferences} preferences={preferences} introduction={active && <CapabilitySummary capabilities={active.capabilities} error={active.capabilityError} />} onOpenTools={(selection) => { if (active) setSidebar({ sessionId: active.id, selection }); }} onAnswer={async (item, answers) => { chat.apply(await api.answer(projectPath, item.question.sessionId, item.question.runId, item.question.id, answers)); }} onApprove={async (item, approved) => { chat.apply(await api.approve(projectPath, item.request.sessionId, item.request.runId, item.request.id, approved)); }}>
-        {!active && <div className="conversation-empty"><h3>开始一段对话</h3><p>新建会话即可使用当前项目的工具与扩展。</p><button type="button" className="primary" disabled={chat.creating} onClick={() => safely(createSession)}>新建会话</button></div>}
+        {!active && <div className="conversation-empty"><h3>{tr("开始一段对话")}</h3><p>{tr("新建会话即可使用当前项目的工具与扩展。")}</p><button type="button" className="primary" disabled={chat.creating} onClick={() => safely(createSession)}>{tr("新建会话")}</button></div>}
         {active && !active.items.length && <p className="empty-state">输入消息开始对话。</p>}
         {active && running && <AgentProgress label={active.activity || (active.status === "waiting" ? pendingApproval ? "等待你的审批" : "等待你的回答" : "模型正在思考")} avatar={preferences?.assistantAvatar} />}
         {active?.error && <div className="run-error" role="status"><span>{active.error}</span>{active.diagnosticId && <span className="diagnostic-reference">诊断编号 <code>{active.diagnosticId}</code><CopyButton value={active.diagnosticId} label="复制诊断编号" onError={onError} /></span>}</div>}
@@ -568,7 +570,7 @@ export function ChatWorkbench({ api, attachments, projectPath, windowId, tasks, 
           <div className="composer-workflow" aria-label="工作流入口">
             <div className="composer-workflow-mode" role="group" aria-label="消息模式">
               <button type="button" aria-pressed={composerMode === "qa"} onClick={() => setComposerMode("qa")}>
-                问答
+                {tr("问答")}
               </button>
               <button
                 type="button"
@@ -577,20 +579,20 @@ export function ChatWorkbench({ api, attachments, projectPath, windowId, tasks, 
                 title={implementationAvailable ? undefined : "当前桌面版本不支持工作流"}
                 onClick={() => setComposerMode("implementation")}
               >
-                实现
+                {tr("实现")}
               </button>
             </div>
             {implementationMode && (
               <span className="composer-workflow-default">
-                默认工作流：{defaultWorkflowTitle}
+                {tr("默认工作流")}：{defaultWorkflowTitle}
                 {!active.taskId && (
                   <select
                     aria-label="实现工作流"
                     value={selectedWorkflowId}
                     onChange={(event) => setSelectedWorkflowId(event.target.value)}
                   >
-                    <option value="">使用默认（{defaultWorkflowTitle}）</option>
-                    <option value={OFFICIAL_WORKFLOW_ID}>官方开发审查</option>
+                    <option value="">{tr("使用默认")}（{defaultWorkflowTitle}）</option>
+                    <option value={OFFICIAL_WORKFLOW_ID}>{tr("官方开发审查")}</option>
                     {workflowSummaries.filter((summary) => summary.id !== OFFICIAL_WORKFLOW_ID).map((summary) => (
                       <option key={summary.id} value={summary.id}>{summary.title}</option>
                     ))}
@@ -600,7 +602,7 @@ export function ChatWorkbench({ api, attachments, projectPath, windowId, tasks, 
             )}
           </div>
         )}
-        <textarea ref={input} aria-label="任务消息" maxLength={131072} placeholder={chat.creating ? "正在创建会话，可先输入消息…" : active ? running ? "输入补充要求，发送后点击“引导”加入当前工作" : "输入消息，Shift+Enter 换行" : "先新建会话"} value={pendingDraft} disabled={!temporaryDraft && (!active || !!active.archived)} onChange={(e) => { if (temporaryDraft) { creatingRevision.current++; creatingDraftRef.current = e.target.value; setCreatingDraft(e.target.value); if (creatingSessionId.current) chat.setDraftFor(creatingSessionId.current, e.target.value); } else chat.setDraft(e.target.value); }} rows={1} onPaste={(event) => { event.preventDefault(); const captured = capturePaste(); const files = Array.from(event.clipboardData.files ?? []); if (!files.length) for (const item of Array.from(event.clipboardData.items ?? [])) { if (item.kind === "file") { const file = item.getAsFile(); if (file) files.push(file); } } const selection = { start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd }; const text = event.clipboardData.getData("text/plain"); safely(() => paste(captured, selection, files, text)); }} onKeyDown={(e) => { if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing || e.keyCode === 229) return; if (sendShortcut === "mod-enter" && !e.ctrlKey && !e.metaKey) return; e.preventDefault(); safely(send); }} />
+        <textarea ref={input} aria-label={tr("任务消息")} maxLength={131072} placeholder={chat.creating ? tr("正在创建会话，可先输入消息…") : active ? running ? tr("输入补充要求，发送后点击“引导”加入当前工作") : tr("输入消息，Shift+Enter 换行") : tr("先新建会话")} value={pendingDraft} disabled={!temporaryDraft && (!active || !!active.archived)} onChange={(e) => { if (temporaryDraft) { creatingRevision.current++; creatingDraftRef.current = e.target.value; setCreatingDraft(e.target.value); if (creatingSessionId.current) chat.setDraftFor(creatingSessionId.current, e.target.value); } else chat.setDraft(e.target.value); }} rows={1} onPaste={(event) => { event.preventDefault(); const captured = capturePaste(); const files = Array.from(event.clipboardData.files ?? []); if (!files.length) for (const item of Array.from(event.clipboardData.items ?? [])) { if (item.kind === "file") { const file = item.getAsFile(); if (file) files.push(file); } } const selection = { start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd }; const text = event.clipboardData.getData("text/plain"); safely(() => paste(captured, selection, files, text)); }} onKeyDown={(e) => { if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing || e.keyCode === 229) return; if (sendShortcut === "mod-enter" && !e.ctrlKey && !e.metaKey) return; e.preventDefault(); safely(send); }} />
         <footer><div className="composer-options"><select aria-label="选择模型" disabled={!active || running} value={chosen?.key ?? ""} onChange={(e) => { const next = available.find((m) => m.key === e.target.value); if (active && next) safely(() => chat.patch(active.id, { model: { providerId: next.providerId, model: next.model, reasoning: model?.reasoning ?? "inherit" } })); }}><option value="" disabled>选择模型</option>{available.map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}</select>
           <select aria-label="思考偏好" value={model?.reasoning ?? "inherit"} disabled={!active || running || !chosen} onChange={(e) => { if (active && chosen) safely(() => chat.patch(active.id, { model: { providerId: chosen.providerId, model: chosen.model, reasoning: e.target.value as ReasoningPreference } })); }}>{["inherit", "off", "low", "medium", "high"].map((r) => <option key={r} value={r}>思考：{r === "inherit" ? "继承默认" : r}</option>)}</select>
           <select aria-label="联网搜索" value={active?.webSearchMode ?? DEFAULT_WEB_SEARCH_MODE} disabled={!active || running || pendingWebSearchMode || active.archived} onChange={(e) => { if (active && !running && !active.archived) safely(() => changeWebSearchMode(active.id, e.target.value as WebSearchMode)); }}>{WebSearchModeSchema.options.map(mode => <option key={mode} value={mode}>联网：{WEB_SEARCH_MODE_LABELS[mode]}</option>)}</select>
@@ -613,7 +615,7 @@ export function ChatWorkbench({ api, attachments, projectPath, windowId, tasks, 
               {documents && <button type="button" role="menuitem" onClick={() => { setShowAttachmentMenu(false); safely(async () => setReferences((await documents()).map((d) => d.path))); }}>引用资料</button>}
             </span>}
           </span>
-        </div><span className="composer-send-actions">{running && <button type="button" onClick={() => { if (active) safely(() => api.cancel(projectPath, active.id)); }}>停止</button>}<button className="primary" disabled={temporaryDraft || unfinishedAttachments || pastePending || !active || pendingPermission || pendingWebSearchMode || (!running && busy) || implementationBusy || active.archived || !chosen || (!chat.draft.trim() && !currentEntries.length)}>发送</button></span></footer>
+        </div><span className="composer-send-actions">{running && <button type="button" onClick={() => { if (active) safely(() => api.cancel(projectPath, active.id)); }}>{tr("停止")}</button>}<button className="primary" disabled={temporaryDraft || unfinishedAttachments || pastePending || !active || pendingPermission || pendingWebSearchMode || (!running && busy) || implementationBusy || active.archived || !chosen || (!chat.draft.trim() && !currentEntries.length)}>{tr("发送")}</button></span></footer>
         {references.length > 0 && <select aria-label="选择引用资料" defaultValue="" onChange={(e) => { chat.setDraft(chat.draft + `\n@${e.target.value}\n`); setReferences([]); }}><option value="" disabled>选择资料</option>{references.map((p) => <option key={p} value={p}>{p}</option>)}</select>}
         <AttachmentTray entries={currentEntries} onRemove={(id) => { if (currentTarget) ingest.remove(currentTarget, id); }} />
         <input type="file" accept="*/*" multiple hidden ref={attachment} aria-label="添加附件文件" onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ""; const target = pickerTarget.current ?? currentTargetRef.current; pickerTarget.current = undefined; if (target && targetDraft(target) && files.length) safely(() => ingest.addFiles(target, files)); }} />

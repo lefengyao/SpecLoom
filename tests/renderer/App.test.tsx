@@ -37,6 +37,15 @@ describe("desktop workspace workflows", () => {
     expect(screen.getByRole("button", { name: "创建示例项目" })).toBeDisabled();
     expect(screen.getByText("桌面连接不可用")).toBeVisible();
   });
+  it("renders the core navigation in English when the locale is en", async () => {
+    fixture({ project: true, preferences: { locale: "en" } });
+    render(<App />);
+
+    expect(await screen.findByRole("button", { name: "Workspace" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Workflows" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Entities" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Game settings" })).toBeInTheDocument();
+  });
   it("creates a sample project and exposes its Godot metadata in the sidebar", async () => {
     const { api } = fixture();
     render(<App />);

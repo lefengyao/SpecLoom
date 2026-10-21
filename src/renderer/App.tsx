@@ -27,7 +27,7 @@ import {
   Waypoints,
   Wrench,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { TaskScopeSpec } from "../shared/contracts";
 import { mergeSession } from "./chat/useChatSessions";
 import type { ChatSession } from "../shared/chat";
@@ -51,6 +51,7 @@ import { useWorkspace } from "./useWorkspace";
 import { APP_VERSION } from "../shared/version";
 import { NavigationPage } from "./NavigationPage";
 import { ProjectSidebarInfo } from "./ProjectSidebarInfo";
+import { LocaleProvider, createTranslator } from "./i18n";
 import "./navigation-materials.css";
 
 const ORBIT_SEQUENCE: OrbitPreset[] = ["thread", "wide", "tall"];
@@ -163,9 +164,13 @@ export default function App() {
     return () => window.removeEventListener("beforeunload", warn);
   }, [materialDrafts.length]);
   const { preferences } = state;
+  const tr = useMemo(() => createTranslator(preferences.locale), [preferences.locale]);
   useEffect(() => {
     applyAppearance(preferences);
   }, [preferences]);
+  useEffect(() => {
+    document.documentElement.lang = preferences.locale;
+  }, [preferences.locale]);
   useEffect(() => {
     configureCompletionSound(preferences.completionSound);
   }, [preferences.completionSound]);
@@ -203,6 +208,7 @@ export default function App() {
     else void workspace.closeProject();
   }
   return (
+    <LocaleProvider locale={preferences.locale}>
     <ContextMenu onError={workspace.reportError}>
       <div className="application">
       <header className="application-header">
@@ -210,7 +216,7 @@ export default function App() {
           <Mascot className="brand-logo" size={38} />
           <span>SpecLoom</span>
           <span className="brand-version">v{APP_VERSION}</span>
-          <span className="brand-tag">项目开发</span>
+          <span className="brand-tag">{tr("项目开发")}</span>
         </div>
         <div className="header-actions">
           <button
@@ -221,17 +227,17 @@ export default function App() {
             }}
           >
             {state.project ? <Home size={16} /> : <FolderOpen size={16} />}
-            {state.project ? "返回初始界面" : "打开项目"}
+            {state.project ? tr("返回初始界面") : tr("打开项目")}
           </button>
           {state.project && (
             <>
               <button disabled={!api || busy} onClick={() => void api?.openGodot().catch(workspace.reportError)}>
                 <Gamepad2 size={16} />
-                打开 Godot
+                {tr("打开 Godot")}
               </button>
               <button disabled={!api || busy} onClick={() => void api?.openExternalEditor().catch(workspace.reportError)}>
                 <Code2 size={16} />
-                打开外部编辑器
+                {tr("打开外部编辑器")}
               </button>
             </>
           )}
@@ -242,17 +248,17 @@ export default function App() {
               onClick={() => setScope(true)}
             >
               <Plus size={16} />
-              新建任务
+              {tr("新建任务")}
             </button>
           )}
           <button
             className={`header-ghost ${tab === "settings" ? "active" : ""}`}
             aria-current={tab === "settings" ? "page" : undefined}
-            title="设置"
+            title={tr("设置")}
             onClick={() => setTab("settings")}
           >
             <SlidersHorizontal size={16} />
-            设置
+            {tr("设置")}
           </button>
         </div>
       </header>
@@ -306,7 +312,7 @@ export default function App() {
             <span className="mascot-name"><b>络络</b><span>THREAD SPRITE</span></span>
           </div>
           <h1>SpecLoom</h1>
-          <span className="subtle">智能体项目工作区</span>
+          <span className="subtle">{tr("智能体项目工作区")}</span>
           <div className="entry-actions">
             <button
               className="primary"
@@ -316,7 +322,7 @@ export default function App() {
               }}
             >
               <FolderOpen size={17} />
-              打开项目
+              {tr("打开项目")}
             </button>
             <button
               disabled={!api || busy}
@@ -325,7 +331,7 @@ export default function App() {
               }}
             >
               <Sparkles size={17} />
-              创建示例项目
+              {tr("创建示例项目")}
             </button>
           </div>
           {!api && (
@@ -386,19 +392,19 @@ export default function App() {
               expanded={navigationExpanded}
               onExpandNavigation={() => compactNavigation ? setNavigationDrawerOpen(true) : setNavigationOpen(true)}
             />
-            <nav id="project-navigation" className="workspace-tabs" aria-label="项目视图">
+            <nav id="project-navigation" className="workspace-tabs" aria-label={tr("项目视图")}>
               {tabs.map((item) => {
                 const category = "category" in item ? item.category as DocumentCategory : undefined;
                 const active = tab === item.id && (category === undefined || documentCategory === category);
                 return <div key={item.label} className="nav-entry">
-                  {item.label === "实体" && <span className="nav-group-label">项目资料</span>}
-                  {item.id === "skills" && <span className="nav-group-label">工具</span>}
-                  {item.id === "settings" && <span className="nav-group-label">偏好</span>}
-                  <button aria-label={item.label} aria-current={active ? "page" : undefined} className={active ? "active" : ""} title={item.label} onClick={() => {
+                  {item.label === "实体" && <span className="nav-group-label">{tr("项目资料")}</span>}
+                  {item.id === "skills" && <span className="nav-group-label">{tr("工具")}</span>}
+                  {item.id === "settings" && <span className="nav-group-label">{tr("偏好")}</span>}
+                  <button aria-label={tr(item.label)} aria-current={active ? "page" : undefined} className={active ? "active" : ""} title={tr(item.label)} onClick={() => {
                     setTab(item.id);
                     if (category) setDocumentCategory(category);
                     setNavigationDrawerOpen(false);
-                  }}><item.icon size={17} /><span className="nav-label">{item.label}</span></button>
+                  }}><item.icon size={17} /><span className="nav-label">{tr(item.label)}</span></button>
                 </div>;
               })}
             </nav>
@@ -646,5 +652,6 @@ export default function App() {
       )}
       </div>
     </ContextMenu>
+    </LocaleProvider>
   );
 }
