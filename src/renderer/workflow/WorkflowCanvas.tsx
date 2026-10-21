@@ -206,6 +206,7 @@ export function WorkflowCanvas({
           }}
           minZoom={0.55}
           maxZoom={1.6}
+          onlyRenderVisibleElements
           nodesDraggable={!readOnly}
           nodesConnectable={!readOnly}
           nodesFocusable={!readOnly}

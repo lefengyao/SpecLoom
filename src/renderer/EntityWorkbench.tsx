@@ -401,6 +401,7 @@ function EntityCanvas({
           onEdgesChange={onEdgesChange}
           minZoom={0.4}
           maxZoom={1.6}
+          onlyRenderVisibleElements
           nodesConnectable={false}
           edgesFocusable={false}
           onInit={(instance) => {

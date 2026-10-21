@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronRight, FileText, GitBranch, LayoutGrid, List, PanelLeft, Search } from "lucide-react";
-import { useMemo, useState, type ReactNode } from "react";
+import { useDeferredValue, useMemo, useState, type ReactNode } from "react";
 import type { DesktopApi } from "../shared/desktop-api";
 import { materialGroupPath, groupIncludes, type MaterialGroup } from "../shared/material-groups";
 import { MaterialThumbnail } from "./MaterialImage";
@@ -27,6 +27,7 @@ export function MaterialExplorer({ materials, groups, groupsSaving, onGroupsChan
   api: DesktopApi; projectPath: string; loading: boolean; category?: DocumentCategory;
 }) {
   const [query, setQuery] = useState("");
+  const deferredQuery = useDeferredValue(query);
   const [selection, setSelection] = useState<MaterialGroupSelection>({ kind: "all" });
   const [entityType, setEntityType] = useState("*");
   const [componentSource, setComponentSource] = useState<ComponentSource>("*");
@@ -36,14 +37,14 @@ export function MaterialExplorer({ materials, groups, groupsSaving, onGroupsChan
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>();
   const group = useMemo(() => selection.kind === "group" ? groups.find((item) => item.id === selection.id) : undefined, [groups, selection]);
   const visible = useMemo(() => {
-    const search = query.trim().toLocaleLowerCase();
+    const search = deferredQuery.trim().toLocaleLowerCase();
     return materials.filter((item) => (selection.kind === "all"
       || (selection.kind === "ungrouped" ? !item.groupId : Boolean(item.groupId && groupIncludes(groups, selection.id, item.groupId))))
       && (category !== "entity" || entityType === "*" || item.type === entityType)
       && (category !== "component" || componentSource === "*" || componentScope(item) === componentSource)
       && `${item.title} ${item.description ?? ""} ${item.id} ${item.path} ${item.groupPath ?? item.group ?? ""}`.toLocaleLowerCase().includes(search))
       .sort((a, b) => a.title.localeCompare(b.title));
-  }, [materials, groups, selection, category, entityType, componentSource, query]);
+  }, [materials, groups, selection, category, entityType, componentSource, deferredQuery]);
   const tree = useMemo(() => materialTree(materials), [materials]);
   const projectedTree = useMemo(() => projectMaterialTree(tree, new Set(visible.map((item) => item.path))), [tree, visible]);
   const defaultIconExpandedKeys = useMemo(() => {

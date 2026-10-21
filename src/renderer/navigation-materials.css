@@ -153,3 +153,11 @@
 .material-explorer .material-results .material-icon-card > .material-card-tags { grid-column: 2; justify-content: flex-start; gap: 4px; }
 .material-explorer .material-results .material-icon-card > .material-icon-parent { grid-column: 2; text-align: left; }
 .material-graph-viewport { touch-action: none; user-select: none; }
+
+/* Long material lists only paint the rows near the viewport. */
+.material-hierarchy-row,
+.material-icon-node,
+.material-item {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 56px;
+}
