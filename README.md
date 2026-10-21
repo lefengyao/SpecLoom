@@ -107,6 +107,14 @@ specs/
 - [默认工作流与顺序编排设计](docs/superpowers/specs/2026-10-18-default-workflow-orchestration-design.md)
 - [会话性能记录](docs/chat-performance-2026-10-08.md)
 
+## 开源协议
+
+SpecLoom 使用 **GNU Affero General Public License v3.0 only（AGPL-3.0-only）**。
+
+- 许可证全文见 [LICENSE](LICENSE)
+- 修改并分发时，需要按 AGPL 提供对应源码
+- 即使不分发，只把修改版作为网络服务提供，也需要向用户提供对应源码
+
 ## 当前状态
 
 v0.1.9，源码开发版。主要面向 Windows 桌面；工作流、编排、实体工作台和资料编辑器仍在快速迭代。欢迎通过 issue 或 PR 反馈具体使用场景。

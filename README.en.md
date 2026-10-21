@@ -107,6 +107,14 @@ Entities and components use front matter for id, parent, inheritance, component 
 - [Default workflow and orchestration design](docs/superpowers/specs/2026-10-18-default-workflow-orchestration-design.md)
 - [Chat performance notes](docs/chat-performance-2026-10-08.md)
 
+## License
+
+SpecLoom is licensed under the **GNU Affero General Public License v3.0 only (AGPL-3.0-only)**.
+
+- See [LICENSE](LICENSE) for the full text
+- If you modify and distribute the software, you must provide the corresponding source under the AGPL
+- Even without distribution, providing a modified version as a network service requires offering its source to users
+
 ## Status
 
 v0.1.9, source-development preview. Primarily a Windows desktop app; workflows, orchestrations, the Entity Workbench, and the materials editor are evolving quickly. Issues and PRs with concrete usage scenarios are welcome.
