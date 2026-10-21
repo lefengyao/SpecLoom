@@ -13,8 +13,8 @@ nodes:
   - { id: plan, type: agent, label: 规划, position: { x: 340, y: 120 }, config: { access: read, prompt: "阅读运行范围内的项目资料，输出可执行的实现计划；不得修改文件。" } }
   - { id: implement, type: agent, label: Agent 实现, position: { x: 600, y: 120 }, config: { access: write, prompt: "根据目标和计划实现改动；只写 writePaths 允许的路径；完成后总结改动与验证建议。" } }
   - { id: validate, type: validation, label: 自动校验, position: { x: 860, y: 120 }, config: {} }
-  - { id: review, type: approval, label: 人工审查, position: { x: 1120, y: 280 }, config: { allowReject: true } }
-  - { id: decide, type: decision, label: 记录决策, position: { x: 1380, y: 280 }, config: { directory: specs/decisions } }
+  - { id: review, type: approval, label: 人工审查, position: { x: 860, y: 320 }, config: { allowReject: true } }
+  - { id: decide, type: decision, label: 记录决策, position: { x: 1120, y: 320 }, config: { directory: specs/decisions } }
 edges:
   - { id: e1, from: context, to: plan, on: success }
   - { id: e2, from: plan, to: implement, on: success }
