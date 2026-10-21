@@ -1,23 +1,12 @@
 .project-file-filter { display: flex; align-items: center; gap: 7px; padding: 5px 3px 10px; color: var(--text-muted); font-size: 12px; }
 .project-file-filter input { margin: 0; width: auto; }
-.project-media-preview { display: flex; flex-direction: column; min-width: 0; min-height: 300px; margin-top: 16px; border: 1px solid var(--border); border-radius: 9px; overflow: hidden; background: transparent; }
+.project-media-preview { display: flex; flex-direction: column; min-width: 0; min-height: 300px; margin-top: 16px; border: 1px solid var(--border); border-radius: 9px; overflow: hidden; background: var(--bg-surface); }
 .project-media-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 10px; border-bottom: 1px solid var(--border); }
 .project-media-toolbar button { font-size: 12px; }
 .project-media-toolbar button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
 .project-media-toolbar input[type="range"] { width: 130px; min-width: 70px; padding: 0; }
-.project-image-viewport { min-width: 0; overflow: auto; height: min(65vh, 760px); padding: 16px; background: transparent; }
-.project-image-viewport img {
-  display: block;
-  height: auto;
-  margin: 0 0 0 auto;
-  image-rendering: pixelated;
-  -webkit-mask-image: linear-gradient(to right, transparent 0%, #000 10%, #000 100%);
-  mask-image: linear-gradient(to right, transparent 0%, #000 10%, #000 100%);
-  -webkit-mask-repeat: no-repeat;
-  mask-repeat: no-repeat;
-  -webkit-mask-size: 100% 100%;
-  mask-size: 100% 100%;
-}
+.project-image-viewport { min-width: 0; overflow: auto; height: min(65vh, 760px); padding: 16px; background-image: linear-gradient(45deg, #8881 25%, transparent 25%), linear-gradient(-45deg, #8881 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #8881 75%), linear-gradient(-45deg, transparent 75%, #8881 75%); background-size: 20px 20px; background-position: 0 0, 0 10px, 10px -10px, -10px 0; }
+.project-image-viewport img { display: block; height: auto; margin: 0 auto; image-rendering: pixelated; }
 .project-image-viewport.is-fit { display: flex; align-items: center; justify-content: center; }
 .project-image-viewport.is-fit img { max-width: 100%; max-height: 100%; object-fit: contain; }
 .project-image-viewport.is-zoomed img { max-width: none; max-height: none; }
