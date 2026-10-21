@@ -47,6 +47,10 @@ it("previews an ordinary tree image when the specs document catalog is empty", a
   expect(screen.getByLabelText("图片缩放比例")).toHaveValue("100");
   fireEvent.click(screen.getByRole("button", { name: "放大图片" }));
   expect(screen.getByLabelText("图片缩放比例")).toHaveValue("125");
+  fireEvent.wheel(screen.getByLabelText("图片预览"), { deltaY: -100 });
+  expect(screen.getByLabelText("图片缩放比例")).toHaveValue("135");
+  fireEvent.wheel(screen.getByLabelText("图片预览"), { deltaY: 100 });
+  expect(screen.getByLabelText("图片缩放比例")).toHaveValue("125");
 });
 
 it("reads ordinary UTF-8 project files through a read-only API", async () => {

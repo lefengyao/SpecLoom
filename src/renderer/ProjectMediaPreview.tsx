@@ -44,6 +44,7 @@ function MediaLeasePreview({ api, projectPath, path }: Omit<PreviewProps, "activ
   const [expanded, setExpanded] = useState(false);
   const player = useRef<HTMLMediaElement>(null);
   const surface = useRef<HTMLElement>(null);
+  const viewport = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const files = api.projectFiles;
     if (!files) { setError("当前桌面版本不支持媒体预览。"); return; }
@@ -65,6 +66,17 @@ function MediaLeasePreview({ api, projectPath, path }: Omit<PreviewProps, "activ
     };
   }, [lease]);
   const resize = (delta: number) => setZoom((value) => Math.min(400, Math.max(10, (value === "fit" ? 100 : value) + delta)));
+  useEffect(() => {
+    const element = viewport.current;
+    if (!element || lease?.kind !== "image") return;
+    const onWheel = (event: WheelEvent) => {
+      if (event.deltaY === 0) return;
+      event.preventDefault();
+      setZoom((value) => Math.min(400, Math.max(10, (value === "fit" ? 100 : value) + (event.deltaY < 0 ? 10 : -10))));
+    };
+    element.addEventListener("wheel", onWheel, { passive: false });
+    return () => element.removeEventListener("wheel", onWheel);
+  }, [lease?.kind]);
   async function fullscreen() {
     try {
       if (!surface.current?.requestFullscreen) throw new Error("当前环境不支持全屏，请使用展开视频。");
@@ -78,7 +90,7 @@ function MediaLeasePreview({ api, projectPath, path }: Omit<PreviewProps, "activ
       <button type="button" aria-label="缩小图片" onClick={() => resize(-25)}><ZoomOut size={16} /></button>
       <input aria-label="图片缩放比例" type="range" min="10" max="400" step="5" value={zoom === "fit" ? 100 : zoom} onChange={(event) => setZoom(Number(event.target.value))} />
       <button type="button" aria-label="放大图片" onClick={() => resize(25)}><ZoomIn size={16} /></button>
-      <span className="subtle">{zoom === "fit" ? "适应" : `${zoom}%`}{imageSize ? ` · ${imageSize.width} × ${imageSize.height}` : ""}</span>
+      <span className="subtle">{zoom === "fit" ? "适应" : `${zoom}%`}{imageSize ? ` · ${imageSize.width} × ${imageSize.height}` : ""} · 滚轮缩放</span>
     </div>}
     {lease?.kind === "video" && <div className="project-media-toolbar">
       <button type="button" onClick={() => setExpanded((value) => !value)}>{expanded ? <Minimize size={16} /> : <Maximize size={16} />}{expanded ? "收起视频" : "展开视频"}</button>
@@ -86,7 +98,7 @@ function MediaLeasePreview({ api, projectPath, path }: Omit<PreviewProps, "activ
     </div>}
     {error && <div className="project-file-error" role="alert"><p>无法预览此媒体：{error}</p><button type="button" onClick={() => setAttempt((value) => value + 1)}>重试媒体预览</button></div>}
     {!lease && !error && <p role="status" className="empty-state">读取媒体…</p>}
-    {lease?.kind === "image" && <div className={`project-image-viewport ${zoom === "fit" ? "is-fit" : "is-zoomed"}`}>
+    {lease?.kind === "image" && <div ref={viewport} className={`project-image-viewport ${zoom === "fit" ? "is-fit" : "is-zoomed"}`} aria-label="图片预览">
       <img src={lease.url} alt={path} draggable={false} style={zoom === "fit" ? undefined : { width: imageSize ? imageSize.width * zoom / 100 : undefined }} onLoad={(event) => setImageSize({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })} onError={() => setError("图片解码失败或文件格式不受支持。请刷新后重试。")} />
     </div>}
     {lease?.kind === "audio" && <div className="project-audio-surface"><audio ref={player} aria-label="音频播放器" src={lease.url} controls preload="metadata" onError={() => setError("音频无法播放，文件可能损坏或编码不受支持。")} /></div>}
