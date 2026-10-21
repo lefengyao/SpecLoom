@@ -17,4 +17,4 @@
 .about-document-title button { margin-left: auto; }
 .about-document details { margin-top: 12px; }
 .about-document summary { cursor: pointer; }
-.about-preview { max-height: 420px; overflow: auto; padding: 14px; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--background, #131922); border-radius: 8px; }
+.about-preview { max-height: 420px; overflow: auto; padding: 14px; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--bg-sunken); color: var(--text); border: 1px solid var(--border); border-radius: 8px; }
