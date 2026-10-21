@@ -84,6 +84,30 @@ export class SessionRuns {
       try { return fileReport = await fileTracker.finish(run.controller.signal.aborted); }
       catch { return fileReport = { runId: run.id, files: [], complete: false, notes: ["文件变化检查未能完成；任务结果已保留。"] }; }
     };
+    // Persisting every token rewrites the whole session file and throttles the
+    // provider stream. Apply text/thinking in small batches instead.
+    const streamBatchSize = 64;
+    const pendingStreams = new Map<string, AgentEvent>();
+    let pendingStreamCount = 0;
+    let streamChain: Promise<void> = Promise.resolve();
+    let streamWriteError: unknown;
+    const writeEvents = async (events: AgentEvent[]): Promise<void> => {
+      const updated = await this.store.update(sessionId, (record) => {
+        if (this.live.get(sessionId) !== run || run.controller.signal.aborted) return;
+        for (const event of events) { record.seq++; this.apply(record, run.id, event); }
+      });
+      if (!run.controller.signal.aborted) this.publish(SessionStore.view(updated));
+    };
+    const flushStreams = (): Promise<void> => {
+      streamChain = streamChain.then(async () => {
+        if (!pendingStreams.size) return;
+        const events = [...pendingStreams.values()];
+        pendingStreams.clear();
+        pendingStreamCount = 0;
+        await writeEvents(events);
+      }).catch((error) => { streamWriteError ??= error; throw error; });
+      return streamChain;
+    };
     let started = false;
     try {
       const session = await this.store.update(sessionId, (record) => {
@@ -96,9 +120,23 @@ export class SessionRuns {
       started = true; this.publish(SessionStore.view(session));
       await untilCancelled(fileTracker.start(), run.controller.signal);
       const result = await untilCancelled(execute({ prompt, previousMessages: session.conversation, ...(session.contextSummary === undefined ? {} : { contextSummary: session.contextSummary }), signal: run.controller.signal, session: SessionStore.view(session), ...(images?.length ? { images } : {}),
-        onEvent: async (event) => { if (this.live.get(sessionId) !== run || run.controller.signal.aborted) return; this.observe(run, event, Date.now()); await fileTracker.observe(event).catch(() => undefined); const updated = await this.store.update(sessionId, (record) => { if (this.live.get(sessionId) !== run || run.controller.signal.aborted) return; record.seq++; this.apply(record, run.id, event); }); if (!run.controller.signal.aborted) this.publish(SessionStore.view(updated)); },
+        onEvent: async (event) => {
+          if (this.live.get(sessionId) !== run || run.controller.signal.aborted) return;
+          if (streamWriteError) throw streamWriteError;
+          this.observe(run, event, Date.now());
+          await fileTracker.observe(event).catch(() => undefined);
+          if (event.type === "text" || event.type === "thinking") {
+            pendingStreams.set(`${event.type}:${event.messageId}`, event);
+            pendingStreamCount++;
+            if (pendingStreamCount >= streamBatchSize) await flushStreams();
+            return;
+          }
+          await flushStreams();
+          await writeEvents([event]);
+        },
         onConversation: async (messages, contextSummary, contextTokensEstimate, contextCalibration) => {
           if (this.live.get(sessionId) !== run || run.controller.signal.aborted) return;
+          await flushStreams();
           const updated = await this.store.update(sessionId, (record) => {
             if (this.live.get(sessionId) !== run || run.controller.signal.aborted) return;
             record.conversation = preserveConversation([...messages, ...this.pendingGuidance(record, run)]);
@@ -111,6 +149,7 @@ export class SessionRuns {
         },
         onUsage: async usage => {
           if (this.live.get(sessionId) !== run || run.controller.signal.aborted) return;
+          await flushStreams();
           const updated = await this.store.update(sessionId, record => {
             if (this.live.get(sessionId) !== run || run.controller.signal.aborted) return;
             record.lastRequestUsage = { ...usage, source: "actual" };
@@ -133,6 +172,8 @@ export class SessionRuns {
           return approved;
         },
       }), run.controller.signal);
+      await flushStreams();
+      if (streamWriteError) throw streamWriteError;
       // Executors must consume their guidance before returning. Never report an accepted but unhandled message as completed.
       if ((await this.takeGuidance(sessionId, run, true)).length) throw new ProjectError("MODEL_ERROR", "运行结束前未处理引导，已保留在会话历史中");
       const fileChanges = await finishFiles();
@@ -164,6 +205,7 @@ export class SessionRuns {
       run.acceptingGuidance = false;
       await run.guidanceTail;
       if (started) {
+        await flushStreams().catch(() => undefined);
         const fileChanges = await finishFiles();
         const failed = await this.store.update(sessionId, (record) => {
           record.status = run.controller.signal.aborted ? "cancelled" : "error"; record.error = (run.controller.signal.aborted ? "已停止，保留部分回复" : error instanceof Error ? error.message : String(error)).slice(0, 4000);
