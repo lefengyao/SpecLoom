@@ -5,6 +5,7 @@ import type { OfflineDocumentBundle } from "../shared/offline-documents";
 import type { ChatSession } from "../shared/chat";
 export { AboutView } from "./AboutView";
 import { useStateChangeRefresh } from "./useWorkspace";
+import { useI18n } from "./i18n";
 
 function formatBytes(value: number): string {
   if (value < 1024) return `${value} B`;
@@ -13,6 +14,7 @@ function formatBytes(value: number): string {
 }
 
 export function OfflineDocsView({ api, onError }: { api: DesktopApi; onError: (error: unknown) => void }) {
+  const tr = useI18n();
   const [bundles, setBundles] = useState<OfflineDocumentBundle[]>([]);
   const [name, setName] = useState("");
   const [version, setVersion] = useState("");
@@ -71,7 +73,7 @@ export function OfflineDocsView({ api, onError }: { api: DesktopApi; onError: (e
     } catch (error) { onError(error); } finally { setImportState(undefined); }
   }
   return <section className="standard-view">
-    <header className="standard-view-header"><div><span className="eyebrow">工具</span><h1>离线文档</h1><p className="subtle">按版本管理全局离线资料，启用后可供会话按需读取。</p></div></header>
+    <header className="standard-view-header"><div><span className="eyebrow">{tr("工具")}</span><h1>{tr("离线文档")}</h1><p className="subtle">{tr("按版本管理全局离线资料，启用后可供会话按需读取。")}</p></div></header>
     <div className="form-grid compact-form">
       <label>文档包名称<input disabled={busy} value={name} onChange={(event) => setName(event.target.value)} placeholder="例如 Godot 文档" /></label>
       <label>版本号<input disabled={busy} value={version} onChange={(event) => setVersion(event.target.value)} placeholder="例如 4.7.1" /></label>
@@ -91,6 +93,7 @@ export function OfflineDocsView({ api, onError }: { api: DesktopApi; onError: (e
 
 const hookEvents: HookEvent[] = ["session.before", "session.after", "tool.before", "tool.after"];
 export function HooksView({ api, onError, active = true }: { api: DesktopApi; onError: (error: unknown) => void; active?: boolean }) {
+  const tr = useI18n();
   const [hooks, setHooks] = useState<HookDefinition[]>([]); const [editing, setEditing] = useState<Partial<HookDefinition>>({ event: "session.before", timeoutMs: 30000, enabled: true }); const [busy, setBusy] = useState(false);
   const requestSeq = useRef(0);
   const refresh = useCallback(async () => {
@@ -106,7 +109,7 @@ export function HooksView({ api, onError, active = true }: { api: DesktopApi; on
     return () => { requestSeq.current++; };
   }, [active, refresh]);
   async function save() { if (!api.hooks || !editing.name || !editing.command || !editing.event) return; setBusy(true); try { await api.hooks.save({ id: editing.id, name: editing.name, event: editing.event, command: editing.command, shell: editing.shell, timeoutMs: editing.timeoutMs ?? 30000, enabled: editing.enabled ?? true }); setEditing({ event: "session.before", timeoutMs: 30000, enabled: true }); await refresh(); } catch (error) { onError(error); } finally { setBusy(false); } }
-  return <section className="standard-view"><header className="standard-view-header"><div><span className="eyebrow">工具</span><h1>Hooks</h1><p className="subtle">在会话和工具调用前后运行本地命令。失败会记录状态，不会阻断主流程。</p></div></header>
+  return <section className="standard-view"><header className="standard-view-header"><div><span className="eyebrow">{tr("工具")}</span><h1>Hooks</h1><p className="subtle">{tr("在会话和工具调用前后运行本地命令。失败会记录状态，不会阻断主流程。")}</p></div></header>
     <div className="settings-card"><div className="form-grid compact-form"><label>名称<input value={editing.name ?? ""} onChange={(event) => setEditing({ ...editing, name: event.target.value })} /></label><label>事件<select value={editing.event ?? "session.before"} onChange={(event) => setEditing({ ...editing, event: event.target.value as HookEvent })}>{hookEvents.map((item) => <option key={item}>{item}</option>)}</select></label><label>命令<input value={editing.command ?? ""} onChange={(event) => setEditing({ ...editing, command: event.target.value })} placeholder="读取 stdin 中的 JSON" /></label><label>超时（毫秒）<input type="number" value={editing.timeoutMs ?? 30000} onChange={(event) => setEditing({ ...editing, timeoutMs: Number(event.target.value) })} /></label><label className="checkbox-label"><input type="checkbox" checked={editing.enabled ?? true} onChange={(event) => setEditing({ ...editing, enabled: event.target.checked })} />启用</label></div><button className="primary" disabled={busy || !editing.name || !editing.command} onClick={() => void save()}>保存 Hook</button></div>
     <div className="stack-list">{hooks.map((hook) => <article className="settings-card" key={hook.id}><div className="settings-card-heading"><div><h2>{hook.name}</h2><p className="subtle">{hook.event} · {hook.command}</p></div><label className="checkbox-label"><input type="checkbox" checked={hook.enabled} onChange={() => void api.hooks?.setEnabled(hook.id, !hook.enabled).then(refresh).catch(onError)} />启用</label></div><p className="subtle">{hook.lastRun ? `${hook.lastRun.ok ? "成功" : "失败"} · ${hook.lastRun.message}` : "尚未运行"}</p><div className="button-row"><button onClick={() => void api.hooks?.test(hook.id).then(refresh).catch(onError)}>测试运行</button><button className="danger-ghost" onClick={() => void api.hooks?.remove(hook.id).then(refresh).catch(onError)}>删除</button></div></article>)}</div>
   </section>;
@@ -116,6 +119,7 @@ const builtinTools = [
   ["Read / Write / Edit", "读取、创建和精确修改项目文件。"], ["Glob / Grep", "按模式查找文件和搜索内容。"], ["Bash", "在项目隔离环境中运行受控命令。"], ["Godot MCP", "官方插件提供 8 个只读工具：诊断、Output 日志、编辑器/游戏截图、项目信息和场景/运行节点检查。"], ["Skill / Agent", "加载项目技能并委派子任务。"], ["OfflineDocsList / OfflineDocsRead", "访问已启用离线文档的索引和文本内容。"],
 ] as const;
 export function ToolDocsView({ api, projectPath }: { api?: DesktopApi; projectPath?: string }) {
+  const tr = useI18n();
   const [dynamic, setDynamic] = useState<string[]>([]);
   useEffect(() => {
     if (!api?.sessions || !projectPath) return;
@@ -135,9 +139,10 @@ export function ToolDocsView({ api, projectPath }: { api?: DesktopApi; projectPa
     void api.sessions.list(projectPath).then(sessions => { if (alive) { sessions.forEach(apply); publish(); } }).catch(() => undefined);
     return () => { alive = false; unsubscribe(); };
   }, [api?.sessions, projectPath]);
-  return <section className="standard-view"><header className="standard-view-header"><div><span className="eyebrow">工具</span><h1>工具说明</h1><p className="subtle">模型会搜索可用工具，加载参数，执行调用，接收结果后继续推理。</p></div></header><div className="tool-flow"><span>搜索工具</span><span>加载参数</span><span>执行工具</span><span>接收结果</span><span>继续推理</span></div><div className="stack-list">{builtinTools.map(([name, description]) => <article className="settings-card" key={name}><h2>{name}</h2><p>{description}</p><code>{`{ "name": "${name.split(" /")[0]}", "input": { ... } }`}</code></article>)}{dynamic.map((name) => <article className="settings-card" key={`dynamic-${name}`}><h2>{name}</h2><p>来自当前会话能力或 MCP 连接的动态工具。</p></article>)}</div></section>; }
+  return <section className="standard-view"><header className="standard-view-header"><div><span className="eyebrow">{tr("工具")}</span><h1>{tr("工具说明")}</h1><p className="subtle">{tr("模型会搜索可用工具，加载参数，执行调用，接收结果后继续推理。")}</p></div></header><div className="tool-flow"><span>搜索工具</span><span>加载参数</span><span>执行工具</span><span>接收结果</span><span>继续推理</span></div><div className="stack-list">{builtinTools.map(([name, description]) => <article className="settings-card" key={name}><h2>{name}</h2><p>{description}</p><code>{`{ "name": "${name.split(" /")[0]}", "input": { ... } }`}</code></article>)}{dynamic.map((name) => <article className="settings-card" key={`dynamic-${name}`}><h2>{name}</h2><p>来自当前会话能力或 MCP 连接的动态工具。</p></article>)}</div></section>; }
 
 export function ArchivedSessionsView({ api, projectPath, onError, onSelect }: { api: DesktopApi; projectPath: string; onError: (error: unknown) => void; onSelect: (session: ChatSession) => void }) {
+  const tr = useI18n();
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const eventSnapshots = useRef(new Map<string, ChatSession>());
   const refreshRequest = useRef(0);
@@ -185,6 +190,6 @@ export function ArchivedSessionsView({ api, projectPath, onError, onSelect }: { 
     return () => { alive = false; unsubscribe?.(); unsubscribeChanges?.(); ++refreshRequest.current; };
   }, [api.sessions, projectPath, refresh]);
   function download(value: string, session: ChatSession) { const blob = new Blob([value], { type: "application/json" }); const url = URL.createObjectURL(blob); const anchor = document.createElement("a"); anchor.href = url; anchor.download = `${session.title.replace(/[\\/:*?"<>|]/g, "_") || "session"}.json`; anchor.click(); URL.revokeObjectURL(url); }
-  return <section className="standard-view"><header className="standard-view-header"><div><span className="eyebrow">工具</span><h1>归档会话</h1><p className="subtle">恢复、导出或永久删除当前项目的归档会话。</p></div></header><div className="stack-list">{sessions.length === 0 && <p className="empty-state">没有归档会话。</p>}{sessions.map((session) => <article className="settings-card" key={session.id}><div className="settings-card-heading"><div><h2>{session.title}</h2><p className="subtle">更新于 {new Date(session.updatedAt).toLocaleString()}</p></div></div><div className="button-row"><button onClick={() => void api.sessions?.patch(projectPath, session.id, { archived: false }).then((updated) => { eventSnapshots.current.set(updated.id, { ...updated, items: [] }); onSelect(updated); void refresh(); }).catch(onError)}>恢复</button><button onClick={() => void api.sessions?.export(projectPath, session.id).then((value) => download(value, session)).catch(onError)}>导出</button><button className="danger-ghost" onClick={() => { if (window.confirm("永久删除此会话？")) void api.sessions?.remove(projectPath, session.id).then(() => { eventSnapshots.current.delete(session.id); void refresh(); }).catch(onError); }}>永久删除</button></div></article>)}</div></section>;
+  return <section className="standard-view"><header className="standard-view-header"><div><span className="eyebrow">{tr("工具")}</span><h1>{tr("归档会话")}</h1><p className="subtle">{tr("恢复、导出或永久删除当前项目的归档会话。")}</p></div></header><div className="stack-list">{sessions.length === 0 && <p className="empty-state">{tr("没有归档会话。")}</p>}{sessions.map((session) => <article className="settings-card" key={session.id}><div className="settings-card-heading"><div><h2>{session.title}</h2><p className="subtle">更新于 {new Date(session.updatedAt).toLocaleString()}</p></div></div><div className="button-row"><button onClick={() => void api.sessions?.patch(projectPath, session.id, { archived: false }).then((updated) => { eventSnapshots.current.set(updated.id, { ...updated, items: [] }); onSelect(updated); void refresh(); }).catch(onError)}>{tr("恢复")}</button><button onClick={() => void api.sessions?.export(projectPath, session.id).then((value) => download(value, session)).catch(onError)}>{tr("导出")}</button><button className="danger-ghost" onClick={() => { if (window.confirm("永久删除此会话？")) void api.sessions?.remove(projectPath, session.id).then(() => { eventSnapshots.current.delete(session.id); void refresh(); }).catch(onError); }}>{tr("永久删除")}</button></div></article>)}</div></section>;
 }
 

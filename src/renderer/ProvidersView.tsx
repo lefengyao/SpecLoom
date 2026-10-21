@@ -5,6 +5,7 @@ import { errorMessage } from "../shared/error-message";
 import { type ModelReference, type ProviderInput, type ProviderPublic, type ReasoningLevel } from "../shared/contracts";
 import { formatModelConfigJson, parseModelSettingsJson } from "../main/core/model-json";
 import { resolveModelSettings } from "../main/core/model-settings";
+import { useI18n } from "./i18n";
 
 type ProviderApi = NonNullable<DesktopApi["providers"]>;
 
@@ -97,6 +98,7 @@ export function ProvidersView({
   onRefresh: () => Promise<void>;
   onError: (error: unknown) => void;
 }) {
+  const tr = useI18n();
   const providerApi = api.providers;
   const [providers, setProviders] = useState<ProviderPublic[]>(initialProviders);
   const [editing, setEditing] = useState<ProviderPublic | "new">();
@@ -107,7 +109,7 @@ export function ProvidersView({
   }, [initialProviders]);
 
   if (!providerApi) {
-    return <section className="standard-view"><header className="section-heading"><div><h1>供应商与模型</h1><span className="subtle">当前桌面主进程尚未启用供应商注册表</span></div></header><p className="empty-state">请重启软件以加载新版供应商功能。</p></section>;
+    return <section className="standard-view"><header className="section-heading"><div><h1>{tr("供应商与模型")}</h1><span className="subtle">{tr("当前桌面主进程尚未启用供应商注册表")}</span></div></header><p className="empty-state">{tr("请重启软件以加载新版供应商功能。")}</p></section>;
   }
   const providerRegistry: ProviderApi = providerApi;
 
@@ -153,8 +155,8 @@ export function ProvidersView({
   return (
     <section className="standard-view providers-view">
       <header className="section-heading">
-        <div><h1>供应商与模型</h1><span className="subtle">先配置连接，再管理供应商下的模型能力</span></div>
-        <button className="primary" type="button" onClick={() => setEditing("new")}><Plus size={16} />添加供应商</button>
+        <div><h1>{tr("供应商与模型")}</h1><span className="subtle">{tr("先配置连接，再管理供应商下的模型能力")}</span></div>
+        <button className="primary" type="button" onClick={() => setEditing("new")}><Plus size={16} />{tr("添加供应商")}</button>
       </header>
       <div className="provider-list">
         {providers.map((provider) => (
@@ -165,14 +167,14 @@ export function ProvidersView({
               <div className="provider-card-status"><span className={`status ${provider.credentialStatus === "needs-reconfiguration" ? "status-staged" : provider.hasKey ? "status-applied" : "status-staged"}`}>{credentialStatusLabel(provider)}</span><span>{provider.models.length} 个模型</span><span>{keyStorageLabel(provider)}</span>{provider.keyPreview && <code>{provider.keyPreview}</code>}</div>
             </div>
             <div className="toolbar provider-card-actions">
-              <button type="button" onClick={() => setManagerId(provider.id)} aria-label={`管理 ${provider.name} 的模型`}><Pencil size={15} />模型管理</button>
-              <button type="button" onClick={() => setEditing(provider)} aria-label={`编辑 ${provider.name}`}><Pencil size={15} />编辑供应商</button>
+              <button type="button" onClick={() => setManagerId(provider.id)} aria-label={`管理 ${provider.name} 的模型`}><Pencil size={15} />{tr("模型管理")}</button>
+              <button type="button" onClick={() => setEditing(provider)} aria-label={`编辑 ${provider.name}`}><Pencil size={15} />{tr("编辑供应商")}</button>
               <button type="button" disabled={busy} onClick={() => void removeProvider(provider)} aria-label={`删除供应商 ${provider.name}`}><Trash2 size={15} /></button>
             </div>
           </article>
         ))}
       </div>
-      {!providers.length && <p className="empty-state">尚未配置供应商</p>}
+      {!providers.length && <p className="empty-state">{tr("尚未配置供应商")}</p>}
       {editing && <ProviderForm {...(editing === "new" ? {} : { provider: editing })} busy={busy} onCancel={() => setEditing(undefined)} onSave={(input) => void saveProvider(input)} />}
     </section>
   );
@@ -199,6 +201,7 @@ function ProviderForm({ provider, busy, onCancel, onSave }: { provider?: Provide
 }
 
 function ProviderModelManager({ provider, providerApi, api, defaultModel, busy, onBack, onSaved, onError }: { provider: ProviderPublic; providerApi: ProviderApi; api: DesktopApi; defaultModel?: ModelReference; busy: boolean; onBack: () => void; onSaved: (providers: ProviderPublic[]) => void; onError: (error: unknown) => void }) {
+  const tr = useI18n();
   const [models, setModels] = useState(() => dedupeModels(provider.models));
   const [settings, setSettings] = useState(() => structuredClone(provider.modelSettings));
   const [selectedModel, setSelectedModel] = useState(() => defaultModel?.providerId === provider.id && models.includes(defaultModel.model) ? defaultModel.model : models[0]);
@@ -342,24 +345,24 @@ function ProviderModelManager({ provider, providerApi, api, defaultModel, busy, 
 
   return (
     <section className="standard-view providers-view model-manager-view">
-      <header className="section-heading"><div><button type="button" className="link-button" onClick={onBack}>供应商列表</button><h1>{provider.name} · 模型管理</h1><span className="subtle">{provider.baseUrl} · {provider.protocol}</span></div><button className="primary" type="button" disabled={busy} onClick={() => void saveModels()}><Save size={16} />保存模型配置</button></header>
+      <header className="section-heading"><div><button type="button" className="link-button" onClick={onBack}>供应商列表</button><h1>{provider.name} · {tr("模型管理")}</h1><span className="subtle">{provider.baseUrl} · {provider.protocol}</span></div><button className="primary" type="button" disabled={busy} onClick={() => void saveModels()}><Save size={16} />{tr("保存模型配置")}</button></header>
       <div className="model-manager-layout">
         <aside className="model-manager-sidebar">
-          <div className="model-manager-toolbar"><strong>已配置模型</strong><span>{models.length}</span></div>
-          <label className="search-field"><Search size={15} /><input aria-label="搜索已配置模型" value={configuredQuery} onChange={(event) => setConfiguredQuery(event.target.value)} placeholder="搜索已配置模型" /></label>
+          <div className="model-manager-toolbar"><strong>{tr("已配置模型")}</strong><span>{models.length}</span></div>
+          <label className="search-field"><Search size={15} /><input aria-label="搜索已配置模型" value={configuredQuery} onChange={(event) => setConfiguredQuery(event.target.value)} placeholder={tr("搜索已配置模型")} /></label>
           {filteredModels.map((model) => <div className={`managed-model ${selectedModel === model ? "selected" : ""}`} key={model}><button type="button" aria-label={`选择模型 ${model}`} onClick={() => selectModel(model)}><span>{model}</span>{defaultModel?.providerId === provider.id && defaultModel.model === model && <Check size={14} />}</button><button type="button" aria-label={`删除模型 ${model}`} onClick={() => removeModel(model)}><Trash2 size={14} /></button></div>)}
-          {!models.length && <p className="empty-state">尚未添加模型</p>}
-          {models.length > 0 && filteredModels.length === 0 && <p className="empty-state">没有匹配的模型</p>}
+          {!models.length && <p className="empty-state">{tr("尚未添加模型")}</p>}
+          {models.length > 0 && filteredModels.length === 0 && <p className="empty-state">{tr("没有匹配的模型")}</p>}
           <label className="manual-model-field">手动模型 ID<input aria-label="手动模型 ID" value={manualModel} onChange={(event) => setManualModel(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addManual(); } }} /></label>
           <button type="button" onClick={addManual} disabled={!manualModel.trim()}><Plus size={15} />手动添加</button>
         </aside>
         <div className="model-manager-content">
           <section className="model-discovery-panel">
-            <div className="model-manager-toolbar"><h2>发现模型</h2><button type="button" onClick={() => void discover()}><RefreshCw size={15} />拉取模型列表</button></div>
-            <label className="search-field"><Search size={15} /><input aria-label="搜索待添加模型" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索待添加模型" /></label>
+            <div className="model-manager-toolbar"><h2>{tr("发现模型")}</h2><button type="button" onClick={() => void discover()}><RefreshCw size={15} />{tr("拉取模型列表")}</button></div>
+            <label className="search-field"><Search size={15} /><input aria-label="搜索待添加模型" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={tr("搜索待添加模型")} /></label>
             {error && <p className="provider-inline-error">{error}</p>}
             <div className="discovered-models">{candidates.map((model) => <label key={model}><input type="checkbox" aria-label={`添加 ${model}`} checked={checked.includes(model)} onChange={(event) => setChecked((current) => event.target.checked ? [...current, model] : current.filter((item) => item !== model))} />{model}</label>)}{!candidates.length && <span className="subtle">拉取列表后显示可添加模型</span>}</div>
-            <button type="button" disabled={!checked.length} onClick={addSelected}><Plus size={15} />添加所选模型</button>
+            <button type="button" disabled={!checked.length} onClick={addSelected}><Plus size={15} />{tr("添加所选模型")}</button>
           </section>
           {selectedModel && effective ? <section className="model-settings-panel">
             <div className="model-manager-toolbar"><div><h2>{selectedModel}</h2><span className="subtle">{effective.source}</span></div><div className="capability-badges"><span className={effective.reasoningSupport ? "capability-on" : ""}>思考</span><span className={effective.vision ? "capability-on" : ""}>图片</span><button type="button" disabled={!((api as DesktopApi & { setDefaultModel?: unknown }).setDefaultModel)} onClick={() => void makeDefault()}>{defaultModel?.providerId === provider.id && defaultModel.model === selectedModel ? "当前默认" : "设为默认"}</button></div></div>

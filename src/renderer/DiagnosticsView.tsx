@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { DiagnosticEvent, DiagnosticQuery } from "../shared/diagnostics";
 import type { DiagnosticsApi } from "../shared/desktop-api";
+import { useI18n } from "./i18n";
 
 const eventLabels: Record<DiagnosticEvent["type"], string> = {
   request_started: "请求开始",
@@ -42,6 +43,7 @@ function EventCard({ event }: { event: DiagnosticEvent }) {
 }
 
 export function DiagnosticsView({ api }: { api: DiagnosticsApi }) {
+  const tr = useI18n();
   const [summary, setSummary] = useState<Awaited<ReturnType<DiagnosticsApi["summary"]>>>();
   const [events, setEvents] = useState<DiagnosticEvent[]>([]);
   const [text, setText] = useState("");
@@ -88,7 +90,7 @@ export function DiagnosticsView({ api }: { api: DiagnosticsApi }) {
   }
 
   return <section className="settings-group settings-group-wide diagnostics-view" aria-label="诊断日志">
-    <h2>诊断日志</h2>
+    <h2>{tr("诊断日志")}</h2>
     <p className="field-hint">用于定位模型请求阶段与传输错误。日志不包含提示词、回复、工具参数或凭据。</p>
     {summary && <div className="diagnostics-summary" aria-label="日志保留情况">
       <span>{summary.files} 个文件 · {formatBytes(summary.bytes)} · {summary.events} 条事件</span>

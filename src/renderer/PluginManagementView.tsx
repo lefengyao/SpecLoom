@@ -4,12 +4,14 @@ import type { DesktopApi } from "../shared/desktop-api";
 import type { GodotPluginEntry, PluginInventory, RevealPluginDirectoryTarget } from "../shared/godot-plugins";
 import type { ProjectMetadata } from "../shared/contracts";
 import { IconButton } from "./ui";
+import { useI18n } from "./i18n";
 import "./plugins.css";
 
 type PluginFilter = "all" | "enabled" | "disabled" | "attention";
 type PluginAction = "godot-mcp-install" | "godot-mcp-toggle" | string;
 
 export function PluginManagementView({ api, project, onError }: { api: DesktopApi; project: ProjectMetadata | undefined; onError: (error: unknown) => void }) {
+  const tr = useI18n();
   const [inventory, setInventory] = useState<PluginInventory>();
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState("");
@@ -76,8 +78,8 @@ export function PluginManagementView({ api, project, onError }: { api: DesktopAp
     finally { setBusy(undefined); }
   }
 
-  if (!project) return <section className="standard-view plugin-management-view"><div className="plugin-empty"><Puzzle size={27} /><h2>请先打开一个项目</h2><p>插件管理会读取当前项目中的 Godot 插件。</p></div></section>;
-  if (!isGodot) return <section className="standard-view plugin-management-view"><header className="section-heading"><div><h1>插件管理</h1><span className="subtle">{project.name}</span></div></header><div className="plugin-empty"><AlertTriangle size={27} /><h2>仅适用于 Godot 项目</h2><p>当前项目不包含 Godot 插件清单。</p></div></section>;
+  if (!project) return <section className="standard-view plugin-management-view"><div className="plugin-empty"><Puzzle size={27} /><h2>{tr("请先打开一个项目")}</h2><p>{tr("插件管理会读取当前项目中的 Godot 插件。")}</p></div></section>;
+  if (!isGodot) return <section className="standard-view plugin-management-view"><header className="section-heading"><div><h1>{tr("插件管理")}</h1><span className="subtle">{project.name}</span></div></header><div className="plugin-empty"><AlertTriangle size={27} /><h2>{tr("仅适用于 Godot 项目")}</h2><p>{tr("当前项目不包含 Godot 插件清单。")}</p></div></section>;
   if (!manager) return <section className="standard-view plugin-management-view"><div role="alert" className="plugin-inline-error">当前宿主没有提供插件管理接口。</div></section>;
 
   const godotMcp = inventory?.godotMcp;
@@ -93,7 +95,7 @@ export function PluginManagementView({ api, project, onError }: { api: DesktopAp
 
   return <section className="standard-view plugin-management-view">
     <header className="section-heading plugin-page-heading">
-      <div><h1>插件管理</h1><span className="subtle">{project.name} · Godot {project.godot.features[0] ?? project.godot.configVersion}</span></div>
+      <div><h1>{tr("插件管理")}</h1><span className="subtle">{project.name} · Godot {project.godot.features[0] ?? project.godot.configVersion}</span></div>
       <div className="toolbar">
         <button className="button secondary" disabled={!!busy} onClick={() => void reveal("project")}><FolderOpen size={15} />打开项目目录</button>
         <IconButton label="刷新插件列表" disabled={loading || !!busy} onClick={() => void refresh()}><RefreshCw size={16} className={loading ? "plugin-spin" : undefined} /></IconButton>
