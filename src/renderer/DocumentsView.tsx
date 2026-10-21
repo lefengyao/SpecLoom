@@ -471,7 +471,7 @@ export function DocumentsView({ api, projectPath, onError, busy, revision, categ
         <div><h2>{editorTitle}</h2>{file && <code className="version-text" title={file.path}>{dirty ? "有未保存修改" : "已保存"} · {file.path}</code>}</div>
         <div className="toolbar">
           <button className="tree-toggle" aria-controls="document-tree" aria-expanded={treeOpen} onClick={toggleTree}><PanelRight size={16} />项目树</button>
-          {usesCatalog && <button className="tree-toggle" aria-controls="material-explorer" aria-expanded={explorerOpen} onClick={() => setExplorerOpen((open) => !open)}><PanelLeft size={16} />{explorerOpen ? "收起资料" : "资料列表"}</button>}
+          {usesCatalog && <button className="tree-toggle" aria-controls="material-explorer" aria-expanded={explorerOpen} disabled={explorerOpen && !selectedPath} title={explorerOpen && !selectedPath ? "先选择一条资料，收起后才不会只剩空白" : explorerOpen ? "收起资料列表，放大详情" : "重新打开资料列表"} onClick={() => setExplorerOpen((open) => !open)}><PanelLeft size={16} />{explorerOpen ? "收起资料" : "资料列表"}</button>}
           {category !== "all" && <button disabled={busy || saving} onClick={() => beginCreation()}><FilePlus2 size={16} />{creationLabel}</button>}
           {file && category === "entity" && file.version !== "absent" && selectedMeta && <button disabled={busy || saving} onClick={() => beginCreation(selectedMeta.id)}><FilePlus2 size={16} />新建子实体</button>}
           {structured && <button onClick={() => setSourceMode((value) => !value)}>{sourceMode ? "详情编辑" : "源码编辑"}</button>}
