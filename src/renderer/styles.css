@@ -1529,10 +1529,20 @@ details summary {
   padding: 24px;
   min-width: 0;
 }
+.documents-layout:has(.document-editor.has-explorer) {
+  height: calc(100dvh - 60px);
+  min-height: 0;
+  overflow: hidden;
+}
+.documents-layout:has(.document-editor.has-explorer) .document-sidebar {
+  overflow-y: auto;
+}
 .document-editor.has-explorer {
   display: flex;
   flex-direction: column;
+  height: 100%;
   min-height: 0;
+  overflow: hidden;
 }
 .document-workspace {
   display: grid;
@@ -1557,7 +1567,9 @@ details summary {
 .document-detail-pane {
   min-width: 0;
   min-height: 0;
-  overflow: auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 .document-explorer-pane .material-explorer {
   margin-top: 0;
