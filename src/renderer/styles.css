@@ -1529,10 +1529,32 @@ details summary {
   padding: 24px;
   min-width: 0;
 }
-.documents-layout:has(.document-editor.has-explorer) {
+.documents-layout:has(.document-editor.has-explorer),
+.documents-layout:has(.document-editor:not(.has-explorer)) {
   height: calc(100dvh - 60px);
   min-height: 0;
   overflow: hidden;
+}
+.documents-layout:has(.document-editor:not(.has-explorer)) .document-sidebar {
+  overflow-y: auto;
+}
+.document-editor:not(.has-explorer) {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+.document-editor:not(.has-explorer) .project-text-preview,
+.document-detail-pane > .project-text-preview {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.document-editor:not(.has-explorer) .project-text-preview textarea,
+.document-detail-pane > .project-text-preview textarea {
+  flex: 1 1 auto;
+  min-height: 0;
+  resize: none;
 }
 .documents-layout:has(.document-editor.has-explorer) .document-sidebar {
   overflow-y: auto;
@@ -1565,6 +1587,8 @@ details summary {
   border-right: 1px solid var(--border);
 }
 .document-detail-pane {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   min-height: 0;
   overflow-y: auto;
