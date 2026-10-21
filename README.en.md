@@ -119,7 +119,7 @@ SpecLoom is licensed under the **GNU Affero General Public License v3.0 only (AG
 
 ## Status
 
-v0.1.9, source-development preview. Primarily a Windows desktop app; workflows, orchestrations, the Entity Workbench, and the materials editor are evolving quickly. Issues and PRs with concrete usage scenarios are welcome.
+v0.1.10, source-development preview. Primarily a Windows desktop app; workflows, orchestrations, the Entity Workbench, and the materials editor are evolving quickly. Issues and PRs with concrete usage scenarios are welcome.
 
 ---
 
