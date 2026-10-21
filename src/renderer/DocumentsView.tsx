@@ -51,6 +51,7 @@ function isUidPath(path: string): boolean {
 }
 
 function ResourceExplorer({ entries, selectedPath, onSelect }: { entries: ProjectTreeEntry[]; selectedPath: string | undefined; onSelect: (path: string) => void }) {
+  const tr = useI18n();
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState<ResourceKind | "*">("*");
   const resources = useMemo(() => entries
@@ -61,22 +62,22 @@ function ResourceExplorer({ entries, selectedPath, onSelect }: { entries: Projec
     .filter((entry) => entry.path.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))
     .sort((left, right) => left.path.localeCompare(right.path)), [entries, kind, query]);
   const counts = useMemo(() => (Object.keys(resourceLabels) as ResourceKind[]).map((value) => ({ value, count: entries.filter((entry) => entry.kind === "file" && resourceKind(entry.path) === value).length })), [entries]);
-  return <section className="resource-explorer" aria-label="资源管理器">
-    <header className="section-heading"><h3>资源管理器</h3><span className="subtle">{resources.length} 项</span></header>
+  return <section className="resource-explorer" aria-label={tr("资源管理器")}>
+    <header className="section-heading"><h3>{tr("资源管理器")}</h3><span className="subtle">{tr("{count} 项", { count: resources.length })}</span></header>
     <div className="resource-toolbar">
-      <input aria-label="搜索资源" placeholder="搜索资源路径" value={query} onChange={(event) => setQuery(event.target.value)} />
-      <select aria-label="筛选资源类型" value={kind} onChange={(event) => setKind(event.target.value as ResourceKind | "*")}>
-        <option value="*">全部类型</option>
-        {(Object.keys(resourceLabels) as ResourceKind[]).map((value) => <option key={value} value={value}>{resourceLabels[value]} ({counts.find((item) => item.value === value)?.count ?? 0})</option>)}
+      <input aria-label={tr("搜索资源")} placeholder={tr("搜索资源路径")} value={query} onChange={(event) => setQuery(event.target.value)} />
+      <select aria-label={tr("筛选资源类型")} value={kind} onChange={(event) => setKind(event.target.value as ResourceKind | "*")}>
+        <option value="*">{tr("全部类型")}</option>
+        {(Object.keys(resourceLabels) as ResourceKind[]).map((value) => <option key={value} value={value}>{tr(resourceLabels[value])} ({counts.find((item) => item.value === value)?.count ?? 0})</option>)}
       </select>
     </div>
-    <ul className="resource-list" aria-label="项目资源列表">
+    <ul className="resource-list" aria-label={tr("项目资源列表")}>
       {resources.map((entry) => {
         const Icon = entry.resourceKind === "image" ? FileImage : entry.resourceKind === "audio" ? FileAudio : entry.resourceKind === "video" ? FileVideo : entry.resourceKind === "font" ? Type : FileText;
-        return <li key={entry.path}><button type="button" title={entry.path} aria-pressed={selectedPath === entry.path} className="resource-row" onClick={() => onSelect(entry.path)}><Icon size={14} /><span>{entry.path}</span><small>{resourceLabels[entry.resourceKind]}</small></button></li>;
+        return <li key={entry.path}><button type="button" title={entry.path} aria-pressed={selectedPath === entry.path} className="resource-row" onClick={() => onSelect(entry.path)}><Icon size={14} /><span>{entry.path}</span><small>{tr(resourceLabels[entry.resourceKind])}</small></button></li>;
       })}
     </ul>
-    {!resources.length && <p className="empty-state">暂无匹配资源</p>}
+    {!resources.length && <p className="empty-state">{tr("暂无匹配资源")}</p>}
   </section>;
 }
 
@@ -253,7 +254,7 @@ export function DocumentsView({ api, projectPath, onError, busy, revision, categ
       if (cancelled || request !== readRequest.current) return;
       setDocuments(latest);
       const updated = latest.find((document) => document.path === path);
-      if (!updated) throw Object.assign(new Error("文档已不存在，请选择其他资料。"), { code: "FILE_NOT_FOUND", details: { path } });
+      if (!updated) throw Object.assign(new Error(tr("文档已不存在，请选择其他资料。")), { code: "FILE_NOT_FOUND", details: { path } });
       const result = await api.readDocument(updated.path, updated.version);
       if (!cancelled && request === readRequest.current && requestedPath.current === path) { setFile(result); setText(result.content); }
     }).catch((error) => { if (!cancelled && request === readRequest.current) onError(error); })
@@ -373,15 +374,15 @@ export function DocumentsView({ api, projectPath, onError, busy, revision, categ
     setCatalogFiles((current) => [...current.filter((item) => item.path !== saved.path), saved]);
   }
   async function saveMaterialGroupRegistry(registry: MaterialGroupRegistry): Promise<void> {
-    if (groupRegistrySaving) throw new Error("正在保存分组登记表，请稍后再试。");
+    if (groupRegistrySaving) throw new Error(tr("正在保存分组登记表，请稍后再试。"));
     setGroupRegistrySaving(true);
     try {
       const latest = await api.documents();
       const project = latest.find((item) => item.path.toLowerCase() === "specs/project.md");
-      if (!project) throw new Error("项目概览文件 specs/project.md 不存在，无法保存分组。");
+      if (!project) throw new Error(tr("项目概览文件 specs/project.md 不存在，无法保存分组。"));
       const current = await api.readDocument(project.path, project.version);
       const parsed = parseMaterial(current.content);
-      if (!parsed) throw new Error("项目概览文件 front matter 无法解析，分组没有保存。");
+      if (!parsed) throw new Error(tr("项目概览文件 front matter 无法解析，分组没有保存。"));
       const content = writeMaterial({ ...parsed.data, materialGroups: registry }, parsed.body);
       const saved = await api.saveDocument(projectPath, project.path, content, current.version);
       await recordSaved(saved);
@@ -390,7 +391,7 @@ export function DocumentsView({ api, projectPath, onError, busy, revision, categ
   async function saveMaterialGroupsForCategory(category: Exclude<DocumentCategory, "all">, groups: MaterialGroup[]): Promise<void> {
     const next = { ...groupRegistry, [category]: groups };
     const errors = validateMaterialGroupRegistry(next);
-    if (errors.length) throw new Error(`分组结构无效：${errors[0]}`);
+    if (errors.length) throw new Error(tr("分组结构无效：{detail}", { detail: errors[0] ?? "" }));
     await saveMaterialGroupRegistry(next);
   }
   async function createDocument(path: string, content: string): Promise<boolean> {
@@ -435,7 +436,7 @@ export function DocumentsView({ api, projectPath, onError, busy, revision, categ
     const open = expanded.has(node.key); const branch = node.children.length > 0;
     return <li key={node.key} role="treeitem" aria-expanded={branch ? open : undefined} aria-selected={node.material ? selectedPath === node.material.path : undefined}>
       <div className={`material-tree-row ${node.material && selectedPath === node.material.path ? "selected" : ""}`} style={{ paddingLeft: 8 + depth * 16 }}>
-        {branch ? <button className="tree-disclosure" aria-label={`${open ? "收起" : "展开"} ${node.label}`} onClick={() => toggleNode(node.key)}>{open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</button> : <span className="tree-spacer" />}
+        {branch ? <button className="tree-disclosure" aria-label={`${open ? tr("收起") : tr("展开")} ${node.label}`} onClick={() => toggleNode(node.key)}>{open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</button> : <span className="tree-spacer" />}
         <button className="tree-row" title={node.material?.path ?? node.label} onClick={() => node.material ? void selectFile(node.material.path) : toggleNode(node.key)}>{node.material ? <FileText size={15} /> : <Folder size={15} />}<span>{node.label}</span></button>
       </div>
       {branch && open && <ul role="group">{renderMaterialNodes(node.children, depth + 1)}</ul>}
@@ -457,9 +458,9 @@ export function DocumentsView({ api, projectPath, onError, busy, revision, categ
   }
   const detailContent = (
     <>
-      {catalogError && usesCatalog && <p role="alert" className="field-hint">部分资料读取失败，详情编辑暂不可用。可切换源码编辑或刷新项目树重试。</p>}
+      {catalogError && usesCatalog && <p role="alert" className="field-hint">{tr("部分资料读取失败，详情编辑暂不可用。可切换源码编辑或刷新项目树重试。")}</p>}
       {projectPreview ? ["image", "audio", "video"].includes(resourceKind(projectPreview) ?? "") ? <ProjectMediaPreview api={api} projectPath={projectPath} path={projectPreview} active={active} /> : <ProjectTextPreview api={api} projectPath={projectPath} path={projectPreview} active={active} /> : file ? structured && !sourceMode ? <form id="material-edit-form" onSubmit={(event) => { event.preventDefault(); void saveDocument(); }}>
-        <MaterialImageEditor key={`image:${file.path}`} api={api} projectPath={projectPath} title={selectedMeta?.title ?? "资料"} path={typeof material.data.image === "string" ? material.data.image : undefined} disabled={busy || saving || loading} onError={onError} onChange={(image) => {
+        <MaterialImageEditor key={`image:${file.path}`} api={api} projectPath={projectPath} title={selectedMeta?.title ?? tr("资料")} path={typeof material.data.image === "string" ? material.data.image : undefined} disabled={busy || saving || loading} onError={onError} onChange={(image) => {
           const data = { ...material.data };
           if (image) data.image = image; else delete data.image;
           updateText(writeMaterial(data, material.body));
@@ -484,7 +485,7 @@ export function DocumentsView({ api, projectPath, onError, busy, revision, categ
         <div><h2>{editorTitle}</h2>{file && <code className="version-text" title={file.path}>{dirty ? tr("有未保存修改") : tr("已保存")} · {file.path}</code>}</div>
         <div className="toolbar">
           <button className="tree-toggle" aria-controls="document-tree" aria-expanded={treeOpen} onClick={toggleTree}><PanelRight size={16} />{tr("项目树")}</button>
-          {usesCatalog && hasDetail && <button className="tree-toggle" aria-controls="material-explorer" aria-expanded={explorerOpen} title={explorerOpen ? "收起资料列表，放大详情" : "重新打开资料列表"} onClick={() => setExplorerOpen((open) => !open)}><PanelLeft size={16} />{explorerOpen ? tr("收起资料") : tr("资料列表")}</button>}
+          {usesCatalog && hasDetail && <button className="tree-toggle" aria-controls="material-explorer" aria-expanded={explorerOpen} title={explorerOpen ? tr("收起资料列表，放大详情") : tr("重新打开资料列表")} onClick={() => setExplorerOpen((open) => !open)}><PanelLeft size={16} />{explorerOpen ? tr("收起资料") : tr("资料列表")}</button>}
           {usesCatalog && hasDetail && <button className="tree-toggle" onClick={closeDetail}><X size={16} />{tr("关闭详情")}</button>}
           {category !== "all" && <button disabled={busy || saving} onClick={() => beginCreation()}><FilePlus2 size={16} />{creationLabel}</button>}
           {file && category === "entity" && file.version !== "absent" && selectedMeta && <button disabled={busy || saving} onClick={() => beginCreation(selectedMeta.id)}><FilePlus2 size={16} />{tr("新建子实体")}</button>}

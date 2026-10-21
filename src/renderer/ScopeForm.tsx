@@ -2,6 +2,7 @@ import { ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import { MAX_TASK_GOAL_LENGTH, type TaskScopeSpec } from "../shared/contracts";
 import { Modal } from "./ui";
+import { useI18n } from "./i18n";
 
 export const defaultScope: Omit<TaskScopeSpec, "id"> = {
   title: "实现守灯人移动与交互",
@@ -21,6 +22,7 @@ export function ScopeForm({
   onClose: () => void;
   onCreate: (scope: Omit<TaskScopeSpec, "id">) => Promise<void>;
 }) {
+  const tr = useI18n();
   const [title, setTitle] = useState(initial.title);
   const [goal, setGoal] = useState(initial.goal ?? "");
   const [read, setRead] = useState(initial.readPaths.join("\n"));
@@ -33,7 +35,7 @@ export function ScopeForm({
       .map((path) => path.trim())
       .filter(Boolean);
   return (
-    <Modal title="确认任务范围" onClose={onClose}>
+    <Modal title={tr("确认任务范围")} onClose={onClose}>
       <form
         className="form-stack"
         onSubmit={(event) => {
@@ -49,7 +51,7 @@ export function ScopeForm({
         }}
       >
         <label>
-          任务名称
+          {tr("任务名称")}
           <input
             required
             value={title}
@@ -57,22 +59,22 @@ export function ScopeForm({
           />
         </label>
         <label>
-          任务目标
+          {tr("任务目标")}
           <textarea
             aria-describedby="task-goal-hint"
             className="path-input"
             rows={3}
             maxLength={MAX_TASK_GOAL_LENGTH}
-            placeholder="这次实现要完成什么？留空时使用任务名称。"
+            placeholder={tr("这次实现要完成什么？留空时使用任务名称。")}
             value={goal}
             onChange={(event) => setGoal(event.target.value)}
           />
         </label>
         <span id="task-goal-hint" className="field-hint">
-          首次实现消息会启动默认工作流；目标会随任务保存。
+          {tr("首次实现消息会启动默认工作流；目标会随任务保存。")}
         </span>
         <label>
-          可读路径
+          {tr("可读路径")}
           <textarea
             required
             className="path-input"
@@ -82,7 +84,7 @@ export function ScopeForm({
           />
         </label>
         <label>
-          可写路径
+          {tr("可写路径")}
           <textarea
             className="path-input"
             rows={4}
@@ -92,16 +94,16 @@ export function ScopeForm({
         </label>
         <div className="form-row">
           <label>
-            提交模式
+            {tr("提交模式")}
             <select
-              aria-label="提交模式"
+              aria-label={tr("提交模式")}
               value={mode}
               onChange={(event) =>
                 setMode(event.target.value as TaskScopeSpec["mode"])
               }
             >
-              <option value="manual">手动审查</option>
-              <option value="auto">自动提交</option>
+              <option value="manual">{tr("手动审查")}</option>
+              <option value="auto">{tr("自动提交")}</option>
             </select>
           </label>
           <label className="checkbox-label">
@@ -110,19 +112,19 @@ export function ScopeForm({
               checked={allowDelete}
               onChange={(event) => setDelete(event.target.checked)}
             />
-            允许删除
+            {tr("允许删除")}
           </label>
         </div>
         <footer className="form-actions">
           <button type="button" onClick={onClose}>
-            取消
+            {tr("取消")}
           </button>
           <button
             className="primary"
             disabled={busy || !title.trim() || !paths(read).length}
           >
             <ShieldCheck size={16} />
-            确认范围并创建
+            {tr("确认范围并创建")}
           </button>
         </footer>
       </form>

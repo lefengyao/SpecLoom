@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import type { ModelProfile, ValidationDiagnostic, ValidationResult } from "../../shared/contracts";
 import type { WorkflowRetryAction, WorkflowRun, WorkflowRunInputs } from "../../shared/workflow-api";
+import { useI18n } from "../i18n";
 import { workflowNodeStatusLabels, workflowRunStatusLabels } from "./useWorkflow";
 
 const severityLabels: Record<ValidationDiagnostic["severity"], string> = {
@@ -49,6 +50,7 @@ export interface RunInputsFormProps {
  * collect exactly the same inputs; only the submit label differs.
  */
 export function RunInputsForm({ models, busy, active = false, submitLabel = "开始运行", onSubmit }: RunInputsFormProps) {
+  const tr = useI18n();
   const [goal, setGoal] = useState("");
   const [readPaths, setReadPaths] = useState("");
   const [writePaths, setWritePaths] = useState("");
@@ -60,15 +62,15 @@ export function RunInputsForm({ models, busy, active = false, submitLabel = "开
     const readList = parsePaths(readPaths);
     const writeList = parsePaths(writePaths);
     if (!goalText) {
-      setFormError("请填写运行目标。");
+      setFormError(tr("请填写运行目标。"));
       return;
     }
     if (!readList.length) {
-      setFormError("请至少填写一个读取路径（每行一个）。");
+      setFormError(tr("请至少填写一个读取路径（每行一个）。"));
       return;
     }
     if (!writeList.length) {
-      setFormError("请至少填写一个修改路径（每行一个）。");
+      setFormError(tr("请至少填写一个修改路径（每行一个）。"));
       return;
     }
     setFormError(undefined);
@@ -89,22 +91,22 @@ export function RunInputsForm({ models, busy, active = false, submitLabel = "开
       }}
     >
       <label className="workflow-field">
-        <span>目标</span>
-        <textarea rows={3} value={goal} placeholder="这次运行要完成什么" onChange={(event) => setGoal(event.target.value)} />
+        <span>{tr("目标")}</span>
+        <textarea rows={3} value={goal} placeholder={tr("这次运行要完成什么")} onChange={(event) => setGoal(event.target.value)} />
       </label>
       <label className="workflow-field">
-        <span>读取范围</span>
-        <textarea rows={3} value={readPaths} placeholder="例如 specs，每行一个" onChange={(event) => setReadPaths(event.target.value)} />
+        <span>{tr("读取范围")}</span>
+        <textarea rows={3} value={readPaths} placeholder={tr("例如 specs，每行一个")} onChange={(event) => setReadPaths(event.target.value)} />
       </label>
       <label className="workflow-field">
-        <span>修改范围</span>
-        <textarea rows={3} value={writePaths} placeholder="例如 specs/entities，每行一个" onChange={(event) => setWritePaths(event.target.value)} />
+        <span>{tr("修改范围")}</span>
+        <textarea rows={3} value={writePaths} placeholder={tr("例如 specs/entities，每行一个")} onChange={(event) => setWritePaths(event.target.value)} />
       </label>
       {models.length > 0 ? (
         <label className="workflow-field">
-          <span>模型</span>
+          <span>{tr("模型")}</span>
           <select value={model} onChange={(event) => setModel(event.target.value)}>
-            <option value="">使用默认模型</option>
+            <option value="">{tr("使用默认模型")}</option>
             {models.map((profile) => (
               <option key={profile.id} value={profile.id}>
                 {profile.name} · {profile.model}
@@ -114,18 +116,18 @@ export function RunInputsForm({ models, busy, active = false, submitLabel = "开
         </label>
       ) : (
         <label className="workflow-field">
-          <span>模型</span>
-          <input value={model} placeholder="输入模型 ID，留空使用默认模型" onChange={(event) => setModel(event.target.value)} />
+          <span>{tr("模型")}</span>
+          <input value={model} placeholder={tr("输入模型 ID，留空使用默认模型")} onChange={(event) => setModel(event.target.value)} />
         </label>
       )}
-      <p className="workflow-hint">路径每行一个，只能是项目内的相对路径。</p>
+      <p className="workflow-hint">{tr("路径每行一个，只能是项目内的相对路径。")}</p>
       {formError && (
         <p className="workflow-error" role="alert">
           {formError}
         </p>
       )}
       <button className="primary" type="submit" disabled={busy || active}>
-        {submitLabel}
+        {tr(submitLabel)}
       </button>
     </form>
   );
@@ -152,6 +154,7 @@ export function WorkflowRunDetails({
   onCancel,
   onRetry,
 }: WorkflowRunDetailsProps) {
+  const tr = useI18n();
   const active = activeStatuses.has(run.status);
   const approval = run.approval;
   const nodeLabels = useMemo(() => {
@@ -163,27 +166,27 @@ export function WorkflowRunDetails({
   return (
     <div className="workflow-run-body">
       <section className="workflow-run-section">
-        <h3>{heading}</h3>
+        <h3>{tr(heading)}</h3>
         <dl className="workflow-meta">
           <div>
-            <dt>状态</dt>
+            <dt>{tr("状态")}</dt>
             <dd>
-              <span className={"workflow-run-status wf-status-" + run.status}>{workflowRunStatusLabels[run.status]}</span>
+              <span className={"workflow-run-status wf-status-" + run.status}>{tr(workflowRunStatusLabels[run.status])}</span>
             </dd>
           </div>
           <div>
-            <dt>尝试</dt>
+            <dt>{tr("尝试")}</dt>
             <dd>{run.attempts}</dd>
           </div>
           <div>
-            <dt>运行 ID</dt>
+            <dt>{tr("运行 ID")}</dt>
             <dd>
               <code>{run.runId}</code>
             </dd>
           </div>
           <div>
-            <dt>模型</dt>
-            <dd>{run.resolvedModel ?? run.inputs.model ?? "默认模型"}</dd>
+            <dt>{tr("模型")}</dt>
+            <dd>{run.resolvedModel ?? run.inputs.model ?? tr("默认模型")}</dd>
           </div>
         </dl>
         {run.error && (
@@ -193,21 +196,21 @@ export function WorkflowRunDetails({
         )}
         {run.decisionPath && (
           <p className="workflow-hint">
-            决策文件：<code>{run.decisionPath}</code>
+            {tr("决策文件：")}<code>{run.decisionPath}</code>
           </p>
         )}
       </section>
 
       <section className="workflow-run-section">
-        <h3>节点时间线</h3>
+        <h3>{tr("节点时间线")}</h3>
         <ol className="workflow-timeline">
           {run.nodeStates.map((state) => (
             <li key={state.id} className={"workflow-timeline-item wf-status-" + state.status}>
               <div className="workflow-timeline-head">
                 <strong>{nodeLabels.get(state.id) ?? state.id}</strong>
-                <span className="workflow-timeline-state">{workflowNodeStatusLabels[state.status]}</span>
+                <span className="workflow-timeline-state">{tr(workflowNodeStatusLabels[state.status])}</span>
               </div>
-              <span className="workflow-timeline-meta">第 {state.attempts} 次</span>
+              <span className="workflow-timeline-meta">{tr("第 {count} 次", { count: state.attempts })}</span>
               {state.error && <p className="workflow-timeline-error">{truncate(state.error, 160)}</p>}
             </li>
           ))}
@@ -216,14 +219,14 @@ export function WorkflowRunDetails({
 
       {run.validation && (
         <section className="workflow-run-section">
-          <h3>校验结果</h3>
-          <p className="workflow-hint">状态：{validationStatusLabels[run.validation.status]}</p>
+          <h3>{tr("校验结果")}</h3>
+          <p className="workflow-hint">{tr("状态：{status}", { status: tr(validationStatusLabels[run.validation.status]) })}</p>
           {run.validation.checks.length > 0 && (
             <ul className="workflow-check-list">
               {run.validation.checks.map((check) => (
                 <li key={check.id}>
                   <span>{check.name}</span>
-                  <span className={"wf-status-" + check.status}>{validationStatusLabels[check.status]}</span>
+                  <span className={"wf-status-" + check.status}>{tr(validationStatusLabels[check.status])}</span>
                 </li>
               ))}
             </ul>
@@ -232,7 +235,7 @@ export function WorkflowRunDetails({
             <ul className="workflow-diagnostics">
               {run.validation.diagnostics.map((diagnostic, index) => (
                 <li key={index} className={"wf-severity-" + diagnostic.severity}>
-                  <span className="workflow-diagnostic-severity">{severityLabels[diagnostic.severity]}</span>
+                  <span className="workflow-diagnostic-severity">{tr(severityLabels[diagnostic.severity])}</span>
                   <span>{diagnostic.message}</span>
                   {diagnostic.path && <code>{diagnostic.path}</code>}
                 </li>
@@ -244,19 +247,19 @@ export function WorkflowRunDetails({
 
       {approval && (
         <section className="workflow-run-section workflow-approval">
-          <h3>审批</h3>
+          <h3>{tr("审批")}</h3>
           <p className="workflow-hint">
-            摘要：<code>{approval.digest}</code>
+            {tr("摘要：")}<code>{approval.digest}</code>
           </p>
-          {approval.approvedAt && <p className="workflow-hint">已于 {formatTime(approval.approvedAt)} 批准</p>}
-          {approval.autoApproved && <p className="workflow-hint">已由编排器自动批准。</p>}
+          {approval.approvedAt && <p className="workflow-hint">{tr("已于 {time} 批准", { time: formatTime(approval.approvedAt) ?? "" })}</p>}
+          {approval.autoApproved && <p className="workflow-hint">{tr("已由编排器自动批准。")}</p>}
           {run.status === "waiting_approval" && (
             <div className="workflow-button-row">
               <button className="primary" disabled={busy} onClick={() => onApprove(approval.digest)}>
-                批准并记录决策
+                {tr("批准并记录决策")}
               </button>
               <button disabled={busy} onClick={onReject}>
-                驳回并重新实现
+                {tr("驳回并重新实现")}
               </button>
             </div>
           )}
@@ -266,23 +269,23 @@ export function WorkflowRunDetails({
       {active && (
         <div className="workflow-button-row">
           <button disabled={busy} onClick={onCancel}>
-            取消运行
+            {tr("取消运行")}
           </button>
         </div>
       )}
 
       {run.status === "failed" && (
         <section className="workflow-run-section">
-          <h3>重试</h3>
+          <h3>{tr("重试")}</h3>
           <div className="workflow-button-row">
             <button disabled={busy} onClick={() => onRetry("plan")}>
-              重试规划
+              {tr("重试规划")}
             </button>
             <button disabled={busy} onClick={() => onRetry("implement")}>
-              重试实现
+              {tr("重试实现")}
             </button>
             <button disabled={busy} onClick={() => onRetry("validate")}>
-              重试校验
+              {tr("重试校验")}
             </button>
           </div>
         </section>
@@ -307,11 +310,12 @@ export interface WorkflowRunPanelProps {
  * component is shared with the orchestration panel's current child run.
  */
 export function WorkflowRunPanel({ models, run, busy, onStart, onApprove, onReject, onCancel, onRetry }: WorkflowRunPanelProps) {
+  const tr = useI18n();
   const active = run !== undefined && activeStatuses.has(run.status);
   return (
-    <section className="workflow-run" aria-label="运行面板">
+    <section className="workflow-run" aria-label={tr("运行面板")}>
       <header className="workflow-panel-heading">
-        <h2>运行</h2>
+        <h2>{tr("运行")}</h2>
       </header>
 
       <RunInputsForm models={models} busy={busy} active={active} onSubmit={onStart} />

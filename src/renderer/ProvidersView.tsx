@@ -5,7 +5,7 @@ import { errorMessage } from "../shared/error-message";
 import { type ModelReference, type ProviderInput, type ProviderPublic, type ReasoningLevel } from "../shared/contracts";
 import { formatModelConfigJson, parseModelSettingsJson } from "../main/core/model-json";
 import { resolveModelSettings } from "../main/core/model-settings";
-import { useI18n } from "./i18n";
+import { useI18n, type Translate } from "./i18n";
 
 type ProviderApi = NonNullable<DesktopApi["providers"]>;
 
@@ -41,10 +41,10 @@ function formatTokenPreset(value: number): string {
   return value.toLocaleString("en-US");
 }
 
-function tokenPresetOptions(defaultValue: number, currentValue: number | undefined, presets: readonly number[]): Array<{ value: string; label: string }> {
-  const options: Array<{ value: string; label: string }> = [{ value: "", label: `模型默认（${formatTokenPreset(defaultValue)}）` }];
+function tokenPresetOptions(defaultValue: number, currentValue: number | undefined, presets: readonly number[], tr: Translate): Array<{ value: string; label: string }> {
+  const options: Array<{ value: string; label: string }> = [{ value: "", label: tr("模型默认（{value}）", { value: formatTokenPreset(defaultValue) }) }];
   if (currentValue !== undefined) {
-    options.push({ value: String(currentValue), label: `当前值（${formatTokenPreset(currentValue)}）` });
+    options.push({ value: String(currentValue), label: tr("当前值（{value}）", { value: formatTokenPreset(currentValue) }) });
   }
   for (const preset of presets) {
     if (preset === defaultValue || preset === currentValue) continue;
@@ -163,13 +163,13 @@ export function ProvidersView({
           <article className="provider-card" key={provider.id}>
             <div className="provider-card-main">
               <div className="provider-card-title"><strong>{provider.name}</strong><code>{provider.id}</code></div>
-              <div className="provider-card-meta"><span>{PROTOCOLS.find(([id]) => id === provider.protocol)?.[1] ?? provider.protocol}</span><code>{provider.baseUrl}</code></div>
-              <div className="provider-card-status"><span className={`status ${provider.credentialStatus === "needs-reconfiguration" ? "status-staged" : provider.hasKey ? "status-applied" : "status-staged"}`}>{credentialStatusLabel(provider)}</span><span>{provider.models.length} 个模型</span><span>{keyStorageLabel(provider)}</span>{provider.keyPreview && <code>{provider.keyPreview}</code>}</div>
+              <div className="provider-card-meta"><span>{tr(PROTOCOLS.find(([id]) => id === provider.protocol)?.[1] ?? provider.protocol)}</span><code>{provider.baseUrl}</code></div>
+              <div className="provider-card-status"><span className={`status ${provider.credentialStatus === "needs-reconfiguration" ? "status-staged" : provider.hasKey ? "status-applied" : "status-staged"}`}>{tr(credentialStatusLabel(provider))}</span><span>{provider.models.length} {tr("个模型")}</span><span>{tr(keyStorageLabel(provider))}</span>{provider.keyPreview && <code>{provider.keyPreview}</code>}</div>
             </div>
             <div className="toolbar provider-card-actions">
-              <button type="button" onClick={() => setManagerId(provider.id)} aria-label={`管理 ${provider.name} 的模型`}><Pencil size={15} />{tr("模型管理")}</button>
-              <button type="button" onClick={() => setEditing(provider)} aria-label={`编辑 ${provider.name}`}><Pencil size={15} />{tr("编辑供应商")}</button>
-              <button type="button" disabled={busy} onClick={() => void removeProvider(provider)} aria-label={`删除供应商 ${provider.name}`}><Trash2 size={15} /></button>
+              <button type="button" onClick={() => setManagerId(provider.id)} aria-label={tr("管理 {name} 的模型", { name: provider.name })}><Pencil size={15} />{tr("模型管理")}</button>
+              <button type="button" onClick={() => setEditing(provider)} aria-label={tr("编辑 {name}", { name: provider.name })}><Pencil size={15} />{tr("编辑供应商")}</button>
+              <button type="button" disabled={busy} onClick={() => void removeProvider(provider)} aria-label={tr("删除供应商 {name}", { name: provider.name })}><Trash2 size={15} /></button>
             </div>
           </article>
         ))}
@@ -181,20 +181,21 @@ export function ProvidersView({
 }
 
 function ProviderForm({ provider, busy, onCancel, onSave }: { provider?: ProviderPublic; busy: boolean; onCancel: () => void; onSave: (input: ProviderInput) => void }) {
+  const tr = useI18n();
   const [name, setName] = useState(provider?.name ?? "");
   const [protocol, setProtocol] = useState<ProviderInput["protocol"]>(provider?.protocol ?? "openai");
   const [baseUrl, setBaseUrl] = useState(provider?.baseUrl ?? "https://api.openai.com/v1");
   const [secret, setSecret] = useState("");
   const needsCredentialReconfiguration = provider?.credentialStatus === "needs-reconfiguration";
   return (
-    <div className="provider-editor" role="dialog" aria-label={provider ? "编辑供应商" : "添加供应商"}>
-      <div className="provider-editor-heading"><div><h2>{provider ? "编辑供应商" : "添加供应商"}</h2><span className="subtle">API 密钥只在主进程保存，公开状态不会包含密钥内容</span>{needsCredentialReconfiguration && <p className="provider-inline-error" role="alert">当前密钥无法解密，请输入新的 API 密钥后保存，以恢复发送。</p>}</div><button type="button" onClick={onCancel} aria-label="关闭"><X size={16} /></button></div>
+    <div className="provider-editor" role="dialog" aria-label={tr(provider ? "编辑供应商" : "添加供应商")}>
+      <div className="provider-editor-heading"><div><h2>{tr(provider ? "编辑供应商" : "添加供应商")}</h2><span className="subtle">{tr("API 密钥只在主进程保存，公开状态不会包含密钥内容")}</span>{needsCredentialReconfiguration && <p className="provider-inline-error" role="alert">{tr("当前密钥无法解密，请输入新的 API 密钥后保存，以恢复发送。")}</p>}</div><button type="button" onClick={onCancel} aria-label={tr("关闭")}><X size={16} /></button></div>
       <form className="form-stack" onSubmit={(event) => { event.preventDefault(); onSave({ ...(provider ? { id: provider.id } : { id: idForNewProvider() }), name: name.trim(), protocol, baseUrl: baseUrl.trim(), models: provider?.models ?? [], modelSettings: provider?.modelSettings ?? {}, ...(secret.trim() ? { apiKey: secret } : {}) }); }}>
-        <label>供应商名称<input required aria-label="供应商名称" value={name} onChange={(event) => setName(event.target.value)} /></label>
-        <label>协议<select aria-label="协议" value={protocol} onChange={(event) => setProtocol(event.target.value as ProviderInput["protocol"])}>{PROTOCOLS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>
-        <label>服务地址<input required type="url" aria-label="服务地址" value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} /></label>
-        <label>API 密钥<input type="password" aria-label="API 密钥" autoComplete="new-password" value={secret} onChange={(event) => setSecret(event.target.value)} required={needsCredentialReconfiguration} placeholder={needsCredentialReconfiguration ? "请输入新的 API 密钥（必填）" : provider ? "留空以沿用现有密钥" : "可选"} /></label>
-        <div className="form-actions"><button type="button" onClick={onCancel}>取消</button><button className="primary" disabled={busy}><Save size={16} />保存供应商</button></div>
+        <label>{tr("供应商名称")}<input required aria-label={tr("供应商名称")} value={name} onChange={(event) => setName(event.target.value)} /></label>
+        <label>{tr("协议")}<select aria-label={tr("协议")} value={protocol} onChange={(event) => setProtocol(event.target.value as ProviderInput["protocol"])}>{PROTOCOLS.map(([id, label]) => <option key={id} value={id}>{tr(label)}</option>)}</select></label>
+        <label>{tr("服务地址")}<input required type="url" aria-label={tr("服务地址")} value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} /></label>
+        <label>{tr("API 密钥")}<input type="password" aria-label={tr("API 密钥")} autoComplete="new-password" value={secret} onChange={(event) => setSecret(event.target.value)} required={needsCredentialReconfiguration} placeholder={needsCredentialReconfiguration ? tr("请输入新的 API 密钥（必填）") : provider ? tr("留空以沿用现有密钥") : tr("可选")} /></label>
+        <div className="form-actions"><button type="button" onClick={onCancel}>{tr("取消")}</button><button className="primary" disabled={busy}><Save size={16} />{tr("保存供应商")}</button></div>
       </form>
     </div>
   );
@@ -218,8 +219,8 @@ function ProviderModelManager({ provider, providerApi, api, defaultModel, busy, 
   const modelDefaults = selectedModel ? resolveModelSettings(selectedModel) : undefined;
   const contextOverride = selectedModel ? settings[selectedModel]?.contextTokens : undefined;
   const outputOverride = selectedModel ? settings[selectedModel]?.maxOutputTokens : undefined;
-  const contextPresetOptions = modelDefaults ? tokenPresetOptions(modelDefaults.contextTokens, contextOverride, CONTEXT_TOKEN_PRESETS) : [];
-  const outputPresetOptions = modelDefaults ? tokenPresetOptions(modelDefaults.maxOutputTokens, outputOverride, OUTPUT_TOKEN_PRESETS) : [];
+  const contextPresetOptions = modelDefaults ? tokenPresetOptions(modelDefaults.contextTokens, contextOverride, CONTEXT_TOKEN_PRESETS, tr) : [];
+  const outputPresetOptions = modelDefaults ? tokenPresetOptions(modelDefaults.maxOutputTokens, outputOverride, OUTPUT_TOKEN_PRESETS, tr) : [];
   const candidates = useMemo(() => discovered.filter((model) => !models.includes(model) && model.toLowerCase().includes(query.trim().toLowerCase())), [discovered, models, query]);
   const filteredModels = useMemo(() => models.filter((model) => model.toLowerCase().includes(configuredQuery.trim().toLowerCase())), [models, configuredQuery]);
 
@@ -321,7 +322,7 @@ function ProviderModelManager({ provider, providerApi, api, defaultModel, busy, 
     try {
       const next = await providerApi.save({ id: provider.id, name: provider.name, protocol: provider.protocol, baseUrl: provider.baseUrl, models, modelSettings: settings });
       onSaved(next);
-      setSavedNotice("模型配置已保存");
+      setSavedNotice(tr("模型配置已保存"));
       setTimeout(() => setSavedNotice(undefined), 1800);
     } catch (cause) {
       setError(errorMessage(cause));
@@ -334,7 +335,7 @@ function ProviderModelManager({ provider, providerApi, api, defaultModel, busy, 
     if (!setDefaultModel) return;
     try {
       await setDefaultModel({ providerId: provider.id, model: selectedModel });
-      setSavedNotice("已设为默认模型");
+      setSavedNotice(tr("已设为默认模型"));
       setTimeout(() => setSavedNotice(undefined), 1800);
     } catch (cause) {
       onError(cause);
@@ -345,36 +346,36 @@ function ProviderModelManager({ provider, providerApi, api, defaultModel, busy, 
 
   return (
     <section className="standard-view providers-view model-manager-view">
-      <header className="section-heading"><div><button type="button" className="link-button" onClick={onBack}>供应商列表</button><h1>{provider.name} · {tr("模型管理")}</h1><span className="subtle">{provider.baseUrl} · {provider.protocol}</span></div><button className="primary" type="button" disabled={busy} onClick={() => void saveModels()}><Save size={16} />{tr("保存模型配置")}</button></header>
+      <header className="section-heading"><div><button type="button" className="link-button" onClick={onBack}>{tr("供应商列表")}</button><h1>{provider.name} · {tr("模型管理")}</h1><span className="subtle">{provider.baseUrl} · {provider.protocol}</span></div><button className="primary" type="button" disabled={busy} onClick={() => void saveModels()}><Save size={16} />{tr("保存模型配置")}</button></header>
       <div className="model-manager-layout">
         <aside className="model-manager-sidebar">
           <div className="model-manager-toolbar"><strong>{tr("已配置模型")}</strong><span>{models.length}</span></div>
-          <label className="search-field"><Search size={15} /><input aria-label="搜索已配置模型" value={configuredQuery} onChange={(event) => setConfiguredQuery(event.target.value)} placeholder={tr("搜索已配置模型")} /></label>
-          {filteredModels.map((model) => <div className={`managed-model ${selectedModel === model ? "selected" : ""}`} key={model}><button type="button" aria-label={`选择模型 ${model}`} onClick={() => selectModel(model)}><span>{model}</span>{defaultModel?.providerId === provider.id && defaultModel.model === model && <Check size={14} />}</button><button type="button" aria-label={`删除模型 ${model}`} onClick={() => removeModel(model)}><Trash2 size={14} /></button></div>)}
+          <label className="search-field"><Search size={15} /><input aria-label={tr("搜索已配置模型")} value={configuredQuery} onChange={(event) => setConfiguredQuery(event.target.value)} placeholder={tr("搜索已配置模型")} /></label>
+          {filteredModels.map((model) => <div className={`managed-model ${selectedModel === model ? "selected" : ""}`} key={model}><button type="button" aria-label={tr("选择模型 {model}", { model })} onClick={() => selectModel(model)}><span>{model}</span>{defaultModel?.providerId === provider.id && defaultModel.model === model && <Check size={14} />}</button><button type="button" aria-label={tr("删除模型 {model}", { model })} onClick={() => removeModel(model)}><Trash2 size={14} /></button></div>)}
           {!models.length && <p className="empty-state">{tr("尚未添加模型")}</p>}
           {models.length > 0 && filteredModels.length === 0 && <p className="empty-state">{tr("没有匹配的模型")}</p>}
-          <label className="manual-model-field">手动模型 ID<input aria-label="手动模型 ID" value={manualModel} onChange={(event) => setManualModel(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addManual(); } }} /></label>
-          <button type="button" onClick={addManual} disabled={!manualModel.trim()}><Plus size={15} />手动添加</button>
+          <label className="manual-model-field">{tr("手动模型 ID")}<input aria-label={tr("手动模型 ID")} value={manualModel} onChange={(event) => setManualModel(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addManual(); } }} /></label>
+          <button type="button" onClick={addManual} disabled={!manualModel.trim()}><Plus size={15} />{tr("手动添加")}</button>
         </aside>
         <div className="model-manager-content">
           <section className="model-discovery-panel">
             <div className="model-manager-toolbar"><h2>{tr("发现模型")}</h2><button type="button" onClick={() => void discover()}><RefreshCw size={15} />{tr("拉取模型列表")}</button></div>
-            <label className="search-field"><Search size={15} /><input aria-label="搜索待添加模型" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={tr("搜索待添加模型")} /></label>
+            <label className="search-field"><Search size={15} /><input aria-label={tr("搜索待添加模型")} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={tr("搜索待添加模型")} /></label>
             {error && <p className="provider-inline-error">{error}</p>}
-            <div className="discovered-models">{candidates.map((model) => <label key={model}><input type="checkbox" aria-label={`添加 ${model}`} checked={checked.includes(model)} onChange={(event) => setChecked((current) => event.target.checked ? [...current, model] : current.filter((item) => item !== model))} />{model}</label>)}{!candidates.length && <span className="subtle">拉取列表后显示可添加模型</span>}</div>
+            <div className="discovered-models">{candidates.map((model) => <label key={model}><input type="checkbox" aria-label={tr("添加 {model}", { model })} checked={checked.includes(model)} onChange={(event) => setChecked((current) => event.target.checked ? [...current, model] : current.filter((item) => item !== model))} />{model}</label>)}{!candidates.length && <span className="subtle">{tr("拉取列表后显示可添加模型")}</span>}</div>
             <button type="button" disabled={!checked.length} onClick={addSelected}><Plus size={15} />{tr("添加所选模型")}</button>
           </section>
           {selectedModel && effective ? <section className="model-settings-panel">
-            <div className="model-manager-toolbar"><div><h2>{selectedModel}</h2><span className="subtle">{effective.source}</span></div><div className="capability-badges"><span className={effective.reasoningSupport ? "capability-on" : ""}>思考</span><span className={effective.vision ? "capability-on" : ""}>图片</span><button type="button" disabled={!((api as DesktopApi & { setDefaultModel?: unknown }).setDefaultModel)} onClick={() => void makeDefault()}>{defaultModel?.providerId === provider.id && defaultModel.model === selectedModel ? "当前默认" : "设为默认"}</button></div></div>
-            <div className="model-capability-grid"><label className="checkbox-label"><input type="checkbox" aria-label="支持思考" checked={effective.reasoningSupport} onChange={(event) => patchSetting("reasoningSupport", event.target.checked)} />支持思考</label><label className="checkbox-label"><input type="checkbox" aria-label="支持图片输入" checked={effective.vision} onChange={(event) => patchSetting("vision", event.target.checked)} />支持图片输入</label><label>默认思考<select aria-label="默认思考" value={effective.reasoning} onChange={(event) => patchSetting("reasoning", event.target.value as ReasoningLevel)}>{["off", "low", "medium", "high"].map((level) => <option key={level} value={level}>{level}</option>)}</select></label><label>上下文 tokens<input type="number" min="1" aria-label="上下文 tokens" value={effective.contextTokens} onChange={(event) => patchSetting("contextTokens", Number(event.target.value))} /><select aria-label="上下文 tokens 预设" value={contextOverride === undefined ? "" : String(contextOverride)} onChange={(event) => selectTokenPreset("contextTokens", event.target.value)}>{contextPresetOptions.map((option) => <option key={option.value || option.label} value={option.value}>{option.label}</option>)}</select></label><label>输出 tokens<input type="number" min="1" aria-label="输出 tokens" value={effective.maxOutputTokens} onChange={(event) => patchSetting("maxOutputTokens", Number(event.target.value))} /><select aria-label="输出 tokens 预设" value={outputOverride === undefined ? "" : String(outputOverride)} onChange={(event) => selectTokenPreset("maxOutputTokens", event.target.value)}>{outputPresetOptions.map((option) => <option key={option.value || option.label} value={option.value} disabled={option.value !== "" && Number(option.value) > effective.contextTokens && Number(option.value) !== effective.maxOutputTokens}>{option.label}</option>)}</select></label></div>
+            <div className="model-manager-toolbar"><div><h2>{selectedModel}</h2><span className="subtle">{effective.source}</span></div><div className="capability-badges"><span className={effective.reasoningSupport ? "capability-on" : ""}>{tr("思考")}</span><span className={effective.vision ? "capability-on" : ""}>{tr("图片")}</span><button type="button" disabled={!((api as DesktopApi & { setDefaultModel?: unknown }).setDefaultModel)} onClick={() => void makeDefault()}>{defaultModel?.providerId === provider.id && defaultModel.model === selectedModel ? tr("当前默认") : tr("设为默认")}</button></div></div>
+            <div className="model-capability-grid"><label className="checkbox-label"><input type="checkbox" aria-label={tr("支持思考")} checked={effective.reasoningSupport} onChange={(event) => patchSetting("reasoningSupport", event.target.checked)} />{tr("支持思考")}</label><label className="checkbox-label"><input type="checkbox" aria-label={tr("支持图片输入")} checked={effective.vision} onChange={(event) => patchSetting("vision", event.target.checked)} />{tr("支持图片输入")}</label><label>{tr("默认思考")}<select aria-label={tr("默认思考")} value={effective.reasoning} onChange={(event) => patchSetting("reasoning", event.target.value as ReasoningLevel)}>{["off", "low", "medium", "high"].map((level) => <option key={level} value={level}>{level}</option>)}</select></label><label>{tr("上下文 tokens")}<input type="number" min="1" aria-label={tr("上下文 tokens")} value={effective.contextTokens} onChange={(event) => patchSetting("contextTokens", Number(event.target.value))} /><select aria-label={tr("上下文 tokens 预设")} value={contextOverride === undefined ? "" : String(contextOverride)} onChange={(event) => selectTokenPreset("contextTokens", event.target.value)}>{contextPresetOptions.map((option) => <option key={option.value || option.label} value={option.value}>{option.label}</option>)}</select></label><label>{tr("输出 tokens")}<input type="number" min="1" aria-label={tr("输出 tokens")} value={effective.maxOutputTokens} onChange={(event) => patchSetting("maxOutputTokens", Number(event.target.value))} /><select aria-label={tr("输出 tokens 预设")} value={outputOverride === undefined ? "" : String(outputOverride)} onChange={(event) => selectTokenPreset("maxOutputTokens", event.target.value)}>{outputPresetOptions.map((option) => <option key={option.value || option.label} value={option.value} disabled={option.value !== "" && Number(option.value) > effective.contextTokens && Number(option.value) !== effective.maxOutputTokens}>{option.label}</option>)}</select></label></div>
             <div className="model-reasoning-mapping">
-              <label className="checkbox-label"><input type="checkbox" aria-label="自定义思考参数映射" checked={effective.reasoningMap !== null} onChange={(event) => patchSetting("reasoningMap", event.target.checked ? { path: "", values: {} } : null)} />自定义思考参数映射</label>
-              {effective.reasoningMap !== null && <><label>官方参数路径<input aria-label="官方参数路径" value={effective.reasoningMap.path} onChange={(event) => updateMappingPath(event.target.value)} placeholder={provider.protocol === "anthropic" ? "thinking" : provider.protocol === "gemini" ? "generationConfig.thinkingConfig.thinkingBudget" : "reasoning_effort"} /></label><div className="model-mapping-values">{(["off", "low", "medium", "high"] as const).map((level) => <label key={level}>{level}<input aria-label={`${level} 思考映射值`} value={effective.reasoningMap?.values[level] ?? ""} onChange={(event) => updateMappingValue(level, event.target.value)} /></label>)}</div><span className="field-hint">字符串原样保存；请求时将数字、布尔值、JSON 对象解析为对应类型</span></>}
+              <label className="checkbox-label"><input type="checkbox" aria-label={tr("自定义思考参数映射")} checked={effective.reasoningMap !== null} onChange={(event) => patchSetting("reasoningMap", event.target.checked ? { path: "", values: {} } : null)} />{tr("自定义思考参数映射")}</label>
+              {effective.reasoningMap !== null && <><label>{tr("官方参数路径")}<input aria-label={tr("官方参数路径")} value={effective.reasoningMap.path} onChange={(event) => updateMappingPath(event.target.value)} placeholder={provider.protocol === "anthropic" ? "thinking" : provider.protocol === "gemini" ? "generationConfig.thinkingConfig.thinkingBudget" : "reasoning_effort"} /></label><div className="model-mapping-values">{(["off", "low", "medium", "high"] as const).map((level) => <label key={level}>{level}<input aria-label={tr("{level} 思考映射值", { level })} value={effective.reasoningMap?.values[level] ?? ""} onChange={(event) => updateMappingValue(level, event.target.value)} /></label>)}</div><span className="field-hint">{tr("字符串原样保存；请求时将数字、布尔值、JSON 对象解析为对应类型")}</span></>}
             </div>
-            <div className="json-editor-heading"><h2>完整 JSON 配置</h2><div className="toolbar"><button type="button" onClick={() => void clipboardWrite()} aria-label="复制 JSON"><Clipboard size={15} />复制</button><button type="button" onClick={() => void clipboardRead()} aria-label="粘贴 JSON"><ClipboardPaste size={15} />粘贴</button><button type="button" onClick={restoreJson} aria-label="恢复当前配置"><Download size={15} />恢复</button></div></div>
-            <textarea aria-label="完整 JSON 配置" value={json} onChange={(event) => setJson(event.target.value)} rows={14} spellCheck={false} />
-            <div className="form-actions"><span className="field-hint">schemaVersion: 1 · 最多 64000 字符</span><button type="button" onClick={applyJson}>应用 JSON</button>{savedNotice && <span className="status status-applied">{savedNotice}</span>}</div>
-          </section> : <p className="empty-state">选择或添加模型后编辑能力配置</p>}
+            <div className="json-editor-heading"><h2>{tr("完整 JSON 配置")}</h2><div className="toolbar"><button type="button" onClick={() => void clipboardWrite()} aria-label={tr("复制 JSON")}><Clipboard size={15} />{tr("复制")}</button><button type="button" onClick={() => void clipboardRead()} aria-label={tr("粘贴 JSON")}><ClipboardPaste size={15} />{tr("粘贴")}</button><button type="button" onClick={restoreJson} aria-label={tr("恢复当前配置")}><Download size={15} />{tr("恢复")}</button></div></div>
+            <textarea aria-label={tr("完整 JSON 配置")} value={json} onChange={(event) => setJson(event.target.value)} rows={14} spellCheck={false} />
+            <div className="form-actions"><span className="field-hint">schemaVersion: 1 · {tr("最多 64000 字符")}</span><button type="button" onClick={applyJson}>{tr("应用 JSON")}</button>{savedNotice && <span className="status status-applied">{savedNotice}</span>}</div>
+          </section> : <p className="empty-state">{tr("选择或添加模型后编辑能力配置")}</p>}
         </div>
       </div>
     </section>

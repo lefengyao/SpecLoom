@@ -1,6 +1,7 @@
 import { CheckCheck, RefreshCw, ShieldCheck, X } from "lucide-react";
 import type { ChangeReview } from "../shared/desktop-api";
 import type { ValidationResult } from "../shared/contracts";
+import { useI18n } from "./i18n";
 import { IconButton, isTerminal, Status } from "./ui";
 
 function DiffText({
@@ -33,11 +34,12 @@ export function ValidationReport({
 }: {
   result: ValidationResult | undefined;
 }) {
+  const tr = useI18n();
   const labels = { pass: "验证通过", fail: "验证失败", skipped: "验证跳过" };
   return (
-    <section className="validation-report" aria-label="验证结果">
+    <section className="validation-report" aria-label={tr("验证结果")}>
       <strong className={`validation-${result?.status ?? "unknown"}`}>
-        {result ? labels[result.status] : "尚未验证"}
+        {result ? tr(labels[result.status]) : tr("尚未验证")}
       </strong>
       {result && (
         <>
@@ -46,10 +48,10 @@ export function ValidationReport({
               <li key={check.id}>
                 <span className={`validation-${check.status}`}>
                   {check.status === "pass"
-                    ? "通过"
+                    ? tr("通过")
                     : check.status === "fail"
-                      ? "失败"
-                      : "跳过"}
+                      ? tr("失败")
+                      : tr("跳过")}
                 </span>
                 {check.name}
                 {check.exitCode !== undefined && (
@@ -57,7 +59,7 @@ export function ValidationReport({
                 )}
                 {(check.stderr || check.stdout) && (
                   <details>
-                    <summary>输出</summary>
+                    <summary>{tr("输出")}</summary>
                     <pre>{check.stderr || check.stdout}</pre>
                   </details>
                 )}
@@ -101,19 +103,20 @@ export function ReviewPane({
   onApprove: () => void;
   onReject: () => void;
 }) {
+  const tr = useI18n();
   const entries = review?.changeSet.entries ?? [];
   const final = review && isTerminal(review.changeSet.status);
   return (
     <section className="review-pane">
       <header className="section-heading">
         <div>
-          <h2>变更审查</h2>
-          <span className="subtle">{entries.length} 个文件</span>
+          <h2>{tr("变更审查")}</h2>
+          <span className="subtle">{tr("{count} 个文件", { count: entries.length })}</span>
         </div>
         <div className="toolbar">
           {review && <Status status={review.changeSet.status} />}
           <IconButton
-            label="刷新变更"
+            label={tr("刷新变更")}
             disabled={busy || running}
             onClick={onRefresh}
           >
@@ -124,7 +127,7 @@ export function ReviewPane({
       <ValidationReport result={review?.validation} />
       <div className="change-list">
         {entries.length === 0 ? (
-          <p className="empty-state">暂无暂存变更</p>
+          <p className="empty-state">{tr("暂无暂存变更")}</p>
         ) : (
           entries.map((entry) => {
             const before = review?.before[entry.path] ?? "",
@@ -135,19 +138,19 @@ export function ReviewPane({
                   <code>{entry.path}</code>
                   <span>
                     {entry.operation === "create"
-                      ? "新增"
+                      ? tr("新增")
                       : entry.operation === "delete"
-                        ? "删除"
-                        : "修改"}
+                        ? tr("删除")
+                        : tr("修改")}
                   </span>
                 </header>
                 <div className="diff-columns">
                   <section>
-                    <h3>提交前</h3>
+                    <h3>{tr("提交前")}</h3>
                     <DiffText content={before} other={after} kind="before" />
                   </section>
                   <section>
-                    <h3>提交后</h3>
+                    <h3>{tr("提交后")}</h3>
                     <DiffText content={after} other={before} kind="after" />
                   </section>
                 </div>
@@ -159,7 +162,7 @@ export function ReviewPane({
       {review && entries.length > 0 && (
         <footer className="review-footer">
           <code className="digest" title={review.changeSet.digest}>
-            摘要 {review.changeSet.digest}
+            {tr("摘要 {digest}", { digest: review.changeSet.digest })}
           </code>
           <div className="toolbar">
             <button
@@ -171,11 +174,11 @@ export function ReviewPane({
               onClick={onValidate}
             >
               <ShieldCheck size={16} />
-              验证
+              {tr("验证")}
             </button>
             <button disabled={busy || running || !!final} onClick={onReject}>
               <X size={16} />
-              拒绝变更
+              {tr("拒绝变更")}
             </button>
             <button
               className="primary"
@@ -183,7 +186,7 @@ export function ReviewPane({
               onClick={onApprove}
             >
               <CheckCheck size={16} />
-              批准并提交
+              {tr("批准并提交")}
             </button>
           </div>
         </footer>

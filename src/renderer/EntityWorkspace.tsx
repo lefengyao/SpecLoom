@@ -44,13 +44,13 @@ export const EntityWorkspace = memo(function EntityWorkspace(props: EntityWorksp
   }, [mode]);
 
   return (
-    <section className="entity-workspace" aria-label="实体">
+    <section className="entity-workspace" aria-label={tr("实体")}>
       <header className="entity-workspace-header">
         <div>
           <h1>{tr("实体")}</h1>
           <p className="subtle">{tr("在画布上拼接组件，或在详情 / 源码中编辑同一份资料。")}</p>
         </div>
-        <div className="entity-workspace-modes" role="tablist" aria-label="实体视图">
+        <div className="entity-workspace-modes" role="tablist" aria-label={tr("实体视图")}>
           {modes.map((item) => (
             <button
               key={item.id}

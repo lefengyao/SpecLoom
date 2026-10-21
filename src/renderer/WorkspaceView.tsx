@@ -2,6 +2,7 @@ import { ArrowUp, Plus, Square } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { ChangeReview, TaskView } from "../shared/desktop-api";
 import type { ModelProfile, ModelReference, ProviderPublic, ReasoningPreference, SessionModelPreference } from "../shared/contracts";
+import { useI18n } from "./i18n";
 import { ReviewPane } from "./ReviewPane";
 import { IconButton, isTerminal, Status } from "./ui";
 
@@ -49,6 +50,7 @@ function AgentComposer({
   onModelChange: (key: string, nextReasoning?: ReasoningPreference) => void;
   onStartConversation: ((model: string | ModelReference, prompt: string) => void | Promise<void>) | undefined;
 }) {
+  const tr = useI18n();
   const blocked = running || terminal;
   return (
     <form
@@ -66,8 +68,8 @@ function AgentComposer({
       }}
     >
       <textarea
-        aria-label="任务消息"
-        placeholder={empty ? "输入消息" : "输入任务消息"}
+        aria-label={tr("任务消息")}
+        placeholder={empty ? tr("输入消息") : tr("输入任务消息")}
         rows={3}
         value={prompt}
         disabled={blocked}
@@ -76,42 +78,42 @@ function AgentComposer({
       <footer>
         <div className="model-control">
           <select
-            aria-label="选择模型"
+            aria-label={tr("选择模型")}
             value={model?.key ?? ""}
             disabled={blocked}
             onChange={(event) => onModelChange(event.target.value)}
           >
             <option value="" disabled>
-              选择模型
+              {tr("选择模型")}
             </option>
             {options.map((item) => (
               <option value={item.key} key={item.key}>
                 {item.label}
-                {item.approved ? "" : " · 未授权"}
+                {item.approved ? "" : ` · ${tr("未授权")}`}
               </option>
             ))}
           </select>
           {model?.reference && typeof model.reference !== "string" && onSessionModel && (
             <select
-              aria-label="思考偏好"
+              aria-label={tr("思考偏好")}
               value={reasoning}
               disabled={blocked}
               onChange={(event) => onModelChange(model.key, event.target.value as ReasoningPreference)}
             >
-              {(["inherit", "off", "low", "medium", "high"] as const).map((level) => <option key={level} value={level}>{level === "inherit" ? "思考：继承模型默认" : `思考：${level}`}</option>)}
+              {(["inherit", "off", "low", "medium", "high"] as const).map((level) => <option key={level} value={level}>{level === "inherit" ? tr("思考：继承模型默认") : tr("思考：{level}", { level })}</option>)}
             </select>
           )}
           {!options.length && (
             <button type="button" onClick={onProviders}>
-              配置供应商
+              {tr("配置供应商")}
             </button>
           )}
-          {options.length > 0 && !model && <span className="field-hint">当前模型引用不可用，请重新选择</span>}
+          {options.length > 0 && !model && <span className="field-hint">{tr("当前模型引用不可用，请重新选择")}</span>}
         </div>
         {running ? (
           <button type="button" onClick={onCancel}>
             <Square size={14} />
-            停止
+            {tr("停止")}
           </button>
         ) : (
           <button
@@ -121,7 +123,7 @@ function AgentComposer({
             }
           >
             <ArrowUp size={16} />
-            发送
+            {tr("发送")}
           </button>
         )}
       </footer>
@@ -130,6 +132,7 @@ function AgentComposer({
 }
 
 export function AuditEvents({ task }: { task: TaskView }) {
+  const tr = useI18n();
   return (
     <ol className="audit-events">
       {task.events.map((event, index) => (
@@ -141,7 +144,7 @@ export function AuditEvents({ task }: { task: TaskView }) {
           </time>
           <code>{event.tool}</code>
           <span className={event.ok ? "event-ok" : "event-fail"}>
-            {event.ok ? "完成" : "失败"}
+            {event.ok ? tr("完成") : tr("失败")}
           </span>
           <span>{event.message}</span>
         </li>
@@ -195,6 +198,7 @@ export function WorkspaceView({
   onStartConversation?: (model: string | ModelReference, prompt: string) => void | Promise<void>;
   onRestart: () => void;
 }) {
+  const tr = useI18n();
   const [prompt, setPrompt] = useState("");
   const preferredModel = sessionModel ?? defaultModel;
   const [modelId, setModelId] = useState(preferredModel ? `${preferredModel.providerId}:${preferredModel.model}` : "");
@@ -228,8 +232,8 @@ export function WorkspaceView({
     <div className="workspace-grid">
       <aside className="task-sidebar">
         <header className="section-heading">
-          <h2>任务</h2>
-          <IconButton label="新建任务" onClick={onNew} disabled={busy}>
+          <h2>{tr("任务")}</h2>
+          <IconButton label={tr("新建任务")} onClick={onNew} disabled={busy}>
             <Plus size={18} />
           </IconButton>
         </header>
@@ -243,29 +247,29 @@ export function WorkspaceView({
               <strong>{task.scope.title}</strong>
               <Status status={task.status} running={task.running} />
               <span className="subtle">
-                {task.scope.mode === "manual" ? "手动审查" : "自动提交"}
+                {task.scope.mode === "manual" ? tr("手动审查") : tr("自动提交")}
               </span>
             </button>
           ))}
         </div>
-        {!tasks.length && <p className="empty-state">尚无任务</p>}
+        {!tasks.length && <p className="empty-state">{tr("尚无任务")}</p>}
       </aside>
       {!selected ? (
         <div className="workspace-empty">
           <section className="agent-section workspace-empty-agent">
             <header className="section-heading">
-              <h2>智能体对话</h2>
-              <span className="subtle">项目智能体会话</span>
+              <h2>{tr("智能体对话")}</h2>
+              <span className="subtle">{tr("项目智能体会话")}</span>
             </header>
-            <p className="subtle">会话可以使用项目工具与扩展；工具调用和文件变更会保留记录。</p>
+            <p className="subtle">{tr("会话可以使用项目工具与扩展；工具调用和文件变更会保留记录。")}</p>
             <div className="chat-messages" aria-live="polite">
               {messages.map((message, index) => (
                 <article key={index} className={`chat-${message.role}`}>
-                  <strong>{message.role === "user" ? "你" : "智能体"}</strong>
+                  <strong>{message.role === "user" ? tr("你") : tr("智能体")}</strong>
                   <p>{message.content}</p>
                 </article>
               ))}
-              {running && <p className="running-indicator">智能体正在思考…</p>}
+              {running && <p className="running-indicator">{tr("智能体正在思考…")}</p>}
             </div>
             <AgentComposer
               prompt={prompt}
@@ -286,7 +290,7 @@ export function WorkspaceView({
             />
             <button type="button" onClick={onNew} disabled={busy}>
               <Plus size={16} />
-              只创建任务
+              {tr("只创建任务")}
             </button>
           </section>
         </div>
@@ -302,57 +306,57 @@ export function WorkspaceView({
               {terminal && (
                 <button disabled={busy} onClick={onRestart}>
                   <Plus size={14} />
-                  重新创建任务
+                  {tr("重新创建任务")}
                 </button>
               )}
             </div>
           </header>
           <details className="scope-summary">
-            <summary>已授权范围</summary>
+            <summary>{tr("已授权范围")}</summary>
             <dl>
-              <dt>目标</dt>
+              <dt>{tr("目标")}</dt>
               <dd>{selected.scope.goal ?? selected.scope.title}</dd>
-              <dt>读取</dt>
+              <dt>{tr("读取")}</dt>
               <dd>
                 {selected.scope.readPaths.map((path) => (
                   <code key={path}>{path}</code>
                 ))}
               </dd>
-              <dt>写入</dt>
+              <dt>{tr("写入")}</dt>
               <dd>
                 {selected.scope.writePaths.length
                   ? selected.scope.writePaths.map((path) => (
                       <code key={path}>{path}</code>
                     ))
-                  : "无"}
+                  : tr("无")}
               </dd>
-              <dt>提交</dt>
+              <dt>{tr("提交")}</dt>
               <dd>
-                {selected.scope.mode === "manual" ? "手动审查" : "自动提交"} ·{" "}
-                {selected.scope.allowDelete ? "允许删除" : "禁止删除"}
+                {selected.scope.mode === "manual" ? tr("手动审查") : tr("自动提交")} ·{" "}
+                {selected.scope.allowDelete ? tr("允许删除") : tr("禁止删除")}
               </dd>
             </dl>
           </details>
           <section className="agent-section">
             <header className="section-heading">
-              <h2>智能体</h2>
-              <span className="subtle">{running ? "执行中" : "就绪"}</span>
+              <h2>{tr("智能体")}</h2>
+              <span className="subtle">{running ? tr("执行中") : tr("就绪")}</span>
             </header>
             <div className="chat-messages" aria-live="polite">
               {messages.map((message, index) => (
                 <article key={index} className={`chat-${message.role}`}>
-                  <strong>{message.role === "user" ? "你" : "智能体"}</strong>
+                  <strong>{message.role === "user" ? tr("你") : tr("智能体")}</strong>
                   <p>{message.content}</p>
                 </article>
               ))}
               {!messages.length && selected.summary && (
                 <article className="chat-assistant">
-                  <strong>智能体</strong>
+                  <strong>{tr("智能体")}</strong>
                   <p>{selected.summary}</p>
                 </article>
               )}
               {running && (
-                <p className="running-indicator">智能体正在处理任务…</p>
+                <p className="running-indicator">{tr("智能体正在处理任务…")}</p>
               )}
             </div>
             <AgentComposer
@@ -373,7 +377,7 @@ export function WorkspaceView({
             />
             {selected.events.length > 0 && (
               <details className="audit-section" open={running}>
-                <summary>工具记录 · {selected.events.length}</summary>
+                <summary>{tr("工具记录 · {count}", { count: selected.events.length })}</summary>
                 <AuditEvents task={selected} />
               </details>
             )}

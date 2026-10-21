@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { MAX_TASK_GOAL_LENGTH } from "../../shared/contracts";
+import { useI18n } from "../i18n";
 import { Modal } from "../ui";
 
 /** Chat implementation defaults mirror the task form's common write scope. */
@@ -41,6 +42,7 @@ export function ImplementationScopeCard({
   onClose: () => void;
   onStart: (input: ImplementationScopeInput) => void;
 }) {
+  const tr = useI18n();
   const [goal, setGoal] = useState(initialGoal);
   const [read, setRead] = useState(defaultImplementationReadPaths.join("\n"));
   const [write, setWrite] = useState(defaultImplementationWritePaths.join("\n"));
@@ -48,7 +50,7 @@ export function ImplementationScopeCard({
   const writePaths = useMemo(() => parsePaths(write), [write]);
   const ready = goal.trim().length > 0 && readPaths.length > 0 && writePaths.length > 0;
   return (
-    <Modal title="确认实现范围" onClose={onClose}>
+    <Modal title={tr("确认实现范围")} onClose={onClose}>
       <form
         className="form-stack"
         onSubmit={(event) => {
@@ -57,9 +59,9 @@ export function ImplementationScopeCard({
           onStart({ goal: goal.trim(), readPaths, writePaths });
         }}
       >
-        <p className="field-hint">工作流需要一份实现范围；确认后会使用默认模型启动。</p>
+        <p className="field-hint">{tr("工作流需要一份实现范围；确认后会使用默认模型启动。")}</p>
         <label>
-          实现目标
+          {tr("实现目标")}
           <textarea
             aria-describedby="implementation-goal-hint"
             className="path-input"
@@ -70,10 +72,10 @@ export function ImplementationScopeCard({
           />
         </label>
         <span id="implementation-goal-hint" className="field-hint">
-          这段目标会作为工作流运行的目标，不改写任务范围。
+          {tr("这段目标会作为工作流运行的目标，不改写任务范围。")}
         </span>
         <label>
-          读取范围
+          {tr("读取范围")}
           <textarea
             className="path-input"
             rows={3}
@@ -82,7 +84,7 @@ export function ImplementationScopeCard({
           />
         </label>
         <label>
-          修改范围
+          {tr("修改范围")}
           <textarea
             className="path-input"
             rows={4}
@@ -92,10 +94,10 @@ export function ImplementationScopeCard({
         </label>
         <footer className="form-actions">
           <button type="button" onClick={onClose}>
-            取消
+            {tr("取消")}
           </button>
           <button className="primary" disabled={busy || !ready}>
-            {busy ? "正在启动…" : "开始实现"}
+            {busy ? tr("正在启动…") : tr("开始实现")}
           </button>
         </footer>
       </form>

@@ -17,6 +17,7 @@ import type {
   WorkflowRunInputs,
   WorkflowSummary,
 } from "../../shared/workflow-api";
+import { useI18n, type Translate } from "../i18n";
 
 /** A draft orchestration: either a stored definition or a temporary, unsaved queue. */
 export interface OrchestrationDraft {
@@ -109,13 +110,14 @@ export function knownWorkflowIds(workflows: WorkflowSummary[]): ReadonlySet<stri
 export function orchestrationDraftError(
   draft: OrchestrationDraft,
   workflows: WorkflowSummary[],
+  tr: Translate = (text: string) => text,
 ): string | undefined {
-  if (draft.title.trim().length === 0) return "请填写编排名称。";
-  if (draft.steps.length === 0) return "编排至少需要一个步骤。";
+  if (draft.title.trim().length === 0) return tr("请填写编排名称。");
+  if (draft.steps.length === 0) return tr("编排至少需要一个步骤。");
   const known = knownWorkflowIds(workflows);
   for (const [index, step] of draft.steps.entries()) {
     if (!known.has(step.workflowId)) {
-      return "步骤 " + (index + 1) + " 引用的工作流 " + step.workflowId + " 不存在，请重新选择。";
+      return tr("步骤 {index} 引用的工作流 {id} 不存在，请重新选择。", { index: index + 1, id: step.workflowId });
     }
   }
   return undefined;
@@ -168,6 +170,7 @@ export function useOrchestration(
   workflows: WorkflowSummary[],
   onError?: (error: unknown) => void,
 ): UseOrchestrationResult {
+  const tr = useI18n();
   const workflow = api?.workflow;
   const orchestrations = workflow?.orchestrations;
   const onErrorRef = useRef(onError);
@@ -251,7 +254,7 @@ export function useOrchestration(
       if (draft?.dirty) {
         let proceed = true;
         try {
-          proceed = typeof window.confirm === "function" ? window.confirm("当前编排有未保存的修改，切换后将丢弃。继续？") : true;
+          proceed = typeof window.confirm === "function" ? window.confirm(tr("当前编排有未保存的修改，切换后将丢弃。继续？")) : true;
         } catch {
           proceed = true;
         }
@@ -271,7 +274,7 @@ export function useOrchestration(
         if (mounted.current) setLoading(false);
       }
     },
-    [orchestrations, draft, fail],
+    [orchestrations, draft, fail, tr],
   );
 
   const newDraft = useCallback((): void => {
@@ -296,7 +299,7 @@ export function useOrchestration(
     setDraft((current) => {
       if (!current) return current;
       if (current.steps.length >= 20) {
-        setError("最多支持 20 个步骤。");
+        setError(tr("最多支持 20 个步骤。"));
         return current;
       }
       return {
@@ -305,7 +308,7 @@ export function useOrchestration(
         steps: [...current.steps, { id: orchestrationStepId(), workflowId, approval: "inherit" }],
       };
     });
-  }, []);
+  }, [tr]);
 
   const updateStep = useCallback(
     (id: string, patch: { workflowId?: string; approval?: OrchestrationApproval }): void => {
@@ -350,8 +353,8 @@ export function useOrchestration(
   }, []);
 
   const validate = useCallback(
-    (candidate: OrchestrationDraft): string | undefined => orchestrationDraftError(candidate, workflows),
-    [workflows],
+    (candidate: OrchestrationDraft): string | undefined => orchestrationDraftError(candidate, workflows, tr),
+    [workflows, tr],
   );
 
   /**
@@ -438,7 +441,7 @@ export function useOrchestration(
   const start = useCallback(
     async (inputs: WorkflowRunInputs): Promise<void> => {
       if (!orchestrations || !draft) {
-        setError("请先选择或新建一个编排。");
+        setError(tr("请先选择或新建一个编排。"));
         return;
       }
       setRunLoading(true);
@@ -466,7 +469,7 @@ export function useOrchestration(
         if (mounted.current) setRunLoading(false);
       }
     },
-    [orchestrations, draft, validate, persistDraft, fail],
+    [orchestrations, draft, validate, persistDraft, fail, tr],
   );
 
   const reloadRun = useCallback(

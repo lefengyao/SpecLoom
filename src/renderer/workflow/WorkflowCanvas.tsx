@@ -20,6 +20,7 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 import "@xyflow/react/dist/style.css";
 import type { WorkflowDefinition, WorkflowNode } from "../../shared/workflow";
 import type { WorkflowNodeStatus } from "../../shared/workflow-api";
+import { useI18n, type Translate } from "../i18n";
 import { workflowNodeBadge, workflowNodeStatusLabels } from "./useWorkflow";
 
 /** Everything a canvas card needs; it is rebuilt from the definition each render. */
@@ -52,22 +53,23 @@ function truncate(value: string, limit: number): string {
 }
 
 /** The one-line configuration summary shown under the node label. */
-export function workflowNodeSummary(node: WorkflowNode): string {
+export function workflowNodeSummary(node: WorkflowNode, tr: Translate): string {
   switch (node.type) {
     case "context":
-      return "读取运行范围内的资料";
+      return tr("读取运行范围内的资料");
     case "agent":
-      return (node.config.access === "write" ? "写入" : "只读") + " · " + truncate(node.config.prompt, 34);
+      return (node.config.access === "write" ? tr("写入") : tr("只读")) + " · " + truncate(node.config.prompt, 34);
     case "validation":
-      return "运行现有校验器";
+      return tr("运行现有校验器");
     case "approval":
-      return "允许驳回，需人工批准";
+      return tr("允许驳回，需人工批准");
     case "decision":
       return node.config.directory;
   }
 }
 
 function WorkflowNodeCard({ data }: NodeProps) {
+  const tr = useI18n();
   const node = data as unknown as WorkflowNodeData;
   const status = node.status;
   const classes = [
@@ -83,7 +85,7 @@ function WorkflowNodeCard({ data }: NodeProps) {
       <Handle type="target" position={Position.Left} isConnectable={false} />
       <header className="wf-node-head">
         <span className="wf-node-badge">{node.badge}</span>
-        {status && <span className="wf-node-state">{workflowNodeStatusLabels[status]}</span>}
+        {status && <span className="wf-node-state">{tr(workflowNodeStatusLabels[status])}</span>}
       </header>
       <strong className="wf-node-label">{node.label}</strong>
       <p className="wf-node-summary" title={node.summary}>
@@ -103,7 +105,7 @@ const nodeTypes: NodeTypes = {
   decision: WorkflowNodeCard,
 };
 
-function buildEdges(definition: WorkflowDefinition): Edge[] {
+function buildEdges(definition: WorkflowDefinition, tr: Translate): Edge[] {
   return definition.edges.map((edge) => {
     const reject = edge.on === "reject";
     return {
@@ -111,7 +113,7 @@ function buildEdges(definition: WorkflowDefinition): Edge[] {
       source: edge.from,
       target: edge.to,
       type: "default",
-      ...(reject ? { label: "驳回" } : {}),
+      ...(reject ? { label: tr("驳回") } : {}),
       style: reject
         ? { stroke: "var(--danger-text)", strokeDasharray: "6 4" }
         : { stroke: "var(--accent)" },
@@ -136,6 +138,7 @@ export function WorkflowCanvas({
   onConnect,
   onEdgesDelete,
 }: WorkflowCanvasProps) {
+  const tr = useI18n();
   const modelNodes = useMemo<WorkflowFlowNode[]>(
     () =>
       definition.nodes.map((node) => {
@@ -147,23 +150,23 @@ export function WorkflowCanvas({
           data: {
             kind: node.type,
             label: node.label,
-            badge: workflowNodeBadge(node),
-            summary: workflowNodeSummary(node),
+            badge: tr(workflowNodeBadge(node)),
+            summary: workflowNodeSummary(node, tr),
             selected: node.id === selectedNodeId,
             ...(status ? { status } : {}),
           },
           draggable: !readOnly,
           selectable: true,
           focusable: !readOnly,
-          ariaLabel: "节点 " + node.label,
+          ariaLabel: tr("节点 {name}", { name: node.label }),
         };
       }),
-    [definition, selectedNodeId, nodeStatuses, readOnly],
+    [definition, selectedNodeId, nodeStatuses, readOnly, tr],
   );
   const [nodes, setNodes, onNodesChange] = useNodesState<WorkflowFlowNode>(modelNodes);
   useEffect(() => { setNodes(modelNodes); }, [modelNodes, setNodes]);
 
-  const edges = useMemo(() => buildEdges(definition), [definition]);
+  const edges = useMemo(() => buildEdges(definition, tr), [definition, tr]);
 
   const frameRef = useRef<HTMLDivElement | null>(null);
   const flowRef = useRef<ReactFlowInstance<WorkflowFlowNode, Edge> | null>(null);
@@ -195,7 +198,7 @@ export function WorkflowCanvas({
     <div className="workflow-canvas-frame" ref={frameRef}>
       <ReactFlowProvider>
         <ReactFlow<WorkflowFlowNode, Edge>
-          aria-label="工作流画布"
+          aria-label={tr("工作流画布")}
           nodes={nodes}
           edges={edges}
           onNodesChange={onNodesChange}

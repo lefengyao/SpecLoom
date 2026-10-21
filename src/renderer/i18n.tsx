@@ -1,5 +1,9 @@
 import { createContext, useContext, type ReactNode } from "react";
 import type { Locale } from "../shared/preferences";
+import { settingsEnglish } from "./locales/en/settings";
+import { chatEnglish } from "./locales/en/chat";
+import { workflowEnglish } from "./locales/en/workflow";
+import { materialsEnglish } from "./locales/en/materials";
 
 /**
  * Chinese source strings are the stable keys. This keeps the current product
@@ -318,6 +322,8 @@ const english: Record<string, string> = {
   "仅适用于 Godot 项目": "Only available for Godot projects",
   "当前项目不包含 Godot 插件清单。": "This project does not contain a Godot plugin manifest.",
 };
+
+Object.assign(english, materialsEnglish, workflowEnglish, chatEnglish, settingsEnglish);
 
 export type Translate = (text: string, values?: Record<string, string | number>) => string;
 

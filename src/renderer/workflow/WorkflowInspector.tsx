@@ -1,5 +1,6 @@
 import { Trash2 } from "lucide-react";
 import type { WorkflowNode } from "../../shared/workflow";
+import { useI18n } from "../i18n";
 import { workflowNodeTypeLabels } from "./useWorkflow";
 
 export interface WorkflowInspectorProps {
@@ -35,47 +36,48 @@ function withAgentConfig(node: AgentNode, patch: { access?: "read" | "write"; pr
  * definition and never talks to the API; the page decides when to save.
  */
 export function WorkflowInspector({ node, onChange, canDelete = false, onDelete }: WorkflowInspectorProps) {
+  const tr = useI18n();
   return (
-    <section className="workflow-inspector" aria-label="节点检查器">
+    <section className="workflow-inspector" aria-label={tr("节点检查器")}>
       <header className="workflow-panel-heading">
-        <h2>节点检查器</h2>
+        <h2>{tr("节点检查器")}</h2>
       </header>
       {!node ? (
-        <p className="workflow-empty">在画布中选择一个节点，查看并编辑它的配置。</p>
+        <p className="workflow-empty">{tr("在画布中选择一个节点，查看并编辑它的配置。")}</p>
       ) : (
         <div className="workflow-inspector-body">
           <dl className="workflow-meta">
             <div>
-              <dt>节点 ID</dt>
+              <dt>{tr("节点 ID")}</dt>
               <dd>
                 <code>{node.id}</code>
               </dd>
             </div>
             <div>
-              <dt>类型</dt>
-              <dd>{workflowNodeTypeLabels[node.type]}</dd>
+              <dt>{tr("类型")}</dt>
+              <dd>{tr(workflowNodeTypeLabels[node.type])}</dd>
             </div>
           </dl>
 
           <label className="workflow-field">
-            <span>标签</span>
+            <span>{tr("标签")}</span>
             <input value={node.label} onChange={(event) => onChange(withLabel(node, event.target.value))} />
           </label>
 
           {node.type === "agent" && (
             <>
               <label className="workflow-field">
-                <span>访问</span>
+                <span>{tr("访问")}</span>
                 <select
                   value={node.config.access}
                   onChange={(event) => onChange(withAgentConfig(node, { access: event.target.value === "write" ? "write" : "read" }))}
                 >
-                  <option value="read">只读</option>
-                  <option value="write">写入</option>
+                  <option value="read">{tr("只读")}</option>
+                  <option value="write">{tr("写入")}</option>
                 </select>
               </label>
               <label className="workflow-field">
-                <span>提示词</span>
+                <span>{tr("提示词")}</span>
                 <textarea
                   rows={6}
                   value={node.config.prompt}
@@ -83,10 +85,10 @@ export function WorkflowInspector({ node, onChange, canDelete = false, onDelete 
                 />
               </label>
               <label className="workflow-field">
-                <span>模型</span>
+                <span>{tr("模型")}</span>
                 <input
                   value={node.config.model ?? ""}
-                  placeholder="留空则使用运行模型"
+                  placeholder={tr("留空则使用运行模型")}
                   onChange={(event) => onChange(withAgentConfig(node, { model: event.target.value }))}
                 />
               </label>
@@ -95,23 +97,23 @@ export function WorkflowInspector({ node, onChange, canDelete = false, onDelete 
 
           {node.type === "decision" && (
             <label className="workflow-field">
-              <span>决策目录</span>
+              <span>{tr("决策目录")}</span>
               <input value={node.config.directory} readOnly />
             </label>
           )}
 
           {node.type === "approval" && (
             <label className="workflow-field">
-              <span>允许驳回</span>
-              <input value="固定为 true" readOnly />
+              <span>{tr("允许驳回")}</span>
+              <input value={tr("固定为 true")} readOnly />
             </label>
           )}
 
-          {(node.type === "context" || node.type === "validation") && <p className="workflow-hint">此节点没有额外配置。</p>}
+          {(node.type === "context" || node.type === "validation") && <p className="workflow-hint">{tr("此节点没有额外配置。")}</p>}
 
           {onDelete && (
             <button type="button" className="workflow-delete-node" disabled={!canDelete} onClick={onDelete}>
-              <Trash2 size={14} /> 删除只读 Agent
+              <Trash2 size={14} /> {tr("删除只读 Agent")}
             </button>
           )}
         </div>

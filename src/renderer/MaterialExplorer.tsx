@@ -63,7 +63,7 @@ export function MaterialExplorer({ materials, groups, groupsSaving, onGroupsChan
   const iconExpandedKeys = expandedKeys ?? defaultIconExpandedKeys;
   const selectedGroupHasItems = selection.kind === "group" && materials.some((item) => item.groupId && groupIncludes(groups, selection.id, item.groupId));
   const hasAdditionalFilters = Boolean(query || entityType !== "*" || componentSource !== "*");
-  const groupTitle = selection.kind === "all" ? "全部资料" : selection.kind === "ungrouped" ? "未分组" : materialGroupPath(groups, selection.id) || group?.name || "分组";
+  const groupTitle = selection.kind === "all" ? tr("全部资料") : selection.kind === "ungrouped" ? tr("未分组") : materialGroupPath(groups, selection.id) || group?.name || tr("分组");
   function changeView(value: View) { setView(value); try { localStorage.setItem(preference, value); } catch { /* best effort */ } }
   function toggleIconBranch(key: string) {
     const next = new Set(iconExpandedKeys);
@@ -76,49 +76,49 @@ export function MaterialExplorer({ materials, groups, groupsSaving, onGroupsChan
       const open = iconExpandedKeys.has(node.key);
       if (!node.material) return <li key={node.key} className="material-icon-bucket" role="listitem">
         <div className="material-icon-bucket-heading">
-          {node.children.length > 0 && <button type="button" className="material-icon-disclosure" aria-label={`${open ? "收起" : "展开"} ${node.label}`} aria-expanded={open} aria-controls={open ? childrenId : undefined} onClick={() => toggleIconBranch(node.key)}>{open ? <ChevronDown size={14} aria-hidden="true" /> : <ChevronRight size={14} aria-hidden="true" />}</button>}
-          <strong>{node.label}</strong><span>{node.children.length} 项</span>
+          {node.children.length > 0 && <button type="button" className="material-icon-disclosure" aria-label={`${open ? tr("收起") : tr("展开")} ${tr(node.label)}`} aria-expanded={open} aria-controls={open ? childrenId : undefined} onClick={() => toggleIconBranch(node.key)}>{open ? <ChevronDown size={14} aria-hidden="true" /> : <ChevronRight size={14} aria-hidden="true" />}</button>}
+          <strong>{tr(node.label)}</strong><span>{tr("{count} 项", { count: node.children.length })}</span>
         </div>
-        {open && node.children.length > 0 && <ul id={childrenId} className="material-icon-children" role="list" aria-label={`${node.label}的子资料`}>{renderIconNodes(node.children, depth + 1)}</ul>}
+        {open && node.children.length > 0 && <ul id={childrenId} className="material-icon-children" role="list" aria-label={tr("{label}的子资料", { label: tr(node.label) })}>{renderIconNodes(node.children, depth + 1)}</ul>}
       </li>;
 
       const item = node.material;
-      const description = item.description || typeLabels[item.type] || "资料";
-      const groupLabel = item.groupPath || item.group || "未分组";
+      const description = item.description || tr(typeLabels[item.type] ?? "资料");
+      const groupLabel = item.groupPath || item.group || tr("未分组");
       const parent = resolveMaterial(materials, item.parent);
-      const parentLabel = item.parent ? parent?.title ?? `缺失父级：${item.parent}` : "根资料";
+      const parentLabel = item.parent ? parent?.title ?? tr("缺失父级：{parent}", { parent: item.parent }) : tr("根资料");
       const isComponent = category === "component" || item.type === "component";
-      const metadata = isComponent ? componentScopeLabels[componentScope(item)] : typeLabels[item.type] ?? item.type;
+      const metadata = tr(isComponent ? componentScopeLabels[componentScope(item)] : typeLabels[item.type] ?? item.type);
       const summaryId = `material-icon-summary-${encodeURIComponent(item.path)}`;
       const accessibleSummary = [
-        `类型：${metadata}`, `父级：${parentLabel}`, `所属分组：${groupLabel}`, `层级：第 ${depth + 1} 级`,
-        ...(node.contextOnly ? ["路径上下文"] : []), ...(item.description ? [`说明：${item.description}`] : []),
+        tr("类型：{value}", { value: metadata }), tr("父级：{value}", { value: parentLabel }), tr("所属分组：{value}", { value: groupLabel }), tr("层级：第 {level} 级", { level: depth + 1 }),
+        ...(node.contextOnly ? [tr("路径上下文")] : []), ...(item.description ? [tr("说明：{value}", { value: item.description })] : []),
       ].join("；");
       return <li key={node.key} className={`material-icon-node${node.contextOnly ? " context-only" : ""}`} role="listitem" data-material-path={item.path}>
         <div className="material-icon-row">
-          {node.children.length > 0 ? <button type="button" className="material-icon-disclosure" aria-label={`${open ? "收起" : "展开"} ${node.label}`} aria-expanded={open} aria-controls={open ? childrenId : undefined} onClick={() => toggleIconBranch(node.key)}>{open ? <ChevronDown size={14} aria-hidden="true" /> : <ChevronRight size={14} aria-hidden="true" />}</button>
+          {node.children.length > 0 ? <button type="button" className="material-icon-disclosure" aria-label={`${open ? tr("收起") : tr("展开")} ${node.label}`} aria-expanded={open} aria-controls={open ? childrenId : undefined} onClick={() => toggleIconBranch(node.key)}>{open ? <ChevronDown size={14} aria-hidden="true" /> : <ChevronRight size={14} aria-hidden="true" />}</button>
             : <span className="material-icon-disclosure-placeholder" aria-hidden="true" />}
-          <button type="button" className={`material-item material-icon-card ${selectedPath === item.path ? "selected" : ""}`} aria-label={`查看 ${item.title}`} aria-describedby={summaryId} aria-pressed={selectedPath === item.path} title={item.path} onClick={() => onSelect(item.path)}>
+          <button type="button" className={`material-item material-icon-card ${selectedPath === item.path ? "selected" : ""}`} aria-label={tr("查看 {title}", { title: item.title })} aria-describedby={summaryId} aria-pressed={selectedPath === item.path} title={item.path} onClick={() => onSelect(item.path)}>
             <span className="material-thumbnail">{item.image ? <MaterialThumbnail api={api} projectPath={projectPath} path={item.image} title={item.title} /> : <FileText size={30} />}</span>
-            <span className="material-item-text material-item-text-icons"><strong title={item.title}>{item.title}{node.contextOnly && <small className="material-context-badge">路径上下文</small>}</strong><span title={description}>{description}</span></span>
+            <span className="material-item-text material-item-text-icons"><strong title={item.title}>{item.title}{node.contextOnly && <small className="material-context-badge">{tr("路径上下文")}</small>}</strong><span title={description}>{description}</span></span>
             <span className="material-card-tags">
-              <span className={`material-type-badge${isComponent ? ` material-source-${componentScope(item)}` : ""}`} title={isComponent ? "组件来源" : "资料类型"}>{metadata}</span>
+              <span className={`material-type-badge${isComponent ? ` material-source-${componentScope(item)}` : ""}`} title={isComponent ? tr("组件来源") : tr("资料类型")}>{metadata}</span>
               <span className="material-group-tag" title={groupLabel}>{groupLabel}</span>
             </span>
-            <span className="material-icon-parent" title={`父级：${parentLabel}`}>父级：{parentLabel}</span>
+            <span className="material-icon-parent" title={tr("父级：{value}", { value: parentLabel })}>{tr("父级：{value}", { value: parentLabel })}</span>
             <span id={summaryId} className="material-hierarchy-accessible-summary">{accessibleSummary}</span>
           </button>
         </div>
-        {open && node.children.length > 0 && <ul id={childrenId} className="material-icon-children" role="list" aria-label={`${node.label}的子资料`}>{renderIconNodes(node.children, depth + 1)}</ul>}
+        {open && node.children.length > 0 && <ul id={childrenId} className="material-icon-children" role="list" aria-label={tr("{label}的子资料", { label: node.label })}>{renderIconNodes(node.children, depth + 1)}</ul>}
       </li>;
     });
   }
-  return <section className={`material-explorer ${groupPaneOpen ? "group-pane-open" : "group-pane-closed"}`} aria-label="资料浏览器">
+  return <section className={`material-explorer ${groupPaneOpen ? "group-pane-open" : "group-pane-closed"}`} aria-label={tr("资料浏览器")}>
     <div className="explorer-toolbar">
-      <button type="button" className="group-pane-toggle" aria-label={groupPaneOpen ? "收起分组栏" : "展开分组栏"} aria-expanded={groupPaneOpen} onClick={() => setGroupPaneOpen((open) => !open)}><PanelLeft size={16} /></button>
+      <button type="button" className="group-pane-toggle" aria-label={groupPaneOpen ? tr("收起分组栏") : tr("展开分组栏")} aria-expanded={groupPaneOpen} onClick={() => setGroupPaneOpen((open) => !open)}><PanelLeft size={16} /></button>
       <label className="material-search"><Search size={16} /><input aria-label={tr("搜索资料")} placeholder={tr("搜索名称、说明或分组")} value={query} onChange={(event) => setQuery(event.target.value)} /></label>
-      {category === "entity" && <select aria-label="筛选实体类型" value={entityType} onChange={(event) => setEntityType(event.target.value)}><option value="*">{tr("全部实体类型")}</option>{entityTypes.map((type) => <option key={type} value={type}>{typeLabels[type]}</option>)}</select>}
-      {category === "component" && <select aria-label="组件来源" value={componentSource} onChange={(event) => setComponentSource(event.target.value as ComponentSource)}><option value="*">{tr("全部组件")}</option><option value="system">{tr("官方组件")}</option><option value="user">{tr("自定义组件")}</option></select>}
+      {category === "entity" && <select aria-label={tr("筛选实体类型")} value={entityType} onChange={(event) => setEntityType(event.target.value)}><option value="*">{tr("全部实体类型")}</option>{entityTypes.map((type) => <option key={type} value={type}>{tr(typeLabels[type] ?? type)}</option>)}</select>}
+      {category === "component" && <select aria-label={tr("组件来源")} value={componentSource} onChange={(event) => setComponentSource(event.target.value as ComponentSource)}><option value="*">{tr("全部组件")}</option><option value="system">{tr("官方组件")}</option><option value="user">{tr("自定义组件")}</option></select>}
       <div className="toolbar material-view-controls" role="group" aria-label={tr("资料显示方式")}><button type="button" aria-label={tr("图标显示")} title={tr("图标显示")} aria-pressed={view === "icons"} onClick={() => changeView("icons")}><LayoutGrid size={16} /></button><button type="button" aria-label={tr("列表显示")} title={tr("列表显示")} aria-pressed={view === "list"} onClick={() => changeView("list")}><List size={16} /></button><button type="button" aria-label={tr("关系图显示")} title={tr("关系图显示")} aria-pressed={view === "graph"} onClick={() => changeView("graph")}><GitBranch size={16} /></button></div>
     </div>
     <div className="material-explorer-layout">
@@ -126,8 +126,8 @@ export function MaterialExplorer({ materials, groups, groupsSaving, onGroupsChan
         <MaterialGroupTree groups={groups} materials={materials} selection={selection} onSelect={setSelection} groupsSaving={groupsSaving} onGroupsChange={onGroupsChange} />
       </div>
       <div className="material-results">
-        <header className="material-results-heading"><div><h3>{groupTitle}</h3>{selection.kind === "group" && <span className="subtle">{groupTitle}</span>}</div><span className="subtle">{visible.length} 项</span></header>
-        {view === "icons" && <ul className="material-items material-items-icons material-icon-tree" role="list" aria-label="资料图标层级">{renderIconNodes(projectedTree, 0)}</ul>}
+        <header className="material-results-heading"><div><h3>{groupTitle}</h3>{selection.kind === "group" && <span className="subtle">{groupTitle}</span>}</div><span className="subtle">{tr("{count} 项", { count: visible.length })}</span></header>
+        {view === "icons" && <ul className="material-items material-items-icons material-icon-tree" role="list" aria-label={tr("资料图标层级")}>{renderIconNodes(projectedTree, 0)}</ul>}
         {/* Retain panels so switching modes does not repeat selected-path expansion. */}
         <div className="material-view-panel" hidden={view !== "list"} inert={view !== "list"}>
           <MaterialHierarchyList tree={projectedTree} materials={materials} category={category} selectedPath={selectedPath} onSelect={onSelect} expandedKeys={expandedKeys} onExpandedKeysChange={setExpandedKeys} />
@@ -135,13 +135,13 @@ export function MaterialExplorer({ materials, groups, groupsSaving, onGroupsChan
         <div className="material-view-panel" hidden={view !== "graph" || !visible.length} inert={view !== "graph" || !visible.length}>
           <MaterialRelationshipGraph tree={projectedTree} materials={materials} category={category} selectedPath={selectedPath} onSelect={onSelect} expandedKeys={expandedKeys} onExpandedKeysChange={setExpandedKeys} />
         </div>
-        {!visible.length && <div className="empty-state">{loading ? <p>读取资料…</p> : selection.kind === "group" && !selectedGroupHasItems
-          ? <p>这是一个空分组。可在左侧为它新建子分组，或在资料详情中分配资料。</p>
+        {!visible.length && <div className="empty-state">{loading ? <p>{tr("读取资料…")}</p> : selection.kind === "group" && !selectedGroupHasItems
+          ? <p>{tr("这是一个空分组。可在左侧为它新建子分组，或在资料详情中分配资料。")}</p>
           : selection.kind === "ungrouped" && !materials.some((item) => !item.groupId)
-            ? <p>目前没有未分组资料。</p>
-            : materials.length ? <><p>没有符合条件的资料，可调整搜索或筛选条件。</p>{hasAdditionalFilters && <button type="button" onClick={() => { setQuery(""); setEntityType("*"); setComponentSource("*"); }}>清除其他筛选</button>}</>
-              : <p>还没有资料，点击上方新建开始整理。</p>}</div>}
-        <p className="explorer-count">{visible.length} 项{query || selection.kind !== "all" || entityType !== "*" || componentSource !== "*" ? ` / 共 ${materials.length} 项` : ""}</p>
+            ? <p>{tr("目前没有未分组资料。")}</p>
+            : materials.length ? <><p>{tr("没有符合条件的资料，可调整搜索或筛选条件。")}</p>{hasAdditionalFilters && <button type="button" onClick={() => { setQuery(""); setEntityType("*"); setComponentSource("*"); }}>{tr("清除其他筛选")}</button>}</>
+              : <p>{tr("还没有资料，点击上方新建开始整理。")}</p>}</div>}
+        <p className="explorer-count">{tr("{count} 项", { count: visible.length })}{query || selection.kind !== "all" || entityType !== "*" || componentSource !== "*" ? ` / ${tr("共 {count} 项", { count: materials.length })}` : ""}</p>
       </div>
     </div>
   </section>;

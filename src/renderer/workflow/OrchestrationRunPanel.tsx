@@ -1,6 +1,7 @@
 import type { ModelProfile } from "../../shared/contracts";
 import { type OrchestrationRun, type OrchestrationStep } from "../../shared/orchestration";
 import type { WorkflowRetryAction, WorkflowRun, WorkflowRunInputs } from "../../shared/workflow-api";
+import { useI18n } from "../i18n";
 import { RunInputsForm, WorkflowRunDetails } from "./WorkflowRunPanel";
 import {
   orchestrationApprovalLabels,
@@ -28,13 +29,16 @@ export interface OrchestrationChainProps {
  * approvals and step errors.
  */
 export function OrchestrationChain({ steps, run, workflowTitles }: OrchestrationChainProps) {
+  const tr = useI18n();
   const current = run === undefined ? 0 : Math.min(run.currentStepIndex + 1, steps.length);
   return (
-    <section className="workflow-chain" aria-label="编排时间线">
+    <section className="workflow-chain" aria-label={tr("编排时间线")}>
       <header className="workflow-panel-heading">
-        <h2>编排时间线</h2>
+        <h2>{tr("编排时间线")}</h2>
         <span className="workflow-hint">
-          {run === undefined ? steps.length + " 步" : "第 " + current + " / " + steps.length + " 步"}
+          {run === undefined
+            ? tr("{steps} 步", { steps: steps.length })
+            : tr("第 {current} / {total} 步", { current, total: steps.length })}
         </span>
       </header>
       <ol className="workflow-chain-list">
@@ -50,11 +54,11 @@ export function OrchestrationChain({ steps, run, workflowTitles }: Orchestration
               <div className="workflow-chain-body">
                 <div className="workflow-chain-head">
                   <strong>{title}</strong>
-                  <span className={"workflow-run-status wf-status-" + status}>{orchestrationStepStatusLabels[status]}</span>
+                  <span className={"workflow-run-status wf-status-" + status}>{tr(orchestrationStepStatusLabels[status])}</span>
                 </div>
                 <span className="workflow-timeline-meta">
-                  审批：{orchestrationApprovalLabels[step.approval]}
-                  {state?.autoApproved === true ? " · 已自动批准" : ""}
+                  {tr("审批：{label}", { label: tr(orchestrationApprovalLabels[step.approval]) })}
+                  {state?.autoApproved === true ? tr(" · 已自动批准") : ""}
                 </span>
                 {state?.runId && (
                   <code className="workflow-chain-run" title={state.runId}>
@@ -104,27 +108,28 @@ export function OrchestrationRunPanel({
   onRetry,
   onCancel,
 }: OrchestrationRunPanelProps) {
+  const tr = useI18n();
   const visibleRun = run !== undefined && draft !== undefined && run.orchestrationId === draft.id ? run : undefined;
   const active = visibleRun !== undefined && activeStatuses.has(visibleRun.status);
   const needsSave = draft !== undefined && (draft.fileVersion === undefined || draft.dirty);
   const isTemporary = draft !== undefined && draft.fileVersion === undefined;
 
   return (
-    <section className="workflow-run" aria-label="编排运行">
+    <section className="workflow-run" aria-label={tr("编排运行")}>
       <header className="workflow-panel-heading">
-        <h2>编排运行</h2>
-        {isTemporary && <span className="workflow-badge">临时队列</span>}
+        <h2>{tr("编排运行")}</h2>
+        {isTemporary && <span className="workflow-badge">{tr("临时队列")}</span>}
       </header>
 
       {!draft ? (
-        <p className="workflow-empty">先选择或新建一个编排，再填写共享输入。</p>
+        <p className="workflow-empty">{tr("先选择或新建一个编排，再填写共享输入。")}</p>
       ) : (
         <>
           <div className="workflow-orchestration-summary">
-            <strong>{draft.title.trim() || "未命名编排"}</strong>
-            <span className="workflow-hint">{draft.steps.length} 步 · 共用输入</span>
+            <strong>{draft.title.trim() || tr("未命名编排")}</strong>
+            <span className="workflow-hint">{tr("{steps} 步 · 共用输入", { steps: draft.steps.length })}</span>
           </div>
-          <p className="workflow-hint">目标、读取范围、修改范围、模型只填一次，按步骤顺序执行；上一步摘要会注入下一步。</p>
+          <p className="workflow-hint">{tr("目标、读取范围、修改范围、模型只填一次，按步骤顺序执行；上一步摘要会注入下一步。")}</p>
 
           <RunInputsForm
             models={models}
@@ -136,31 +141,31 @@ export function OrchestrationRunPanel({
 
           {needsSave && (
             <button type="button" disabled={busy} onClick={onSave}>
-              保存为编排
+              {tr("保存为编排")}
             </button>
           )}
 
           {visibleRun ? (
             <>
               <section className="workflow-run-section">
-                <h3>编排状态</h3>
+                <h3>{tr("编排状态")}</h3>
                 <dl className="workflow-meta">
                   <div>
-                    <dt>状态</dt>
+                    <dt>{tr("状态")}</dt>
                     <dd>
                       <span className={"workflow-run-status wf-status-" + visibleRun.status}>
-                        {orchestrationRunStatusLabels[visibleRun.status]}
+                        {tr(orchestrationRunStatusLabels[visibleRun.status])}
                       </span>
                     </dd>
                   </div>
                   <div>
-                    <dt>步骤</dt>
+                    <dt>{tr("步骤")}</dt>
                     <dd>
-                      第 {Math.min(visibleRun.currentStepIndex + 1, visibleRun.steps.length)} / {visibleRun.steps.length} 步
+                      {tr("第 {current} / {total} 步", { current: Math.min(visibleRun.currentStepIndex + 1, visibleRun.steps.length), total: visibleRun.steps.length })}
                     </dd>
                   </div>
                   <div>
-                    <dt>运行 ID</dt>
+                    <dt>{tr("运行 ID")}</dt>
                     <dd>
                       <code>{visibleRun.orchestrationRunId}</code>
                     </dd>
@@ -174,7 +179,7 @@ export function OrchestrationRunPanel({
               </section>
 
               {childRun ? (
-                <section className="workflow-run-section" aria-label="当前子运行">
+                <section className="workflow-run-section" aria-label={tr("当前子运行")}>
                   <WorkflowRunDetails
                     run={childRun}
                     busy={busy}
@@ -190,16 +195,16 @@ export function OrchestrationRunPanel({
                   {active && (
                     <div className="workflow-button-row">
                       <button disabled={busy} onClick={onCancel}>
-                        取消编排
+                        {tr("取消编排")}
                       </button>
                     </div>
                   )}
                   {visibleRun.status === "failed" && (
                     <section className="workflow-run-section">
-                      <h3>重试</h3>
+                      <h3>{tr("重试")}</h3>
                       <div className="workflow-button-row">
                         <button disabled={busy} onClick={() => onRetry("implement")}>
-                          重试当前步骤
+                          {tr("重试当前步骤")}
                         </button>
                       </div>
                     </section>
@@ -208,7 +213,7 @@ export function OrchestrationRunPanel({
               )}
             </>
           ) : (
-            <p className="workflow-empty">填写共享输入后开始编排。</p>
+            <p className="workflow-empty">{tr("填写共享输入后开始编排。")}</p>
           )}
         </>
       )}

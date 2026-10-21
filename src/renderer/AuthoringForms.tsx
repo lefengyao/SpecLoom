@@ -3,6 +3,7 @@ import { useState } from "react";
 import { stringify } from "yaml";
 import { createMaterialId, writeMaterial, type ComponentField } from "../shared/project-materials";
 import { Modal } from "./ui";
+import { useI18n } from "./i18n";
 
 export interface EntityOption { id: string; title?: string; type: string }
 
@@ -17,8 +18,9 @@ export function NewEntity({ kind = "entity", initialParent, ...props }: Material
 }
 
 function EntityCreation({ busy, onClose, onSave, initialParent }: MaterialFormProps & { initialParent?: string }) {
+  const tr = useI18n();
   const [name, setName] = useState("");
-  return <Modal title="新建实体" onClose={onClose}>
+  return <Modal title={tr("新建实体")} onClose={onClose}>
     <form className="form-stack" onSubmit={(event) => {
       event.preventDefault();
       const title = name.trim();
@@ -39,11 +41,11 @@ function EntityCreation({ busy, onClose, onSave, initialParent }: MaterialFormPr
       }, `\n# ${title}\n`);
       void onSave(`specs/entities/${id}.md`, content, "absent").then((ok) => { if (ok) onClose(); });
     }}>
-      <label>名称<input required value={name} onChange={(event) => setName(event.target.value)} /></label>
-      <p className="subtle">创建后可以填写详细内容、设置父级和继承关系，并添加组件。</p>
+      <label>{tr("名称")}<input required value={name} onChange={(event) => setName(event.target.value)} /></label>
+      <p className="subtle">{tr("创建后可以填写详细内容、设置父级和继承关系，并添加组件。")}</p>
       <footer className="form-actions">
-        <button type="button" onClick={onClose}>取消</button>
-        <button className="primary" disabled={busy || !name.trim()}><Save size={16} />创建实体</button>
+        <button type="button" onClick={onClose}>{tr("取消")}</button>
+        <button className="primary" disabled={busy || !name.trim()}><Save size={16} />{tr("创建实体")}</button>
       </footer>
     </form>
   </Modal>;
@@ -63,9 +65,10 @@ const componentTemplates: Record<string, { name: string; fields: ComponentField[
 };
 
 export function NewComponent({ busy, onClose, onSave }: MaterialFormProps) {
+  const tr = useI18n();
   const [name, setName] = useState("");
   const [template, setTemplate] = useState("blank");
-  return <Modal title="新建组件" onClose={onClose}>
+  return <Modal title={tr("新建组件")} onClose={onClose}>
     <form className="form-stack" onSubmit={(event) => {
       event.preventDefault();
       const title = name.trim();
@@ -74,27 +77,28 @@ export function NewComponent({ busy, onClose, onSave }: MaterialFormProps) {
       const content = writeMaterial({ schemaVersion: 1, id, type: "component", scope: "user", title, description: "", fields: componentTemplates[template]!.fields }, `\n# ${title}\n`);
       void onSave(`specs/components/${id}.md`, content, "absent").then((ok) => { if (ok) onClose(); });
     }}>
-      <label>组件模板<select aria-label="组件模板" value={template} onChange={(event) => {
+      <label>{tr("组件模板")}<select aria-label={tr("组件模板")} value={template} onChange={(event) => {
         const value = event.target.value;
         setTemplate(value);
         setName(componentTemplates[value]!.name);
       }}>
-        <option value="blank">空白组件</option>
-        <option value="health">生命值</option>
-        <option value="position">坐标</option>
-        <option value="speed">速度</option>
+        <option value="blank">{tr("空白组件")}</option>
+        <option value="health">{tr("生命值")}</option>
+        <option value="position">{tr("坐标")}</option>
+        <option value="speed">{tr("速度")}</option>
       </select></label>
-      <label>名称<input required value={name} onChange={(event) => setName(event.target.value)} /></label>
-      <p className="subtle">创建后可以定义组件字段、类型和默认值，再将组件添加到实体。</p>
+      <label>{tr("名称")}<input required value={name} onChange={(event) => setName(event.target.value)} /></label>
+      <p className="subtle">{tr("创建后可以定义组件字段、类型和默认值，再将组件添加到实体。")}</p>
       <footer className="form-actions">
-        <button type="button" onClick={onClose}>取消</button>
-        <button className="primary" disabled={busy || !name.trim()}><Save size={16} />创建组件</button>
+        <button type="button" onClick={onClose}>{tr("取消")}</button>
+        <button className="primary" disabled={busy || !name.trim()}><Save size={16} />{tr("创建组件")}</button>
       </footer>
     </form>
   </Modal>;
 }
 
 function NewMap({ busy, onClose, onSave }: MaterialFormProps) {
+  const tr = useI18n();
   const [id, setId] = useState("");
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("## 职责\n\n\n## 行为\n\n\n## 生成边界\n\n");
@@ -102,7 +106,7 @@ function NewMap({ busy, onClose, onSave }: MaterialFormProps) {
   const [relations, setRelations] = useState("");
   const [source, setSource] = useState("developer");
   return (
-    <Modal title="新建地图" onClose={onClose}>
+    <Modal title={tr("新建地图")} onClose={onClose}>
       <form
         className="form-stack"
         onSubmit={(event) => {
@@ -132,7 +136,7 @@ function NewMap({ busy, onClose, onSave }: MaterialFormProps) {
       >
         <div className="form-row">
           <label>
-            地图 ID
+            {tr("地图 ID")}
             <input
               required
               pattern="[a-z][a-z0-9_-]*"
@@ -142,7 +146,7 @@ function NewMap({ busy, onClose, onSave }: MaterialFormProps) {
           </label>
         </div>
         <label>
-          名称
+          {tr("名称")}
           <input
             value={title}
             onChange={(event) => setTitle(event.target.value)}
@@ -150,9 +154,9 @@ function NewMap({ busy, onClose, onSave }: MaterialFormProps) {
         </label>
         <div className="form-row">
           <label>
-            状态
+            {tr("状态")}
             <select
-              aria-label="状态"
+              aria-label={tr("状态")}
               value={status}
               onChange={(event) => setStatus(event.target.value)}
             >
@@ -162,7 +166,7 @@ function NewMap({ busy, onClose, onSave }: MaterialFormProps) {
             </select>
           </label>
           <label>
-            来源
+            {tr("来源")}
             <input
               required
               value={source}
@@ -171,14 +175,14 @@ function NewMap({ busy, onClose, onSave }: MaterialFormProps) {
           </label>
         </div>
         <label>
-          关联实体
+          {tr("关联实体")}
           <input
             value={relations}
             onChange={(event) => setRelations(event.target.value)}
           />
         </label>
         <label>
-          Markdown 内容
+          {tr("Markdown 内容")}
           <textarea
             rows={7}
             value={body}
@@ -188,11 +192,11 @@ function NewMap({ busy, onClose, onSave }: MaterialFormProps) {
         </label>
         <footer className="form-actions">
           <button type="button" onClick={onClose}>
-            取消
+            {tr("取消")}
           </button>
           <button className="primary" disabled={busy}>
             <Save size={16} />
-            创建地图
+            {tr("创建地图")}
           </button>
         </footer>
       </form>
@@ -214,12 +218,13 @@ export function NewSpec({
     version?: string,
   ) => Promise<boolean>;
 }) {
+  const tr = useI18n();
   const [name, setName] = useState("");
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [parent, setParent] = useState("");
   return (
-    <Modal title={kind === "setting" ? "新建设定" : kind === "ui" ? "新建 UI" : "新建规范"} onClose={onClose}>
+    <Modal title={kind === "setting" ? tr("新建设定") : kind === "ui" ? tr("新建 UI") : tr("新建规范")} onClose={onClose}>
       <form
         className="form-stack"
         onSubmit={(event) => {
@@ -232,7 +237,7 @@ export function NewSpec({
         }}
       >
         <label>
-          文件名称
+          {tr("文件名称")}
           <input
             required
             pattern="[a-z][a-z0-9_-]*"
@@ -241,7 +246,7 @@ export function NewSpec({
           />
         </label>
         <label>
-          标题
+          {tr("标题")}
           <input
             required
             value={title}
@@ -249,11 +254,11 @@ export function NewSpec({
           />
         </label>
         {kind !== "spec" && <label>
-          父级资料 ID（可选）
-          <input aria-label="父级资料 ID" value={parent} onChange={(event) => setParent(event.target.value)} placeholder="例如 world 或 combat" />
+          {tr("父级资料 ID（可选）")}
+          <input aria-label={tr("父级资料 ID")} value={parent} onChange={(event) => setParent(event.target.value)} placeholder={tr("例如 world 或 combat")} />
         </label>}
         <label>
-          Markdown 正文
+          {tr("Markdown 正文")}
           <textarea
             required
             rows={10}
@@ -263,11 +268,11 @@ export function NewSpec({
         </label>
         <footer className="form-actions">
           <button type="button" onClick={onClose}>
-            取消
+            {tr("取消")}
           </button>
           <button className="primary" disabled={busy}>
             <Save size={16} />
-            {kind === "setting" ? "创建设定" : kind === "ui" ? "创建 UI" : "创建规范"}
+            {kind === "setting" ? tr("创建设定") : kind === "ui" ? tr("创建 UI") : tr("创建规范")}
           </button>
         </footer>
       </form>

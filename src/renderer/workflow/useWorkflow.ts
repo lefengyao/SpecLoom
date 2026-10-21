@@ -15,6 +15,7 @@ import type {
   WorkflowSummary,
   WorkflowUpdate,
 } from "../../shared/workflow-api";
+import { useI18n } from "../i18n";
 
 /** The page has three modes: authoring a definition, composing orchestrations, and running. */
 export type WorkflowMode = "workflow" | "orchestration" | "run";
@@ -170,6 +171,7 @@ export function useWorkflow(
   projectPath: string,
   onError?: (error: unknown) => void,
 ): UseWorkflowResult {
+  const tr = useI18n();
   const workflow = api?.workflow;
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
@@ -291,7 +293,7 @@ export function useWorkflow(
   const setDefault = useCallback(
     async (id: string): Promise<void> => {
       if (!defaults) {
-        setError("当前桌面版本不支持设置默认工作流。");
+        setError(tr("当前桌面版本不支持设置默认工作流。"));
         return;
       }
       setLoading(true);
@@ -305,12 +307,12 @@ export function useWorkflow(
         if (mounted.current) setLoading(false);
       }
     },
-    [defaults, fail],
+    [defaults, fail, tr],
   );
 
   const restoreDefault = useCallback(async (): Promise<void> => {
     if (!defaults) {
-      setError("当前桌面版本不支持恢复全局默认。");
+      setError(tr("当前桌面版本不支持恢复全局默认。"));
       return;
     }
     setLoading(true);
@@ -323,7 +325,7 @@ export function useWorkflow(
     } finally {
       if (mounted.current) setLoading(false);
     }
-  }, [defaults, fail]);
+  }, [defaults, fail, tr]);
 
   const select = useCallback(
     async (id: string): Promise<void> => {
@@ -331,7 +333,7 @@ export function useWorkflow(
       if (dirty) {
         let proceed = true;
         try {
-          proceed = typeof window.confirm === "function" ? window.confirm("当前工作流有未保存的修改，切换后将丢弃。继续？") : true;
+          proceed = typeof window.confirm === "function" ? window.confirm(tr("当前工作流有未保存的修改，切换后将丢弃。继续？")) : true;
         } catch {
           proceed = true;
         }
@@ -347,7 +349,7 @@ export function useWorkflow(
         if (mounted.current) setLoading(false);
       }
     },
-    [workflow, dirty, openWorkflow, fail],
+    [workflow, dirty, openWorkflow, fail, tr],
   );
 
   const refresh = useCallback(async (): Promise<void> => {
@@ -543,7 +545,7 @@ export function useWorkflow(
   const start = useCallback(
     async (inputs: WorkflowRunInputs): Promise<void> => {
       if (!workflow || !definition) {
-        setError("请先选择或新建一个工作流。");
+        setError(tr("请先选择或新建一个工作流。"));
         return;
       }
       setRunLoading(true);
@@ -560,7 +562,7 @@ export function useWorkflow(
         if (mounted.current) setRunLoading(false);
       }
     },
-    [workflow, definition, fail],
+    [workflow, definition, fail, tr],
   );
 
   const act = useCallback(
