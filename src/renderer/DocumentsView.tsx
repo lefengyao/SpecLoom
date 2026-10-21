@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, FileAudio, FileImage, FilePlus2, FileText, FileVideo, Folder, FolderOpen, PanelRight, RefreshCw, Save, Type } from "lucide-react";
+import { ChevronDown, ChevronRight, FileAudio, FileImage, FilePlus2, FileText, FileVideo, Folder, FolderOpen, PanelLeft, PanelRight, RefreshCw, Save, Type } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import type { DesktopApi, ProjectTreeEntry } from "../shared/desktop-api";
 import type { FileReadResult } from "../shared/contracts";
@@ -149,6 +149,7 @@ export function DocumentsView({ api, projectPath, onError, busy, revision, categ
   const modeRef = useRef(mode);
   modeRef.current = mode;
   const [treeOpen, setTreeOpen] = useState(readTreePreference);
+  const [explorerOpen, setExplorerOpen] = useState(true);
   const preferenceProject = canonicalProjectPreferencePath(projectPath);
   const [hideImport, setHideImport] = useState(() => readHideImportPreference(projectPath));
   useEffect(() => { setHideImport(readHideImportPreference(projectPath)); }, [preferenceProject]);
@@ -441,28 +442,9 @@ export function DocumentsView({ api, projectPath, onError, busy, revision, categ
   const creationLabel = category === "all" ? "" : `新建${categoryLabels[category]}`;
   const editorTitle = structured ? selectedMeta?.title ?? file?.path ?? categoryLabels[category] : file?.path ?? selectedPath ?? categoryLabels[category];
   const treeTitle = category === "entity" || category === "setting" ? `${categoryLabels[category]}关系树` : category === "component" ? "组件库" : "项目树";
-  return <div className={`documents-layout ${treeOpen ? "is-tree-open" : "is-tree-closed"}`}>
-    <aside id="document-tree" className="document-sidebar" inert={!treeOpen}>
-      <header className="section-heading"><h2>{treeTitle}</h2><div className="toolbar"><IconButton label="刷新项目树" onClick={() => { void refresh().catch(onError); }}><RefreshCw size={16} /></IconButton></div></header>
-      {category === "all" && <label className="project-file-filter"><input type="checkbox" checked={hideImport} onChange={(event) => { setHideImport(event.target.checked); writeHideImportPreference(projectPath, event.target.checked); }} />隐藏 .import 文件</label>}
-      <ul className="project-tree" role="tree" aria-label={treeTitle}>{usesCatalog && (visibleMaterials.length || !catalogLoading) && semantic.length ? renderMaterialNodes(semantic) : renderPhysicalNodes(tree)}</ul>
-      {catalogLoading && <p className="subtle">读取资料…</p>}
-      {!catalogLoading && !(usesCatalog ? semantic.length : tree.length) && <p className="empty-state">暂无{categoryLabels[category]}</p>}
-      <ResourceExplorer entries={visibleEntries} selectedPath={selectedPath} onSelect={(path) => { void selectFile(path); }} />
-    </aside>
-    <section className="document-editor">
-      <header className="section-heading">
-        <div><h2>{editorTitle}</h2>{file && <code className="version-text" title={file.path}>{dirty ? "有未保存修改" : "已保存"} · {file.path}</code>}</div>
-        <div className="toolbar">
-          <button className="tree-toggle" aria-controls="document-tree" aria-expanded={treeOpen} onClick={toggleTree}><PanelRight size={16} />项目树</button>
-          {category !== "all" && <button disabled={busy || saving} onClick={() => beginCreation()}><FilePlus2 size={16} />{creationLabel}</button>}
-          {file && category === "entity" && file.version !== "absent" && selectedMeta && <button disabled={busy || saving} onClick={() => beginCreation(selectedMeta.id)}><FilePlus2 size={16} />新建子实体</button>}
-          {structured && <button onClick={() => setSourceMode((value) => !value)}>{sourceMode ? "详情编辑" : "源码编辑"}</button>}
-          {file && <button className="primary" type={structured && !sourceMode ? "submit" : "button"} form={structured && !sourceMode ? "material-edit-form" : undefined} disabled={busy || saving || loading || (usesCatalog && catalogLoading) || (structured && !sourceMode && catalogError) || !dirty} onClick={structured && !sourceMode ? undefined : () => { void saveDocument(); }}><Save size={16} />{saving ? "保存中…" : "保存资料"}</button>}
-        </div>
-      </header>
+  const detailContent = (
+    <>
       {catalogError && usesCatalog && <p role="alert" className="field-hint">部分资料读取失败，详情编辑暂不可用。可切换源码编辑或刷新项目树重试。</p>}
-      {usesCatalog && <MaterialExplorer key={category} api={api} projectPath={projectPath} category={category} materials={visibleMaterials} groups={groupRegistry[category] ?? []} groupsSaving={groupRegistrySaving} onGroupsChange={(groups) => saveMaterialGroupsForCategory(category, groups)} selectedPath={selectedPath} loading={catalogLoading} onSelect={(path) => { void selectFile(path); }} />}
       {projectPreview ? ["image", "audio", "video"].includes(resourceKind(projectPreview) ?? "") ? <ProjectMediaPreview api={api} projectPath={projectPath} path={projectPreview} active={active} /> : <ProjectTextPreview api={api} projectPath={projectPath} path={projectPreview} active={active} /> : file ? structured && !sourceMode ? <form id="material-edit-form" onSubmit={(event) => { event.preventDefault(); void saveDocument(); }}>
         <MaterialImageEditor key={`image:${file.path}`} api={api} projectPath={projectPath} title={selectedMeta?.title ?? "资料"} path={typeof material.data.image === "string" ? material.data.image : undefined} disabled={busy || saving || loading} onError={onError} onChange={(image) => {
           const data = { ...material.data };
@@ -472,6 +454,38 @@ export function DocumentsView({ api, projectPath, onError, busy, revision, categ
         <MaterialDetails key={file.path} material={material} catalog={selectable} groups={groupRegistry[category] ?? []} originalFields={readFields(parseMaterial(file.content)?.data ?? {}).map((field) => field.key)} disabled={busy || saving || loading || (usesCatalog && (catalogLoading || catalogError || groupRegistrySaving))} onChange={(data, body = material.body) => updateText(writeMaterial(data, body))} />
       </form> : <textarea aria-label="文档内容" className="markdown-editor" spellCheck={false} value={text} onChange={(event) => updateText(event.target.value)} disabled={busy || loading || saving} />
       : <div className="empty-state">{loading ? "读取中…" : selectedPath ? <><FileText size={24} /><span className="subtle">该文件不在可编辑的项目资料目录中</span></> : <span>{category === "component" ? "创建可复用组件，或选择组件编辑字段" : "选择资料或新建资料"}</span>}</div>}
+    </>
+  );
+
+  return <div className={`documents-layout ${treeOpen ? "is-tree-open" : "is-tree-closed"}`}>
+    <aside id="document-tree" className="document-sidebar" inert={!treeOpen}>
+      <header className="section-heading"><h2>{treeTitle}</h2><div className="toolbar"><IconButton label="刷新项目树" onClick={() => { void refresh().catch(onError); }}><RefreshCw size={16} /></IconButton></div></header>
+      {category === "all" && <label className="project-file-filter"><input type="checkbox" checked={hideImport} onChange={(event) => { setHideImport(event.target.checked); writeHideImportPreference(projectPath, event.target.checked); }} />隐藏 .import 文件</label>}
+      <ul className="project-tree" role="tree" aria-label={treeTitle}>{usesCatalog && (visibleMaterials.length || !catalogLoading) && semantic.length ? renderMaterialNodes(semantic) : renderPhysicalNodes(tree)}</ul>
+      {catalogLoading && <p className="subtle">读取资料…</p>}
+      {!catalogLoading && !(usesCatalog ? semantic.length : tree.length) && <p className="empty-state">暂无{categoryLabels[category]}</p>}
+      <ResourceExplorer entries={visibleEntries} selectedPath={selectedPath} onSelect={(path) => { void selectFile(path); }} />
+    </aside>
+    <section className={"document-editor" + (usesCatalog ? " has-explorer" : "") + (usesCatalog && !explorerOpen ? " is-explorer-closed" : "")}>
+      <header className="section-heading">
+        <div><h2>{editorTitle}</h2>{file && <code className="version-text" title={file.path}>{dirty ? "有未保存修改" : "已保存"} · {file.path}</code>}</div>
+        <div className="toolbar">
+          <button className="tree-toggle" aria-controls="document-tree" aria-expanded={treeOpen} onClick={toggleTree}><PanelRight size={16} />项目树</button>
+          {usesCatalog && <button className="tree-toggle" aria-controls="material-explorer" aria-expanded={explorerOpen} onClick={() => setExplorerOpen((open) => !open)}><PanelLeft size={16} />{explorerOpen ? "收起资料" : "资料列表"}</button>}
+          {category !== "all" && <button disabled={busy || saving} onClick={() => beginCreation()}><FilePlus2 size={16} />{creationLabel}</button>}
+          {file && category === "entity" && file.version !== "absent" && selectedMeta && <button disabled={busy || saving} onClick={() => beginCreation(selectedMeta.id)}><FilePlus2 size={16} />新建子实体</button>}
+          {structured && <button onClick={() => setSourceMode((value) => !value)}>{sourceMode ? "详情编辑" : "源码编辑"}</button>}
+          {file && <button className="primary" type={structured && !sourceMode ? "submit" : "button"} form={structured && !sourceMode ? "material-edit-form" : undefined} disabled={busy || saving || loading || (usesCatalog && catalogLoading) || (structured && !sourceMode && catalogError) || !dirty} onClick={structured && !sourceMode ? undefined : () => { void saveDocument(); }}><Save size={16} />{saving ? "保存中…" : "保存资料"}</button>}
+        </div>
+      </header>
+      {usesCatalog ? (
+        <div className="document-workspace">
+          <div id="material-explorer" className="document-explorer-pane" hidden={!explorerOpen} inert={!explorerOpen}>
+            {usesCatalog && <MaterialExplorer key={category} api={api} projectPath={projectPath} category={category} materials={visibleMaterials} groups={groupRegistry[category] ?? []} groupsSaving={groupRegistrySaving} onGroupsChange={(groups) => saveMaterialGroupsForCategory(category, groups)} selectedPath={selectedPath} loading={catalogLoading} onSelect={(path) => { void selectFile(path); }} />}
+          </div>
+          <div className="document-detail-pane">{detailContent}</div>
+        </div>
+      ) : detailContent}
     </section>
     {createForm && category === "entity" && <NewEntity busy={busy || saving} onClose={() => setCreateForm(false)} onSave={createDocument} {...(initialParent ? { initialParent } : {})} />}
     {createForm && category === "component" && <NewComponent busy={busy || saving} onClose={() => setCreateForm(false)} onSave={createDocument} />}
