@@ -23,7 +23,7 @@
 .state-machine-row label { min-width: 0; }
 .state-machine-row textarea { resize: vertical; }
 .state-machine-remove { align-self: flex-start; margin: -4px 0 10px; }
-.material-body { min-height: 180px; resize: vertical; line-height: 1.7; }
+.material-body { min-height: 360px; resize: vertical; line-height: 1.7; }
 .material-tree-row { display: flex; align-items: center; gap: 3px; border-radius: 6px; }
 .material-tree-row.selected { background: var(--accent-soft); color: var(--accent); }
 .material-tree-row .tree-row { flex: 1; min-width: 0; }

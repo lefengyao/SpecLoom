@@ -235,6 +235,6 @@ export function MaterialDetails({ material, catalog, groups = [], onChange, disa
         <button type="button" disabled={fieldLocked(index)} aria-label={`移除字段 ${index + 1}`} onClick={() => patch({ fields: fields.filter((_, position) => position !== index) })}><Trash2 size={15} /></button>
       </div>)}
     </section>}
-    <label>Markdown 正文<textarea className="material-body" rows={9} value={body} spellCheck={false} onChange={(event) => emit(data, event.target.value)} /></label>
+    <label>Markdown 正文<textarea className="material-body" rows={16} value={body} spellCheck={false} onChange={(event) => emit(data, event.target.value)} /></label>
   </fieldset>;
 }
