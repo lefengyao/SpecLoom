@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, FileAudio, FileImage, FilePlus2, FileText, FileVideo, Folder, FolderOpen, PanelLeft, PanelRight, RefreshCw, Save, Type } from "lucide-react";
+import { ChevronDown, ChevronRight, FileAudio, FileImage, FilePlus2, FileText, FileVideo, Folder, FolderOpen, PanelLeft, PanelRight, RefreshCw, Save, Type, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import type { DesktopApi, ProjectTreeEntry } from "../shared/desktop-api";
 import type { FileReadResult } from "../shared/contracts";
@@ -442,6 +442,17 @@ export function DocumentsView({ api, projectPath, onError, busy, revision, categ
   const creationLabel = category === "all" ? "" : `新建${categoryLabels[category]}`;
   const editorTitle = structured ? selectedMeta?.title ?? file?.path ?? categoryLabels[category] : file?.path ?? selectedPath ?? categoryLabels[category];
   const treeTitle = category === "entity" || category === "setting" ? `${categoryLabels[category]}关系树` : category === "component" ? "组件库" : "项目树";
+  const hasDetail = Boolean(projectPreview || file || selectedPath);
+  function closeDetail() {
+    requestedPath.current = undefined;
+    readRequest.current++;
+    setSelectedPath(undefined);
+    setProjectPreview(undefined);
+    setFile(undefined);
+    setText("");
+    setSourceMode(false);
+    setLoading(false);
+  }
   const detailContent = (
     <>
       {catalogError && usesCatalog && <p role="alert" className="field-hint">部分资料读取失败，详情编辑暂不可用。可切换源码编辑或刷新项目树重试。</p>}
@@ -466,12 +477,13 @@ export function DocumentsView({ api, projectPath, onError, busy, revision, categ
       {!catalogLoading && !(usesCatalog ? semantic.length : tree.length) && <p className="empty-state">暂无{categoryLabels[category]}</p>}
       <ResourceExplorer entries={visibleEntries} selectedPath={selectedPath} onSelect={(path) => { void selectFile(path); }} />
     </aside>
-    <section className={"document-editor" + (usesCatalog ? " has-explorer" : "") + (usesCatalog && !explorerOpen ? " is-explorer-closed" : "")}>
+    <section className={"document-editor" + (usesCatalog ? " has-explorer" : "") + (usesCatalog && hasDetail && !explorerOpen ? " is-explorer-closed" : "")}>
       <header className="section-heading">
         <div><h2>{editorTitle}</h2>{file && <code className="version-text" title={file.path}>{dirty ? "有未保存修改" : "已保存"} · {file.path}</code>}</div>
         <div className="toolbar">
           <button className="tree-toggle" aria-controls="document-tree" aria-expanded={treeOpen} onClick={toggleTree}><PanelRight size={16} />项目树</button>
-          {usesCatalog && <button className="tree-toggle" aria-controls="material-explorer" aria-expanded={explorerOpen} disabled={explorerOpen && !selectedPath} title={explorerOpen && !selectedPath ? "先选择一条资料，收起后才不会只剩空白" : explorerOpen ? "收起资料列表，放大详情" : "重新打开资料列表"} onClick={() => setExplorerOpen((open) => !open)}><PanelLeft size={16} />{explorerOpen ? "收起资料" : "资料列表"}</button>}
+          {usesCatalog && hasDetail && <button className="tree-toggle" aria-controls="material-explorer" aria-expanded={explorerOpen} title={explorerOpen ? "收起资料列表，放大详情" : "重新打开资料列表"} onClick={() => setExplorerOpen((open) => !open)}><PanelLeft size={16} />{explorerOpen ? "收起资料" : "资料列表"}</button>}
+          {usesCatalog && hasDetail && <button className="tree-toggle" onClick={closeDetail}><X size={16} />关闭详情</button>}
           {category !== "all" && <button disabled={busy || saving} onClick={() => beginCreation()}><FilePlus2 size={16} />{creationLabel}</button>}
           {file && category === "entity" && file.version !== "absent" && selectedMeta && <button disabled={busy || saving} onClick={() => beginCreation(selectedMeta.id)}><FilePlus2 size={16} />新建子实体</button>}
           {structured && <button onClick={() => setSourceMode((value) => !value)}>{sourceMode ? "详情编辑" : "源码编辑"}</button>}
@@ -479,11 +491,11 @@ export function DocumentsView({ api, projectPath, onError, busy, revision, categ
         </div>
       </header>
       {usesCatalog ? (
-        <div className="document-workspace">
-          <div id="material-explorer" className="document-explorer-pane" hidden={!explorerOpen} inert={!explorerOpen}>
+        <div className={"document-workspace" + (hasDetail ? " has-detail" : "")}>
+          <div id="material-explorer" className="document-explorer-pane" hidden={hasDetail && !explorerOpen} inert={hasDetail && !explorerOpen}>
             {usesCatalog && <MaterialExplorer key={category} api={api} projectPath={projectPath} category={category} materials={visibleMaterials} groups={groupRegistry[category] ?? []} groupsSaving={groupRegistrySaving} onGroupsChange={(groups) => saveMaterialGroupsForCategory(category, groups)} selectedPath={selectedPath} loading={catalogLoading} onSelect={(path) => { void selectFile(path); }} />}
           </div>
-          <div className="document-detail-pane">{detailContent}</div>
+          {hasDetail && <div className="document-detail-pane">{detailContent}</div>}
         </div>
       ) : detailContent}
     </section>

@@ -1536,16 +1536,21 @@ details summary {
 }
 .document-workspace {
   display: grid;
-  grid-template-columns: minmax(380px, 0.95fr) minmax(0, 1.05fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 18px;
   flex: 1 1 auto;
   min-height: 0;
   padding-top: 12px;
 }
+.document-workspace.has-detail {
+  grid-template-columns: minmax(380px, 0.95fr) minmax(0, 1.05fr);
+}
 .document-explorer-pane {
   min-width: 0;
   min-height: 0;
   overflow: auto;
+}
+.document-workspace.has-detail .document-explorer-pane {
   padding-right: 14px;
   border-right: 1px solid var(--border);
 }
@@ -1568,7 +1573,8 @@ details summary {
   display: none;
 }
 @media (max-width: 1100px) {
-  .document-workspace {
+  .document-workspace,
+  .document-workspace.has-detail {
     grid-template-columns: minmax(0, 1fr);
   }
   .document-explorer-pane {
