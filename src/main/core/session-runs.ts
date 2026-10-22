@@ -84,28 +84,66 @@ export class SessionRuns {
       try { return fileReport = await fileTracker.finish(run.controller.signal.aborted); }
       catch { return fileReport = { runId: run.id, files: [], complete: false, notes: ["文件变化检查未能完成；任务结果已保留。"] }; }
     };
-    // Persisting every token rewrites the whole session file and throttles the
-    // provider stream. Apply text/thinking in small batches instead.
-    const streamBatchSize = 64;
+    // The stream hot path must not serialize and rename the whole session file.
+    // Apply text/thinking in small memory batches; checkpoint at boundaries and
+    // every 128 applied stream events.
+    const streamBatchSize = 16;
+    const checkpointEvery = 128;
     const pendingStreams = new Map<string, AgentEvent>();
     let pendingStreamCount = 0;
+    let appliedSinceCheckpoint = 0;
     let streamChain: Promise<void> = Promise.resolve();
     let streamWriteError: unknown;
-    const writeEvents = async (events: AgentEvent[]): Promise<void> => {
-      const updated = await this.store.update(sessionId, (record) => {
+    let streamTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const clearStreamTimer = (): void => {
+      if (streamTimer) { clearTimeout(streamTimer); streamTimer = undefined; }
+    };
+    const scheduleStreamFlush = (): void => {
+      if (streamTimer) return;
+      streamTimer = setTimeout(() => {
+        streamTimer = undefined;
+        void flushStreams().then(maybeCheckpoint).catch((error) => { streamWriteError ??= error; });
+      }, 64);
+      streamTimer.unref?.();
+    };
+
+    const applyEvents = async (events: AgentEvent[]): Promise<void> => {
+      const updated = await this.store.mutate(sessionId, (record) => {
         if (this.live.get(sessionId) !== run || run.controller.signal.aborted) return;
         for (const event of events) { record.seq++; this.apply(record, run.id, event); }
       });
       if (!run.controller.signal.aborted) this.publish(SessionStore.view(updated));
     };
+
+    const checkpoint = async (): Promise<void> => {
+      try {
+        const updated = await this.store.checkpoint(sessionId);
+        appliedSinceCheckpoint = 0;
+        if (!run.controller.signal.aborted) this.publish(SessionStore.view(updated));
+      } catch (error) {
+        streamWriteError ??= error;
+        throw error;
+      }
+    };
+
+    const maybeCheckpoint = async (): Promise<void> => {
+      if (appliedSinceCheckpoint >= checkpointEvery) await checkpoint();
+    };
+
     const flushStreams = (): Promise<void> => {
+      clearStreamTimer();
       streamChain = streamChain.then(async () => {
         if (!pendingStreams.size) return;
         const events = [...pendingStreams.values()];
         pendingStreams.clear();
         pendingStreamCount = 0;
-        await writeEvents(events);
-      }).catch((error) => { streamWriteError ??= error; throw error; });
+        appliedSinceCheckpoint += events.length;
+        await applyEvents(events);
+      }).catch((error) => {
+        streamWriteError ??= error;
+        throw error;
+      });
       return streamChain;
     };
     let started = false;
@@ -128,15 +166,22 @@ export class SessionRuns {
           if (event.type === "text" || event.type === "thinking") {
             pendingStreams.set(`${event.type}:${event.messageId}`, event);
             pendingStreamCount++;
-            if (pendingStreamCount >= streamBatchSize) await flushStreams();
+            if (pendingStreamCount >= streamBatchSize) {
+              await flushStreams();
+              await maybeCheckpoint();
+            } else {
+              scheduleStreamFlush();
+            }
             return;
           }
           await flushStreams();
-          await writeEvents([event]);
+          await applyEvents([event]);
+          await checkpoint();
         },
         onConversation: async (messages, contextSummary, contextTokensEstimate, contextCalibration) => {
           if (this.live.get(sessionId) !== run || run.controller.signal.aborted) return;
           await flushStreams();
+          await checkpoint();
           const updated = await this.store.update(sessionId, (record) => {
             if (this.live.get(sessionId) !== run || run.controller.signal.aborted) return;
             record.conversation = preserveConversation([...messages, ...this.pendingGuidance(record, run)]);
@@ -150,6 +195,7 @@ export class SessionRuns {
         onUsage: async usage => {
           if (this.live.get(sessionId) !== run || run.controller.signal.aborted) return;
           await flushStreams();
+          await checkpoint();
           const updated = await this.store.update(sessionId, record => {
             if (this.live.get(sessionId) !== run || run.controller.signal.aborted) return;
             record.lastRequestUsage = { ...usage, source: "actual" };
@@ -173,6 +219,7 @@ export class SessionRuns {
         },
       }), run.controller.signal);
       await flushStreams();
+      await checkpoint();
       if (streamWriteError) throw streamWriteError;
       // Executors must consume their guidance before returning. Never report an accepted but unhandled message as completed.
       if ((await this.takeGuidance(sessionId, run, true)).length) throw new ProjectError("MODEL_ERROR", "运行结束前未处理引导，已保留在会话历史中");
@@ -206,6 +253,7 @@ export class SessionRuns {
       await run.guidanceTail;
       if (started) {
         await flushStreams().catch(() => undefined);
+        await checkpoint().catch(() => undefined);
         const fileChanges = await finishFiles();
         const failed = await this.store.update(sessionId, (record) => {
           record.status = run.controller.signal.aborted ? "cancelled" : "error"; record.error = (run.controller.signal.aborted ? "已停止，保留部分回复" : error instanceof Error ? error.message : String(error)).slice(0, 4000);
@@ -219,6 +267,7 @@ export class SessionRuns {
       }
       throw error;
     } finally {
+      clearStreamTimer();
       run.acceptingGuidance = false;
       for (const waiter of run.approvals.values()) waiter.reject(new ProjectError("MODEL_ERROR", "审批所属运行已结束"));
       if (this.live.get(sessionId) === run) this.live.delete(sessionId);

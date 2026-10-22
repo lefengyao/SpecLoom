@@ -24,6 +24,8 @@ const terminationReserve = 65_536;
 
 export class SessionStore {
   private readonly records = new Map<string, SessionRecord>();
+  /** Last successfully written snapshot, used to roll back a failed stream checkpoint. */
+  private readonly persisted = new Map<string, SessionRecord>();
   private readonly deletedTasks = new Set<string>();
   private pending = Promise.resolve();
   private constructor(private readonly files: FileStore) {}
@@ -83,6 +85,43 @@ export class SessionStore {
       Object.assign(record, parsed); if (parsed.draft !== undefined) record.draftRevision++;
     }));
   }
+  /**
+   * Apply a streaming update to the in-memory record without touching disk.
+   * SessionRuns owns the checkpoint policy for durable writes.
+   */
+  async mutate(id: string, action: (record: SessionRecord) => void): Promise<SessionRecord> {
+    return this.queue(async () => {
+      const record = this.records.get(id);
+      if (!record) throw new ProjectError("VALIDATION_FAILED", "会话不存在");
+      const before = this.persisted.get(id) ?? structuredClone(record);
+      if (!this.persisted.has(id)) this.persisted.set(id, before);
+      try {
+        action(record);
+        record.updatedAt = new Date().toISOString();
+        return structuredClone(record);
+      } catch (error) {
+        this.records.set(id, structuredClone(before));
+        throw error;
+      }
+    });
+  }
+
+  /** Validate and persist the current in-memory record. */
+  async checkpoint(id: string): Promise<SessionRecord> {
+    return this.queue(async () => {
+      const record = this.records.get(id);
+      if (!record) throw new ProjectError("VALIDATION_FAILED", "会话不存在");
+      const before = this.persisted.get(id) ?? structuredClone(record);
+      if (!this.persisted.has(id)) this.persisted.set(id, before);
+      try {
+        return await this.write(record);
+      } catch (error) {
+        this.records.set(id, structuredClone(before));
+        throw error;
+      }
+    });
+  }
+
   async update(id: string, action: (record: SessionRecord) => void): Promise<SessionRecord> {
     return this.queue(async () => { const record = this.get(id); action(record); return this.write(record); });
   }
@@ -96,7 +135,9 @@ export class SessionStore {
     const limit = ["running", "waiting"].includes(record.status) ? sessionFileLimit - terminationReserve : sessionFileLimit;
     if (Buffer.byteLength(json) > limit) throw new ProjectError("VALIDATION_FAILED", "会话历史过大，请新建会话");
     await this.writeJson(`${directory}/${digestBytes(record.id).slice(7)}.json`, json);
-    this.records.set(record.id, record); return structuredClone(record);
+    this.records.set(record.id, record);
+    this.persisted.set(record.id, structuredClone(record));
+    return structuredClone(record);
   }
   private async writeJson(relativePath: string, json: string): Promise<void> {
     const target = await this.files.policy.resolve(relativePath, true);

@@ -29,6 +29,15 @@ Out of scope for this plan:
 
 Those are Phase 2 items if the measured result is still below target after this plan.
 
+## Implementation notes (2026-10-21)
+
+This plan was executed with two safety refinements:
+
+- `SessionStore` keeps the last successfully written snapshot per session. When a checkpoint fails (for example, an oversized stream event), it restores that snapshot so the terminal error can be written instead of leaving the session stuck in `running`.
+- A 64ms flush timer publishes short streams before the 16-event batch is full. Without it, a short response would not appear until the run ended, and guidance during streaming could race completion.
+
+The measured long-response sample reached 147–155 token/s on the same DeepSeek configuration. Shorter responses report a lower rate because the metric window includes first-token and thinking time.
+
 ---
 
 ## File Structure
