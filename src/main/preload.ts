@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { DesktopApi, MaterialChange } from "../shared/desktop-api";
 import type { OfflineDocumentImportOptions } from "../shared/offline-documents";
-import type { SessionEvent } from "../shared/chat";
+import type { SessionDeltaEvent, SessionEvent } from "../shared/chat";
 import type { WorkflowUpdate } from "../shared/workflow-api";
 import type { OrchestrationUpdate } from "../shared/orchestration-api";
 
@@ -55,6 +55,11 @@ const api: DesktopApi = {
       const receive = (_event: Electron.IpcRendererEvent, payload: SessionEvent) => listener(payload);
       ipcRenderer.on("specloom:session", receive);
       return () => { ipcRenderer.removeListener("specloom:session", receive); };
+    },
+    subscribeDelta: (listener) => {
+      const receive = (_event: Electron.IpcRendererEvent, payload: SessionDeltaEvent) => listener(payload);
+      ipcRenderer.on("specloom:session-delta", receive);
+      return () => { ipcRenderer.removeListener("specloom:session-delta", receive); };
     },
   },
   entityLayout: {

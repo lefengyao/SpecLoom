@@ -128,6 +128,19 @@ export type ChatSession = z.infer<typeof ChatSessionSchema>;
 export const SessionPatchSchema = z.object({ title: z.string().min(1).max(200).optional(), archived: z.boolean().optional(), draft: z.string().max(131072).optional(), model: SessionModelPreferenceSchema.optional(), approvalMode: ApprovalModeSchema.optional(), webSearchMode: WebSearchModeSchema.optional() }).strict();
 export type SessionPatch = z.infer<typeof SessionPatchSchema>;
 export interface SessionEvent { projectPath: string; sessionId: string; runId?: string; seq: number; session: ChatSession }
+/** Lightweight stream update; boundaries still use SessionEvent snapshots. */
+export interface SessionDeltaEvent {
+  projectPath: string;
+  sessionId: string;
+  runId?: string;
+  seq: number;
+  stream: {
+    type: "text" | "thinking";
+    messageId: string;
+    content: string;
+    partial: true;
+  };
+}
 export interface ChatSessionsApi {
   list(projectPath: string): Promise<ChatSession[]>;
   create(projectPath: string, title?: string, taskId?: string): Promise<ChatSession>;
@@ -141,6 +154,8 @@ export interface ChatSessionsApi {
   answer(projectPath: string, sessionId: string, runId: string, questionId: string, answers: QuestionAnswer): Promise<ChatSession>;
   approve(projectPath: string, sessionId: string, runId: string, approvalId: string, approved: boolean): Promise<ChatSession>;
   subscribe(listener: (event: SessionEvent) => void): () => void;
+  /** Optional delta stream; when present, use it for live text/thinking updates. */
+  subscribeDelta?: (listener: (event: SessionDeltaEvent) => void) => () => void;
   /** Metadata invalidation; streamed replies continue to arrive through subscribe. */
   subscribeChanges?: (listener: (projectPath: string) => void) => () => void;
 }

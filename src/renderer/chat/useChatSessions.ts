@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ChatImageAttachment, ChatSession, ChatSessionsApi, SessionEvent } from "../../shared/chat";
+import type { ChatImageAttachment, ChatSession, ChatSessionsApi, SessionDeltaEvent, SessionEvent } from "../../shared/chat";
 import { playCompletionChime } from "../sound";
 import { composePrompt, type PreparedDraftSnapshot } from "./attachment-ingest";
 
@@ -15,6 +15,22 @@ function sameValue(a: unknown, b: unknown): boolean {
   return keys.length === Object.keys(right).filter(key => right[key] !== undefined).length && keys.every(key => Object.hasOwn(right, key) && sameValue(left[key], right[key]));
 }
 
+export function mergeDeltaSession(current: ChatSession[], event: SessionDeltaEvent): ChatSession[] {
+  const session = current.find((candidate) => candidate.id === event.sessionId);
+  if (!session || !["running", "waiting"].includes(session.status) || event.seq < session.seq || (event.runId !== undefined && session.runId !== undefined && event.runId !== session.runId)) return current;
+  const runId = event.runId ?? session.runId;
+  if (!runId) return current;
+  const itemId = `${runId}:${event.stream.messageId}`;
+  const item = event.stream.type === "thinking"
+    ? { id: itemId, kind: "thinking" as const, content: event.stream.content, partial: true as const }
+    : { id: itemId, kind: "message" as const, role: "assistant" as const, content: event.stream.content, partial: true as const };
+  const existing = session.items.find((candidate) => candidate.id === itemId);
+  const items = existing
+    ? session.items.map((candidate) => candidate.id === itemId ? item : candidate)
+    : [...session.items, item];
+  const next: ChatSession = { ...session, runId, status: "running", seq: event.seq, items };
+  return current.map((candidate) => candidate.id === session.id ? next : candidate);
+}
 export function mergeSession(current: ChatSession[], next: ChatSession): ChatSession[] {
   const previous = current.find((s) => s.id === next.id);
   if (previous && previous.revision >= next.revision) return current;
@@ -120,6 +136,14 @@ export function useChatSessions(api: ChatSessionsApi, projectPath: string, onErr
     records.current = next;
     setSessions(current => current === previous ? next : mergeSession(current, session));
   }, []);
+  const applyDelta = useCallback((event: SessionDeltaEvent) => {
+    if (!alive.current || deleted.current.has(event.sessionId)) return;
+    const previous = records.current;
+    const next = mergeDeltaSession(previous, event);
+    if (next === previous) return;
+    records.current = next;
+    setSessions(current => mergeDeltaSession(current, event));
+  }, []);
   const refresh = useCallback(async () => {
     const generation = ++refreshSeq.current; const selection = selectionSeq.current;
     const baseline = new Map(records.current.map(session => [session.id, session.revision]));
@@ -138,7 +162,12 @@ export function useChatSessions(api: ChatSessionsApi, projectPath: string, onErr
       if (event.projectPath !== projectPath || event.sessionId !== event.session.id || event.runId !== event.session.runId || event.seq !== event.session.seq) return;
       apply(event.session);
     };
+    const receiveDelta = (event: SessionDeltaEvent) => {
+      if (event.projectPath !== projectPath) return;
+      applyDelta(event);
+    };
     const unsubscribe = api.subscribe(receive);
+    const unsubscribeDelta = api.subscribeDelta?.(receiveDelta);
     let queued = false;
     const unsubscribeChanges = api.subscribeChanges?.((changedProject) => {
       if (changedProject !== projectPath || queued) return;
@@ -150,8 +179,8 @@ export function useChatSessions(api: ChatSessionsApi, projectPath: string, onErr
     });
     void refresh().catch(onError);
     const taskTimers = timers.current;
-    return () => { alive.current = false; refreshSeq.current++; unsubscribe(); unsubscribeChanges?.(); for (const timer of taskTimers.values()) clearTimeout(timer); };
-  }, [api, projectPath, refresh, apply, onError]);
+    return () => { alive.current = false; refreshSeq.current++; unsubscribe(); unsubscribeDelta?.(); unsubscribeChanges?.(); for (const timer of taskTimers.values()) clearTimeout(timer); };
+  }, [api, projectPath, refresh, apply, applyDelta, onError]);
   function persist(id: string, text: string): Promise<ChatSession> {
     const previous = chains.current.get(id);
     const next = (previous ? previous.catch(() => undefined) : Promise.resolve()).then(() => {

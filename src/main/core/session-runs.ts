@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { ChatGuidanceInputSchema, chatId, sessionFileLimit, validateAnswer, type ChatImageAttachment, type ChatSession, type QuestionAnswer, type QuestionInput, type SessionEvent, type SessionCapabilities, type ResponseMetrics, type RunFileChanges } from "../../shared/chat";
+import { ChatGuidanceInputSchema, chatId, sessionFileLimit, validateAnswer, type ChatImageAttachment, type ChatSession, type QuestionAnswer, type QuestionInput, type SessionEvent, type SessionDeltaEvent, type SessionCapabilities, type ResponseMetrics, type RunFileChanges } from "../../shared/chat";
 import type { AgentEvent, AgentMessage, AgentRunResult, AgentRuntimeOptions } from "./agent-runtime";
 import { boundConversation, PERSISTED_CONVERSATION_MESSAGE_LIMIT, PERSISTED_CONVERSATION_JSON_LIMIT } from "./agent-conversation";
 import { conversationStorageSize } from "./agent-compression";
@@ -52,15 +52,33 @@ function preserveConversation(messages: AgentMessage[]): AgentMessage[] {
 export class SessionRuns {
   private readonly live = new Map<string, LiveRun>();
   private readonly listeners = new Set<(event: SessionEvent) => void>();
-  constructor(readonly store: SessionStore, readonly projectPath: string) {}
+  private readonly deltaListeners = new Set<(event: SessionDeltaEvent) => void>();
+  constructor(readonly store: SessionStore, readonly projectPath: string, private readonly options: { snapshotStreaming?: boolean } = {}) {}
   executor(execute: Executor): Executor { return execute; }
   get running(): boolean { return this.live.size > 0; }
   isRunning(id: string): boolean { return this.live.has(id); }
   subscribe(listener: (event: SessionEvent) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener); }
+  subscribeDelta(listener: (event: SessionDeltaEvent) => void): () => void { this.deltaListeners.add(listener); return () => this.deltaListeners.delete(listener); }
   private publish(session: ChatSession): void {
     const event = { projectPath: this.projectPath, sessionId: session.id, ...(session.runId ? { runId: session.runId } : {}), seq: session.seq, session };
     for (const listener of this.listeners) {
       try { listener(structuredClone(event)); } catch { /* Delivery cannot undo a durable run or approval decision. */ }
+    }
+  }
+  private publishDelta(sessionId: string, runId: string | undefined, seq: number, events: AgentEvent[]): void {
+    if (!this.deltaListeners.size) return;
+    const latest = new Map<string, Extract<AgentEvent, { type: "text" | "thinking" }>>();
+    for (const event of events) {
+      if (event.type === "text" || event.type === "thinking") latest.set(`${event.type}:${event.messageId}`, event);
+    }
+    for (const event of latest.values()) {
+      const payload: SessionDeltaEvent = {
+        projectPath: this.projectPath, sessionId, ...(runId ? { runId } : {}), seq,
+        stream: { type: event.type, messageId: event.messageId, content: event.content, partial: true },
+      };
+      for (const listener of this.deltaListeners) {
+        try { listener(structuredClone(payload)); } catch { /* Delivery cannot undo a durable run. */ }
+      }
     }
   }
   async updateCapabilities(id: string, capabilities: SessionCapabilities | undefined, error?: string, owner?: { runId: string; signal: AbortSignal }): Promise<ChatSession> {
@@ -113,7 +131,10 @@ export class SessionRuns {
         if (this.live.get(sessionId) !== run || run.controller.signal.aborted) return;
         for (const event of events) { record.seq++; this.apply(record, run.id, event); }
       });
-      if (!run.controller.signal.aborted) this.publish(SessionStore.view(updated));
+      if (run.controller.signal.aborted) return;
+      const streamEvents = events.filter((event) => event.type === "text" || event.type === "thinking");
+      if (streamEvents.length) this.publishDelta(sessionId, updated.runId, updated.seq, streamEvents);
+      if (this.options.snapshotStreaming !== false || streamEvents.length !== events.length) this.publish(SessionStore.view(updated));
     };
 
     const checkpoint = async (): Promise<void> => {

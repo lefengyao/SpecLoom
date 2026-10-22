@@ -7,7 +7,7 @@ import { ModelProfileSchema, ModelReferenceSchema, ProviderInputSchema, SessionM
 import { PreferencesPatchSchema } from "../shared/preferences";
 import { workspacePromptLimit } from "../shared/workspace-prompt";
 import { materialImagePayloadLimit } from "../shared/material-images";
-import { ChatGuidanceInputSchema, ChatImageAttachmentSchema, sessionFileLimit, AnswerSchema, SessionPatchSchema, type SessionEvent } from "../shared/chat";
+import { ChatGuidanceInputSchema, ChatImageAttachmentSchema, sessionFileLimit, AnswerSchema, SessionPatchSchema, type SessionEvent, type SessionDeltaEvent } from "../shared/chat";
 import type { WorkspaceState } from "../shared/desktop-api";
 import { ProjectError, serializeError } from "./core/errors";
 import type { DesktopController } from "./desktop-controller";
@@ -227,6 +227,7 @@ interface ProjectActions { open(root: string): Promise<WorkspaceState>; example(
 interface IpcOptions {
   clipboard?: ClipboardReader;
   subscribeSessions?: (listener: (event: SessionEvent) => void) => () => void;
+  subscribeSessionDeltas?: (listener: (event: SessionDeltaEvent) => void) => () => void;
   projectActions?: ProjectActions;
   /** Hub's wrapper supplies this internal argument, overriding any renderer arguments. */
   requestController?: boolean;
@@ -257,6 +258,11 @@ export function registerIpc(ipc: Pick<IpcMain, "handle">, controller: DesktopCon
     const target = window();
     // The event bridge only publishes to the currently trusted top-level renderer.
     if (target?.webContents.mainFrame.url === rendererUrl && !target.webContents.isDestroyed()) target.webContents.send("specloom:session", event);
+  });
+  const subscribeSessionDeltas = options.subscribeSessionDeltas ?? ((listener: (event: SessionDeltaEvent) => void) => currentController().sessions?.subscribeDelta?.(listener) ?? (() => undefined));
+  const unsubscribeDeltas = subscribeSessionDeltas((event) => {
+    const target = window();
+    if (target?.webContents.mainFrame.url === rendererUrl && !target.webContents.isDestroyed()) target.webContents.send("specloom:session-delta", event);
   });
   // A workflow service binds a definition store and a run runner to one project.
   // The controller owns that single instance so the renderer and the agent
@@ -364,7 +370,7 @@ export function registerIpc(ipc: Pick<IpcMain, "handle">, controller: DesktopCon
   return () => {
     workflowWatcher?.stop();
     workflowWatcher = undefined;
-    unsubscribe?.(); unsubscribeMaterials(); revoke();
+    unsubscribe?.(); unsubscribeDeltas?.(); unsubscribeMaterials(); revoke();
     contents?.removeListener?.("render-process-gone", revoke);
     contents?.removeListener?.("destroyed", revoke);
     contents?.removeListener?.("did-start-navigation", navigate);

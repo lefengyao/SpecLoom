@@ -38,6 +38,13 @@ This plan was executed with two safety refinements:
 
 The measured long-response sample reached 147–155 token/s on the same DeepSeek configuration. Shorter responses report a lower rate because the metric window includes first-token and thinking time.
 
+## Phase 2 delta stream (2026-10-22)
+
+- Added `SessionDeltaEvent` with an optional `subscribeDelta` API.
+- `DesktopSessions` creates its runs with `snapshotStreaming: false`; live text/thinking goes through delta events, while start, checkpoint, tool, approval, completion, and error boundaries still publish full `ChatSession` snapshots.
+- The renderer merges deltas into the active session and leaves full snapshots as the durable correction path.
+- The 64ms main-process flush already limits delta delivery to roughly 15 updates per second; no separate renderer animation-frame queue is needed at this event rate.
+
 ---
 
 ## File Structure

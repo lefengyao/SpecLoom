@@ -10,7 +10,7 @@ import { ProjectError } from "./core/errors";
 import type { ProjectCore } from "./core/project-core";
 import type { SessionModelPreference } from "../shared/contracts";
 import type { RuntimeModelProfile } from "./core/model-config";
-import type { ChatImageAttachment, SessionPatch, SessionEvent, QuestionAnswer } from "../shared/chat";
+import type { ChatImageAttachment, SessionPatch, SessionEvent, SessionDeltaEvent, QuestionAnswer } from "../shared/chat";
 import type { OfflineDocumentStore } from "./core/offline-documents";
 import { DEFAULT_APPROVAL_MODE, type ApprovalMode, type ToolApprovalInput } from "../shared/approvals";
 import type { DiagnosticsLogStore } from "./core/diagnostics-log";
@@ -26,6 +26,7 @@ export type SessionHookRunner = (event: "session.before" | "session.after" | "to
 export class DesktopSessions {
   private readonly workspaces = new Map<string, Promise<SessionRuns>>();
   private readonly listeners = new Set<(event: SessionEvent) => void>();
+  private readonly deltaListeners = new Set<(event: SessionDeltaEvent) => void>();
   private readonly toolboxes = new Map<string, Promise<WorkspaceTools>>();
   private readonly inventories = new Map<string, { controller: AbortController; pending: Promise<void> }>();
   private readonly reservations = new Map<string, Promise<void>>();
@@ -44,6 +45,7 @@ export class DesktopSessions {
     return () => { this.reservations.delete(key); complete(); };
   }
   subscribe(listener: (event: SessionEvent) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener); }
+  subscribeDelta(listener: (event: SessionDeltaEvent) => void): () => void { this.deltaListeners.add(listener); return () => this.deltaListeners.delete(listener); }
   private async workspace(projectPath: string): Promise<SessionRuns> {
     if (this.shuttingDown) throw new ProjectError("MODEL_ERROR", "SpecLoom 正在关闭");
     if (projectPath !== (this.core()?.metadata.path ?? "")) throw new ProjectError("INVALID_PROJECT", "当前项目已切换，请重新加载会话");
@@ -59,8 +61,10 @@ export class DesktopSessions {
         }
         return SessionStore.open(root);
       })().then((store) => {
-        const runs = new SessionRuns(store, projectPath);
-        runs.subscribe((event) => { for (const listener of this.listeners) { try { listener(structuredClone(event)); } catch { /* A closed renderer cannot block other session observers. */ } } }); return runs;
+        const runs = new SessionRuns(store, projectPath, { snapshotStreaming: false });
+        runs.subscribe((event) => { for (const listener of this.listeners) { try { listener(structuredClone(event)); } catch { /* A closed renderer cannot block other session observers. */ } } });
+        runs.subscribeDelta((event) => { for (const listener of this.deltaListeners) { try { listener(structuredClone(event)); } catch { /* A closed renderer cannot block other delta observers. */ } } });
+        return runs;
       });
       this.workspaces.set(projectPath, found);
       void found.catch(() => this.workspaces.delete(projectPath));
