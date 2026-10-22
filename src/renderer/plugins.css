@@ -275,3 +275,9 @@
   .plugin-page-heading .toolbar { width: 100%; justify-content: space-between; }
   .plugin-list-heading { align-items: start; flex-direction: column; }
 }
+.plugin-page-host { display: flex; flex-direction: column; height: calc(100dvh - 60px); min-height: 0; padding: 18px 22px 22px; gap: 10px; }
+.plugin-page-host .plugin-page-heading { flex: 0 0 auto; }
+.plugin-page-status { color: #708277; font-size: 13px; padding: 8px 0; }
+.plugin-page-frame { flex: 1 1 auto; width: 100%; min-height: 0; border: 1px solid #d8e2d7; border-radius: 9px; background: #f4f7f0; }
+.plugin-page-loading { color: #708277; font-size: 13px; }
+

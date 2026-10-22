@@ -13,6 +13,8 @@ extraResources:
     to: godot-mcp
   - from: resources/workflows
     to: workflows
+  - from: resources/plugins
+    to: plugins
 win:
   target:
     - nsis

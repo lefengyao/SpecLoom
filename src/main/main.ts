@@ -7,10 +7,13 @@ import { ModelVault } from "./core/model-vault";
 import { ProviderVault } from "./core/provider-vault";
 import { startMcpServer, type LocalMcpServer } from "./mcp-server";
 import { godotMcpHostRegistry } from "./core/godot-mcp/host-registry";
+import { PluginManager } from "./core/plugins/plugin-manager";
+import { registerPluginProtocol, registerPluginScheme } from "./plugins/plugin-protocol";
 
 let activeWindow: BrowserWindow | undefined;
 let controller: DesktopController;
 let mcp: LocalMcpServer | undefined;
+let plugins: PluginManager | undefined;
 let unsubscribeSessionEvents: (() => void) | undefined;
 let shutdownStarted = false;
 let shutdownComplete = false;
@@ -21,6 +24,7 @@ function cleanupBeforeQuit(): Promise<void> {
   shutdownPromise ??= Promise.allSettled([
     controller?.shutdown(),
     mcp?.close(),
+    plugins?.close(),
     godotMcpHostRegistry.closeAll(),
   ]).then(() => undefined);
   return shutdownPromise;
@@ -77,6 +81,10 @@ function createWindow(): void {
   }, {
     clipboard,
     revealDirectory: (target) => { shell.showItemInFolder(target); },
+    selectPluginDirectory: async () => {
+      const selection = await dialog.showOpenDialog(window, { title: "安装 SpecLoom 插件", properties: ["openDirectory"] });
+      return selection.canceled ? undefined : selection.filePaths[0];
+    },
     selectDiagnosticsExport: async () => {
       const selection = await dialog.showSaveDialog(window, { title: "导出诊断日志", defaultPath: "specloom-diagnostics.jsonl", filters: [{ name: "JSON Lines", extensions: ["jsonl"] }] });
       return selection.canceled ? undefined : selection.filePath;
@@ -97,10 +105,19 @@ function createWindow(): void {
   });
 }
 
+registerPluginScheme();
+
 void app.whenReady().then(async () => {
   const vault = new ModelVault(app.getPath("userData"), { isAvailable: () => safeStorage.isEncryptionAvailable(), encrypt: (value) => safeStorage.encryptString(value), decrypt: (value) => safeStorage.decryptString(value) });
   const encryption = { isAvailable: () => safeStorage.isEncryptionAvailable(), encrypt: (value: string) => safeStorage.encryptString(value), decrypt: (value: Buffer) => safeStorage.decryptString(value) };
   controller = new DesktopController(vault, app.getPath("userData"), path.join(applicationRoot, "skills"), new ProviderVault(app.getPath("userData"), encryption), { chatAttachmentWorkerPath: path.join(__dirname, "chat-attachment-worker.cjs") });
+  plugins = new PluginManager({
+    builtinDirectory: app.isPackaged ? path.join(process.resourcesPath, "plugins") : path.join(applicationRoot, "resources", "plugins"),
+    userDataDirectory: app.getPath("userData"),
+    getProjectPath: () => { try { return controller.currentCore().metadata.path; } catch { return undefined; } },
+  });
+  controller.plugins = plugins;
+  registerPluginProtocol(plugins);
   mcp = await startMcpServer(() => controller.currentCore());
   controller.mcp = { url: mcp.url, token: mcp.token };
   createWindow();

@@ -38,6 +38,7 @@ import type { WorkflowUpdate } from "../shared/workflow-api";
 import type { OrchestrationUpdate } from "../shared/orchestration-api";
 import { createWorkflowToolRuntime } from "./core/workflow-tool-runtime";
 import { WorkflowService } from "./core/workflow-service";
+import type { PluginManager } from "./core/plugins/plugin-manager";
 import type { WorkflowTriggerChatInput, WorkflowTriggerResult } from "./core/workflow-trigger";
 
 function launchExecutable(executable: string, args: string[]): Promise<void> {
@@ -77,6 +78,7 @@ export class DesktopController {
   private opening = false;
   private materialWrites = 0;
   mcp: McpConnection | undefined;
+  plugins?: PluginManager;
 
   readonly providers: ProviderVault;
   readonly offlineDocuments: OfflineDocumentStore;

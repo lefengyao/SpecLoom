@@ -117,6 +117,15 @@ const api: DesktopApi = {
     clearAll: () => invoke("diagnosticsClearAll"),
     export: () => invoke("diagnosticsExport"),
   },
+  plugins: {
+    list: () => invoke("specPluginsList"),
+    setEnabled: (id, enabled) => invoke("specPluginsSetEnabled", { id, enabled }),
+    invoke: (id, command, input) => invoke("specPluginsInvoke", { id, command, input }),
+    install: () => invoke("specPluginsInstall"),
+    uninstall: (id) => invoke("specPluginsUninstall", { id }),
+    reveal: async (id) => { await invoke("specPluginsReveal", { id }); },
+    pageUrl: (id, pageId) => `specloom-plugin://${id}/${pageId}/`,
+  },
   pluginManagement: {
     list: () => invoke("pluginsList"),
     setGodotPluginEnabled: (id, enabled) => invoke("pluginsSetGodotPluginEnabled", { id, enabled }),

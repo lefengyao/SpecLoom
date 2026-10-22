@@ -20,6 +20,7 @@ import type { ManagedSkill, SkillImportOptions } from "./skill-management";
 import type { ManagedMcpServer, McpConfigScope, McpServerConfig } from "./mcp-config";
 import type { DiagnosticListResult, DiagnosticQuery, DiagnosticSummary } from "./diagnostics";
 import type { GodotPluginId, PluginInventory, PluginMutationResult, RevealPluginDirectoryTarget } from "./godot-plugins";
+import type { PluginInventory as SpecLoomPluginInventory } from "./plugins";
 import type { ProjectOverview } from "./project-overview";
 import type { ProjectMediaLease, ProjectTextFile } from "./project-files";
 import type { ChatAttachmentInput, PreparedChatAttachment } from "./chat-attachments";
@@ -202,6 +203,15 @@ export interface EntityLayoutApi {
   read(): Promise<EntityLayout>;
   save(layout: EntityLayout): Promise<EntityLayout>;
 }
+export interface PluginsApi {
+  list(): Promise<SpecLoomPluginInventory>;
+  setEnabled(id: string, enabled: boolean): Promise<SpecLoomPluginInventory>;
+  invoke(id: string, command: string, input?: unknown): Promise<unknown>;
+  install(): Promise<SpecLoomPluginInventory>;
+  uninstall(id: string): Promise<SpecLoomPluginInventory>;
+  reveal(id: string): Promise<void>;
+  pageUrl(id: string, pageId: string): string;
+}
 export interface PluginManagementApi {
   list(): Promise<PluginInventory>;
   setGodotPluginEnabled(id: GodotPluginId, enabled: boolean): Promise<PluginMutationResult>;
@@ -229,6 +239,7 @@ export interface DesktopApi {
   diagnostics?: DiagnosticsApi;
   entityLayout?: EntityLayoutApi;
   pluginManagement?: PluginManagementApi;
+  plugins?: PluginsApi;
   workflow?: WorkflowApi;
   state(): Promise<WorkspaceState>;
   onStateChanged?: (listener: () => void) => () => void;

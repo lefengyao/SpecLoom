@@ -6,6 +6,7 @@ import {
   FolderOpen,
   FolderTree,
   Gamepad2,
+  GitBranch,
   Globe2,
   History,
   Home,
@@ -39,6 +40,8 @@ import { ScopeForm } from "./ScopeForm";
 import { HistoryView, McpView, SettingsView } from "./SettingsViews";
 import { SkillsView } from "./SkillsView";
 import { PluginManagementView } from "./PluginManagementView";
+import { PluginPageHost } from "./PluginPageHost";
+import type { PluginPageSummary } from "../shared/plugins";
 import { configureCompletionSound } from "./sound";
 import { WorkflowView } from "./WorkflowView";
 import { WorkspaceView } from "./WorkspaceView";
@@ -94,7 +97,8 @@ const tabs = [
   { id: "settings", label: "设置", icon: SlidersHorizontal },
   { id: "about", label: "关于项目", icon: Info },
 ] as const;
-type Tab = (typeof tabs)[number]["id"];
+type Tab = (typeof tabs)[number]["id"] | `plugin:${string}:${string}`;
+interface PluginPageEntry extends PluginPageSummary { pluginTitle: string; pluginId: string; pageId: string; }
 const navigationPreferenceKey = "specloom.navigation";
 function readNavigationPreference(): boolean {
   try {
@@ -110,6 +114,7 @@ export default function App() {
   const [materialSaving, setMaterialSaving] = useState(false);
   const busy = workspace.busy || materialSaving;
   const [tab, setTab] = useState<Tab>("workspace");
+  const [pluginPages, setPluginPages] = useState<PluginPageEntry[]>([]);
   const [documentCategory, setDocumentCategory] = useState<DocumentCategory>("all");
   const [projectFileSelection, setProjectFileSelection] = useState<{ path: string; sequence: number }>();
   const projectFileSequence = useRef(0);
@@ -127,6 +132,24 @@ export default function App() {
   useEffect(() => {
     try { window.localStorage.setItem(navigationPreferenceKey, navigationOpen ? "expanded" : "collapsed"); } catch { /* Best effort. */ }
   }, [navigationOpen]);
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      if (!api?.plugins) { setPluginPages([]); return; }
+      try {
+        const inventory = await api.plugins.list();
+        if (cancelled) return;
+        setPluginPages(inventory.plugins.filter((plugin) => plugin.enabled && plugin.status === "ready").flatMap((plugin) => plugin.pages.map((page) => ({ ...page, pluginTitle: plugin.name, pluginId: plugin.id, pageId: page.id }))));
+      } catch { if (!cancelled) setPluginPages([]); }
+    };
+    void load();
+    const changed = () => { void load(); };
+    window.addEventListener("specloom:plugins-changed", changed);
+    return () => { cancelled = true; window.removeEventListener("specloom:plugins-changed", changed); };
+  }, [api, state.project?.path]);
+  useEffect(() => {
+    if (tab.startsWith("plugin:") && !pluginPages.some((page) => `plugin:${page.pluginId}:${page.pageId}` === tab)) setTab("plugins");
+  }, [pluginPages, tab]);
   const [scope, setScope] = useState<Omit<TaskScopeSpec, "id"> | true>();
   const [revision, setRevision] = useState(0);
   const [materialDrafts, setMaterialDrafts] = useState<MaterialDraft[]>([]);
@@ -165,6 +188,7 @@ export default function App() {
   }, [materialDrafts.length]);
   const { preferences } = state;
   const tr = useMemo(() => createTranslator(preferences.locale), [preferences.locale]);
+  const activePluginPage = pluginPages.find((page) => `plugin:${page.pluginId}:${page.pageId}` === tab);
   useEffect(() => {
     applyAppearance(preferences);
   }, [preferences]);
@@ -411,6 +435,14 @@ export default function App() {
                   }}><item.icon size={17} /><span className="nav-label">{tr(item.label)}</span></button>
                 </div>;
               })}
+              {state.project && pluginPages.map((page, index) => {
+                const pageTab = `plugin:${page.pluginId}:${page.pageId}` as Tab;
+                const Icon = page.icon === "git-branch" ? GitBranch : Puzzle;
+                return <div key={pageTab} className="nav-entry">
+                  {index === 0 && <span className="nav-group-label">插件页面</span>}
+                  <button aria-label={page.title} aria-current={tab === pageTab ? "page" : undefined} className={tab === pageTab ? "active" : ""} title={page.title} onClick={() => { setTab(pageTab); setNavigationDrawerOpen(false); }}><Icon size={17} /><span className="nav-label">{page.title}</span></button>
+                </div>;
+              })}
             </nav>
           </aside>
           <div className="application-body">
@@ -540,6 +572,9 @@ export default function App() {
             </NavigationPage>
             <NavigationPage active={tab === "plugins"}>
               {api && <PluginManagementView key={state.project.path} api={api} project={state.project} onError={workspace.reportError} />}
+            </NavigationPage>
+            <NavigationPage active={tab.startsWith("plugin:")}>
+              {api && activePluginPage && <PluginPageHost key={`${activePluginPage.pluginId}:${activePluginPage.pageId}:${state.project.path}`} api={api} pluginId={activePluginPage.pluginId} pageId={activePluginPage.pageId} title={activePluginPage.title} project={state.project} onError={workspace.reportError} />}
             </NavigationPage>
             <NavigationPage active={tab === "offlineDocs"}>{api && <OfflineDocsView api={api} onError={workspace.reportError} />}</NavigationPage>
             <NavigationPage active={tab === "hooks"}>{api && <HooksView api={api} active={tab === "hooks"} onError={workspace.reportError} />}</NavigationPage>

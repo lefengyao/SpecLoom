@@ -228,6 +228,7 @@ interface IpcOptions {
   clipboard?: ClipboardReader;
   subscribeSessions?: (listener: (event: SessionEvent) => void) => () => void;
   subscribeSessionDeltas?: (listener: (event: SessionDeltaEvent) => void) => () => void;
+  selectPluginDirectory?: () => Promise<string | undefined>;
   projectActions?: ProjectActions;
   /** Hub's wrapper supplies this internal argument, overriding any renderer arguments. */
   requestController?: boolean;
@@ -347,7 +348,7 @@ export function registerIpc(ipc: Pick<IpcMain, "handle">, controller: DesktopCon
         case "orchestrationCancel": await getWorkflow(selectedController).orchestrationCancel(data.runId as string); result = undefined; break;
         case "entityLayoutRead": result = await new EntityLayoutStore(selectedController.currentCore().metadata.path).read(); break;
         case "entityLayoutSave": result = await new EntityLayoutStore(selectedController.currentCore().metadata.path).save(data.layout as EntityLayout); break;
-        default: result = await dispatch(operation, data, selectedController, selectDirectory, selectFiles, selectOfflineDirectory, selectSkillDirectory, selectSkillArchive, options.projectActions, options.selectDiagnosticsExport, options.revealDirectory);
+        default: result = await dispatch(operation, data, selectedController, selectDirectory, selectFiles, selectOfflineDirectory, selectSkillDirectory, selectSkillArchive, options.projectActions, options.selectDiagnosticsExport, options.revealDirectory, options.selectPluginDirectory);
       }
       if (windowResourceReads.has(operation)) {
         const current = window();
@@ -377,8 +378,27 @@ export function registerIpc(ipc: Pick<IpcMain, "handle">, controller: DesktopCon
   };
 }
 
-async function dispatch(operation: string, input: Record<string, unknown>, controller: DesktopController, selectDirectory: () => Promise<string | undefined>, selectFiles: () => Promise<string[]>, selectOfflineDirectory: () => Promise<string | undefined>, selectSkillDirectory: () => Promise<string | undefined>, selectSkillArchive: () => Promise<string | undefined>, projects?: ProjectActions, selectDiagnosticsExport?: () => Promise<string | undefined>, revealDirectory?: (path: string) => Promise<void> | void): Promise<unknown> {
+async function dispatch(operation: string, input: Record<string, unknown>, controller: DesktopController, selectDirectory: () => Promise<string | undefined>, selectFiles: () => Promise<string[]>, selectOfflineDirectory: () => Promise<string | undefined>, selectSkillDirectory: () => Promise<string | undefined>, selectSkillArchive: () => Promise<string | undefined>, projects?: ProjectActions, selectDiagnosticsExport?: () => Promise<string | undefined>, revealDirectory?: (path: string) => Promise<void> | void, selectPluginDirectory?: () => Promise<string | undefined>): Promise<unknown> {
+  const specPlugins = () => {
+    if (!controller.plugins) throw new ProjectError("BACKEND_UNAVAILABLE", "插件系统在当前宿主不可用");
+    return controller.plugins;
+  };
   switch (operation) {
+    case "specPluginsList": return specPlugins().list();
+    case "specPluginsSetEnabled": return specPlugins().setEnabled(input.id as string, input.enabled as boolean);
+    case "specPluginsInvoke": return specPlugins().invoke(input.id as string, input.command as string, input.input);
+    case "specPluginsInstall": {
+      const source = await selectPluginDirectory?.();
+      if (!source) return specPlugins().list();
+      return specPlugins().installDirectory(source);
+    }
+    case "specPluginsUninstall": return specPlugins().uninstall(input.id as string);
+    case "specPluginsReveal": {
+      const target = await specPlugins().revealTarget(input.id as string);
+      if (!revealDirectory) throw new ProjectError("BACKEND_UNAVAILABLE", "目录定位在当前宿主不可用");
+      await revealDirectory(target);
+      return true;
+    }
     case "pluginsList": return controller.listProjectPlugins();
     case "pluginsSetGodotPluginEnabled": return controller.setProjectPluginEnabled(input.id as string, input.enabled as boolean);
     case "pluginsSetGodotMcpEnabled": return controller.setGodotMcpEnabled(input.enabled as boolean);

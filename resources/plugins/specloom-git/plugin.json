@@ -1,0 +1,28 @@
+{
+  "id": "specloom-git",
+  "name": "Git",
+  "version": "0.1.0",
+  "apiVersion": 1,
+  "description": "在工作区内查看变更、暂存、提交、切换分支并同步远程仓库。",
+  "author": "SpecLoom",
+  "official": true,
+  "enabledByDefault": true,
+  "main": "main/index.mjs",
+  "contributes": {
+    "pages": [
+      {
+        "id": "git",
+        "title": "Git",
+        "entry": "renderer/index.html",
+        "icon": "git-branch"
+      }
+    ]
+  },
+  "permissions": [
+    "project:read",
+    "project:write",
+    "git:read",
+    "git:write",
+    "git:network"
+  ]
+}

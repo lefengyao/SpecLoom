@@ -5,6 +5,7 @@ import type { GodotPluginEntry, PluginInventory, RevealPluginDirectoryTarget } f
 import type { ProjectMetadata } from "../shared/contracts";
 import { IconButton } from "./ui";
 import { useI18n } from "./i18n";
+import { SpecLoomPluginsPanel } from "./SpecLoomPluginsPanel";
 import "./plugins.css";
 
 type PluginFilter = "all" | "enabled" | "disabled" | "attention";
@@ -78,8 +79,8 @@ export function PluginManagementView({ api, project, onError }: { api: DesktopAp
     finally { setBusy(undefined); }
   }
 
-  if (!project) return <section className="standard-view plugin-management-view"><div className="plugin-empty"><Puzzle size={27} /><h2>{tr("请先打开一个项目")}</h2><p>{tr("插件管理会读取当前项目中的 Godot 插件。")}</p></div></section>;
-  if (!isGodot) return <section className="standard-view plugin-management-view"><header className="section-heading"><div><h1>{tr("插件管理")}</h1><span className="subtle">{project.name}</span></div></header><div className="plugin-empty"><AlertTriangle size={27} /><h2>{tr("仅适用于 Godot 项目")}</h2><p>{tr("当前项目不包含 Godot 插件清单。")}</p></div></section>;
+  if (!project) return <section className="standard-view plugin-management-view"><header className="section-heading"><div><h1>{tr("插件管理")}</h1><span className="subtle">SpecLoom 扩展与项目插件</span></div></header><SpecLoomPluginsPanel api={api} onError={onError} /><div className="plugin-empty"><Puzzle size={27} /><h2>{tr("请先打开一个项目")}</h2><p>{tr("插件管理会读取当前项目中的 Godot 插件。")}</p></div></section>;
+  if (!isGodot) return <section className="standard-view plugin-management-view"><header className="section-heading"><div><h1>{tr("插件管理")}</h1><span className="subtle">{project.name}</span></div></header><SpecLoomPluginsPanel api={api} onError={onError} /><div className="plugin-empty"><AlertTriangle size={27} /><h2>{tr("仅适用于 Godot 项目")}</h2><p>{tr("当前项目不包含 Godot 插件清单。")}</p></div></section>;
   if (!manager) return <section className="standard-view plugin-management-view"><div role="alert" className="plugin-inline-error">当前宿主没有提供插件管理接口。</div></section>;
 
   const godotMcp = inventory?.godotMcp;
@@ -102,6 +103,7 @@ export function PluginManagementView({ api, project, onError }: { api: DesktopAp
       </div>
     </header>
 
+    <SpecLoomPluginsPanel api={api} onError={onError} />
     {notice && <div role="status" className="plugin-notice"><Check size={16} />{notice}</div>}
     {failure && <div role="alert" className="plugin-inline-error">{failure}</div>}
 
