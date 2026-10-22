@@ -14,6 +14,12 @@ describe("Godot MCP output-log snapshots", () => {
     expect(previous.records.map(record => record.text)).toEqual(["[ERROR] first"]);
   });
 
+  it("strips terminal color and progress escape sequences", () => {
+    const store = new LogSnapshotStore();
+    const snapshot = store.createSnapshot("\u001b[90m\u001b[1mloading_editor_layout\u001b[22m | Started 正在加载编辑器\u001b[39m\u001b[0m\n[DONE] ok");
+    expect(snapshot.records.map(record => record.text)).toEqual(["loading_editor_layout | Started 正在加载编辑器", "[DONE] ok"]);
+  });
+
   it("expires cursors after ten minutes", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-10-11T00:00:00Z"));

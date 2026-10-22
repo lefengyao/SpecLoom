@@ -68,6 +68,12 @@ interface PageOptions {
  * Parse visible Output lines without discarding entries that cannot be
  * classified. Only explicit severity, source, and timestamp markers are used.
  */
+export function stripAnsi(value: string): string {
+  return value
+    .replace(/\u001b\][^\u0007]*(?:\u0007|\u001b\\)/gu, "")
+    .replace(/\u001b\[[0-?]*[ -/]*[@-~]/gu, "");
+}
+
 export function parseEditorOutput(content: string): readonly LogRecord[] {
   return parseBoundedEditorOutput(content).records;
 }
@@ -130,7 +136,8 @@ function parseBoundedEditorOutput(content: string): ParsedOutput {
 }
 
 function parseRecord(rawLine: string): LogRecord {
-  const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine;
+  const withoutAnsi = stripAnsi(rawLine);
+  const line = withoutAnsi.endsWith('\r') ? withoutAnsi.slice(0, -1) : withoutAnsi;
   let remainder = line;
   let timestamp: string | undefined;
 
