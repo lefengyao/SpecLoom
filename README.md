@@ -119,7 +119,7 @@ SpecLoom 使用 **GNU Affero General Public License v3.0 only（AGPL-3.0-only）
 
 ## 当前状态
 
-v0.1.10，源码开发版。主要面向 Windows 桌面；工作流、编排、实体工作台和资料编辑器仍在快速迭代。欢迎通过 issue 或 PR 反馈具体使用场景。
+v2.0.0，源码开发版。主要面向 Windows 桌面；工作流、编排、实体工作台和资料编辑器仍在快速迭代。欢迎通过 issue 或 PR 反馈具体使用场景。
 
 ---
 
