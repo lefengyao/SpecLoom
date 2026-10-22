@@ -41,6 +41,7 @@ import { HistoryView, McpView, SettingsView } from "./SettingsViews";
 import { SkillsView } from "./SkillsView";
 import { PluginManagementView } from "./PluginManagementView";
 import { PluginPageHost } from "./PluginPageHost";
+import { LuoluoView } from "./LuoluoView";
 import type { PluginPageSummary } from "../shared/plugins";
 import { configureCompletionSound } from "./sound";
 import { WorkflowView } from "./WorkflowView";
@@ -77,6 +78,7 @@ function WelcomeOrbitMascot() {
 
 const tabs = [
   { id: "workspace", label: "工作区", icon: Workflow },
+  { id: "luoluo", label: "络络", icon: Sparkles },
   { id: "workflow", label: "工作流", icon: Waypoints },
   { id: "documents", category: "all", label: "项目文件", icon: FolderTree },
   { id: "documents", category: "entity", label: "实体", icon: Layers3 },
@@ -447,6 +449,9 @@ export default function App() {
           </aside>
           <div className="application-body">
           <main className="main-content" key={state.project.path} data-view={tab}>
+            <NavigationPage active={tab === "luoluo"}>
+              <LuoluoView />
+            </NavigationPage>
             <NavigationPage active={tab === "workspace"}>
             {api?.sessions && (
               <ChatWorkbench key={`${state.windowId ?? "standalone"}:${state.project.path}`} api={api.sessions} attachments={api.chatAttachments} projectPath={state.project.path} windowId={state.windowId} tasks={state.tasks} providers={state.providers ?? []} preferences={preferences}
