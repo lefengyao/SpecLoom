@@ -108,6 +108,7 @@ export const chatEnglish: Record<string, string> = {
   "智能体 · 进度说明": "Agent · progress note",
   "生成中": "Generating",
   "部分回复": "Partial reply",
+  "总耗时 {duration}": "Total {duration}",
   "输出 {rate} token/s": "Output {rate} token/s",
   "首字 {duration}": "First token {duration}",
   "思考 {duration}": "Thinking {duration}",

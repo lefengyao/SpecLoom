@@ -197,7 +197,7 @@ export class SessionRuns {
           }
           await flushStreams();
           await applyEvents([event]);
-          await checkpoint();
+          await maybeCheckpoint();
         },
         onConversation: async (messages, contextSummary, contextTokensEstimate, contextCalibration) => {
           if (this.live.get(sessionId) !== run || run.controller.signal.aborted) return;
