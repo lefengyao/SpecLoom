@@ -21,7 +21,7 @@ test.skipIf(!gitAvailable)("built-in Git plugin initializes, stages, commits, br
   const project = path.join(root, "project");
   const data = path.join(root, "data");
   await import("node:fs/promises").then(({ mkdir }) => mkdir(project, { recursive: true }));
-  const manager = new PluginManager({ builtinDirectory: path.resolve("resources/plugins"), userDataDirectory: data, getProjectPath: () => project });
+  const manager = new PluginManager({ builtinDirectory: path.resolve("resources/plugins"), userDataDirectory: data, getProjectPath: () => project, childPath: path.resolve("resources/plugin-host-child.mjs"), logDirectory: path.join(data, "plugin-logs") });
   try {
     expect(await manager.invoke("specloom-git", "state")).toMatchObject({ state: "not-repository" });
     expect(await manager.invoke("specloom-git", "init")).toMatchObject({ state: "repository" });
@@ -36,7 +36,7 @@ test.skipIf(!gitAvailable)("built-in Git plugin initializes, stages, commits, br
     expect(branches.branches.length).toBeGreaterThan(0);
     await manager.invoke("specloom-git", "createBranch", { name: "feature/test" });
     expect(((await manager.invoke("specloom-git", "branches")) as { current: string }).current).toBe("feature/test");
-    expect((await manager.resolvePage("specloom-git", "git")).replaceAll("\\", "/")).toContain("renderer/index.html");
+    expect((await manager.list()).plugins.find((plugin) => plugin.id === "specloom-git")?.nativePages).toEqual([{ id: "git", title: "Git", icon: "git-branch" }]);
   } finally {
     await manager.close();
     await rm(root, { recursive: true, force: true });
