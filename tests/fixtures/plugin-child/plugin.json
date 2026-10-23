@@ -1,0 +1,7 @@
+{
+  "id": "fixture-child",
+  "name": "Fixture",
+  "version": "1.0.0",
+  "apiVersion": 2,
+  "main": "main/index.mjs"
+}

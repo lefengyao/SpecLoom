@@ -15,6 +15,8 @@ extraResources:
     to: workflows
   - from: resources/plugins
     to: plugins
+  - from: resources/plugin-host-child.mjs
+    to: plugin-host-child.mjs
 win:
   target:
     - nsis
