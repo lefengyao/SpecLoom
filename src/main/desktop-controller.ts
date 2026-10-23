@@ -22,6 +22,7 @@ import type { OfflineDocumentImportOptions } from "../shared/offline-documents";
 import { HooksStore } from "./core/hooks";
 import type { HookDefinitionInput } from "../shared/hooks";
 import { SkillStore } from "./core/skill-store";
+import { UsageStore } from "./core/usage-store";
 import type { SkillImportOptions } from "../shared/skill-management";
 import { McpConfigStore } from "./core/mcp-config-store";
 import type { McpConfigScope, McpServerConfig } from "../shared/mcp-config";
@@ -55,6 +56,7 @@ export interface DesktopSharedServices {
   offlineDocuments: OfflineDocumentStore;
   hooks: HooksStore;
   skills: SkillStore;
+  usage?: UsageStore;
   godotMcpResourceRoot?: string;
   chatAttachmentWorkerPath?: string;
 }
@@ -84,6 +86,7 @@ export class DesktopController {
   readonly offlineDocuments: OfflineDocumentStore;
   readonly hooks: HooksStore;
   readonly skills: SkillStore;
+  readonly usage: UsageStore;
   private readonly godotMcpResourceRoot: string | undefined;
   readonly mcpConfig: McpConfigStore;
   constructor(readonly vault: ModelVault, private readonly userData: string, private readonly skillsDirectory: string, providers?: ProviderVault, shared?: Partial<DesktopSharedServices>) {
@@ -94,6 +97,7 @@ export class DesktopController {
     this.offlineDocuments = shared?.offlineDocuments ?? new OfflineDocumentStore(userData);
     this.hooks = shared?.hooks ?? new HooksStore(userData);
     this.skills = shared?.skills ?? new SkillStore(userData);
+    this.usage = shared?.usage ?? new UsageStore(userData);
     this.godotMcpResourceRoot = shared?.godotMcpResourceRoot;
     this.mcpConfig = new McpConfigStore(userData, () => this.core?.metadata.path);
     this.recentProjects = shared?.recentProjects ?? new RecentProjects(userData);
@@ -110,7 +114,7 @@ export class DesktopController {
     async (event, payload, permissions) => {
       const hooks = await this.hooks.list();
       await Promise.allSettled(hooks.filter((hook) => hook.enabled && hook.event === event).map((hook) => this.hooks.run(hook.id, { ...payload, event }, permissions)));
-    }, this.offlineDocuments, this.diagnosticsLog, (core) => createWorkflowToolRuntime({ service: this.workflowServiceFor(core) }));
+    }, this.offlineDocuments, this.diagnosticsLog, (core) => createWorkflowToolRuntime({ service: this.workflowServiceFor(core) }), (record) => { void this.usage.append(record).catch((error) => { console.error("Unable to persist usage record", error); }); });
   }
 
   get busy(): boolean { return !!(this.runs.size || this.chatRuns.size || this.sessions.running || this.opening || this.materialWrites); }

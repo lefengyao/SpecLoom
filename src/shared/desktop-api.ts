@@ -203,6 +203,9 @@ export interface EntityLayoutApi {
   read(): Promise<EntityLayout>;
   save(layout: EntityLayout): Promise<EntityLayout>;
 }
+export interface UsageApi {
+  list(): Promise<UsageRecord[]>;
+}
 export interface PluginsApi {
   list(): Promise<SpecLoomPluginInventory>;
   setEnabled(id: string, enabled: boolean): Promise<SpecLoomPluginInventory>;
@@ -239,6 +242,7 @@ export interface DesktopApi {
   entityLayout?: EntityLayoutApi;
   pluginManagement?: PluginManagementApi;
   plugins?: PluginsApi;
+  usage?: UsageApi;
   workflow?: WorkflowApi;
   state(): Promise<WorkspaceState>;
   onStateChanged?: (listener: () => void) => () => void;

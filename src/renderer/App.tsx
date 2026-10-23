@@ -1,5 +1,6 @@
 import {
   AlertCircle,
+  BarChart3,
   BookOpen,
   Cable,
   FileText,
@@ -42,6 +43,7 @@ import { SkillsView } from "./SkillsView";
 import { PluginManagementView } from "./PluginManagementView";
 import { LuoluoView } from "./LuoluoView";
 import { GitView } from "./GitView";
+import { UsageView } from "./UsageView";
 import { configureCompletionSound } from "./sound";
 import { WorkflowView } from "./WorkflowView";
 import { WorkspaceView } from "./WorkspaceView";
@@ -87,6 +89,7 @@ const tabs = [
   { id: "documents", category: "ui", label: "UI", icon: PanelsTopLeft },
   { id: "documents", category: "spec", label: "规范", icon: FileText },
   { id: "skills", label: "Skills", icon: BookOpen },
+  { id: "usage", label: "用量", icon: BarChart3 },
   { id: "plugins", label: "插件", icon: Puzzle },
   { id: "offlineDocs", label: "离线文档", icon: BookOpen },
   { id: "hooks", label: "Hooks", icon: Wrench },
@@ -573,6 +576,9 @@ export default function App() {
                 onNewTask={() => setScope(true)}
               />
             )}
+            </NavigationPage>
+            <NavigationPage active={tab === "usage"}>
+              {api && <UsageView api={api} onError={workspace.reportError} />}
             </NavigationPage>
             <NavigationPage active={tab === "plugins"}>
               {api && <PluginManagementView key={state.project.path} api={api} project={state.project} onError={workspace.reportError} />}

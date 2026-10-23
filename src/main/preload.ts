@@ -117,6 +117,9 @@ const api: DesktopApi = {
     clearAll: () => invoke("diagnosticsClearAll"),
     export: () => invoke("diagnosticsExport"),
   },
+  usage: {
+    list: () => invoke("usageList"),
+  },
   plugins: {
     list: () => invoke("specPluginsList"),
     setEnabled: (id, enabled) => invoke("specPluginsSetEnabled", { id, enabled }),

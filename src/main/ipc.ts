@@ -178,6 +178,7 @@ const operations = {
   diagnosticsClearAll: z.object({}).strict(),
   diagnosticsExport: z.object({}).strict(),
   pluginsList: z.object({}).strict(),
+  usageList: z.object({}).strict(),
   specPluginsList: z.object({}).strict(),
   specPluginsSetEnabled: z.object({ id: z.string().min(1).max(64), enabled: z.boolean() }).strict(),
   specPluginsInvoke: z.object({ id: z.string().min(1).max(64), command: z.string().min(1).max(80), input: z.unknown().optional() }).strict(),
@@ -390,6 +391,7 @@ async function dispatch(operation: string, input: Record<string, unknown>, contr
     return controller.plugins;
   };
   switch (operation) {
+    case "usageList": return controller.usage.list();
     case "specPluginsList": return specPlugins().list();
     case "specPluginsSetEnabled": return specPlugins().setEnabled(input.id as string, input.enabled as boolean);
     case "specPluginsInvoke": return specPlugins().invoke(input.id as string, input.command as string, input.input);

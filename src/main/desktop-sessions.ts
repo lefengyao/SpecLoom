@@ -32,7 +32,7 @@ export class DesktopSessions {
   private readonly reservations = new Map<string, Promise<void>>();
   private readonly gitInitSuggestions = new Set<string>();
   private shuttingDown = false;
-  constructor(private readonly userData: string, private readonly core: () => ProjectCore | undefined, private readonly profile: (model?: SessionModelPreference) => Promise<RuntimeModelProfile>, private readonly instructions: () => Promise<string>, private readonly resolveCredential: (profile: RuntimeModelProfile) => Promise<string | undefined>, private readonly runHook?: SessionHookRunner, private readonly offlineDocuments?: OfflineDocumentStore, private readonly diagnostics?: DiagnosticsLogStore, private readonly workflowTools?: (core: ProjectCore) => WorkflowToolRuntime) {}
+  constructor(private readonly userData: string, private readonly core: () => ProjectCore | undefined, private readonly profile: (model?: SessionModelPreference) => Promise<RuntimeModelProfile>, private readonly instructions: () => Promise<string>, private readonly resolveCredential: (profile: RuntimeModelProfile) => Promise<string | undefined>, private readonly runHook?: SessionHookRunner, private readonly offlineDocuments?: OfflineDocumentStore, private readonly diagnostics?: DiagnosticsLogStore, private readonly workflowTools?: (core: ProjectCore) => WorkflowToolRuntime, private readonly onUsageRecord?: (record: import("../shared/contracts").UsageRecord) => void) {}
   get running(): boolean { return this.reservations.size > 0; }
   /** Acquire before any await so a send cannot enter a session being deleted or reconfigured. */
   private reserve(projectPath: string, id: string): () => void {
@@ -61,7 +61,7 @@ export class DesktopSessions {
         }
         return SessionStore.open(root);
       })().then((store) => {
-        const runs = new SessionRuns(store, projectPath, { snapshotStreaming: false });
+        const runs = new SessionRuns(store, projectPath, { snapshotStreaming: false, ...(this.onUsageRecord ? { onUsageRecord: this.onUsageRecord } : {}) });
         runs.subscribe((event) => { for (const listener of this.listeners) { try { listener(structuredClone(event)); } catch { /* A closed renderer cannot block other session observers. */ } } });
         runs.subscribeDelta((event) => { for (const listener of this.deltaListeners) { try { listener(structuredClone(event)); } catch { /* A closed renderer cannot block other delta observers. */ } } });
         return runs;

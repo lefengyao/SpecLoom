@@ -362,6 +362,7 @@ const NonnegativeSafeIntegerSchema = z.number().int().safe().nonnegative();
 export const UsageRecordSchema = z.object({
   at: NonnegativeSafeIntegerSchema,
   workspaceId: z.string().optional(),
+  sessionId: z.string().optional(),
   providerId: z.string().trim().min(1),
   providerName: z.string().trim().min(1),
   model: z.string().trim().min(1),

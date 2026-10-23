@@ -9,6 +9,7 @@ import { estimateTokens } from "./model-settings";
 import { ToolApprovalInputSchema, type ToolApprovalInput } from "../../shared/approvals";
 import { z } from "zod";
 import { RunFileChangeTracker } from "./run-file-changes";
+import type { UsageRecord } from "../../shared/contracts";
 
 export interface SessionRunOptions extends Pick<AgentRuntimeOptions, "onEvent" | "onQuestion" | "onConversation" | "onUsage"> {
   prompt: string; previousMessages: AgentMessage[]; contextSummary?: string; signal: AbortSignal; session: ChatSession; images?: ChatImageAttachment[];
@@ -53,7 +54,7 @@ export class SessionRuns {
   private readonly live = new Map<string, LiveRun>();
   private readonly listeners = new Set<(event: SessionEvent) => void>();
   private readonly deltaListeners = new Set<(event: SessionDeltaEvent) => void>();
-  constructor(readonly store: SessionStore, readonly projectPath: string, private readonly options: { snapshotStreaming?: boolean } = {}) {}
+  constructor(readonly store: SessionStore, readonly projectPath: string, private readonly options: { snapshotStreaming?: boolean; onUsageRecord?: (record: UsageRecord) => void } = {}) {}
   executor(execute: Executor): Executor { return execute; }
   get running(): boolean { return this.live.size > 0; }
   isRunning(id: string): boolean { return this.live.has(id); }
@@ -230,6 +231,13 @@ export class SessionRuns {
             record.seq++;
           });
           if (!run.controller.signal.aborted) this.publish(SessionStore.view(updated));
+          try {
+            this.options.onUsageRecord?.({
+              at: Date.now(), workspaceId: this.projectPath, sessionId,
+              providerId: session.model?.providerId ?? "unknown", providerName: session.model?.providerId ?? "unknown",
+              model: session.model?.model ?? "unknown", ...usage, runId: run.id, purpose: "basic", status: "completed", usageSource: "actual",
+            });
+          } catch { /* usage logging must not affect the run */ }
         },
         takeGuidance: final => this.takeGuidance(sessionId, run, final),
         onQuestion: (question) => this.ask(sessionId, run, question),

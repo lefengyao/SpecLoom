@@ -1,0 +1,38 @@
+.usage-view { width: min(100%, 1180px); margin: 0 auto; padding: 26px 24px 40px; }
+.usage-heading { display: flex; align-items: end; justify-content: space-between; gap: 18px; margin-bottom: 18px; }
+.usage-eyebrow { color: var(--text-subtle); font-size: 10px; letter-spacing: .16em; }
+.usage-heading h1 { margin: 2px 0 4px; font-size: 26px; }
+.usage-heading p { margin: 0; max-width: 720px; color: var(--text-subtle); font-size: 12px; line-height: 1.6; }
+.usage-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.usage-actions label { display: flex; align-items: center; gap: 6px; color: var(--text-subtle); font-size: 12px; }
+.usage-actions select { border: 1px solid var(--border-strong); border-radius: 6px; padding: 7px 9px; background: var(--bg-surface); color: var(--text); font: inherit; font-size: 13px; }
+.usage-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+.usage-cards article { border: 1px solid var(--border); border-radius: 8px; background: var(--bg-surface); padding: 14px; }
+.usage-cards span { display: block; color: var(--text-subtle); font-size: 12px; }
+.usage-cards strong { display: block; margin-top: 6px; font-size: 23px; font-variant-numeric: tabular-nums; }
+.usage-panel { border: 1px solid var(--border); border-radius: 8px; background: var(--bg-surface); padding: 14px; min-width: 0; }
+.usage-panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+.usage-panel-heading h2 { margin: 0; font-size: 14px; }
+.usage-panel-heading span { color: var(--text-subtle); font-size: 11px; }
+.usage-chart { display: grid; grid-template-columns: repeat(14, minmax(0, 1fr)); align-items: end; gap: 5px; height: 150px; padding-top: 8px; }
+.usage-bar-slot { display: flex; flex-direction: column; align-items: stretch; justify-content: end; height: 100%; gap: 5px; min-width: 0; }
+.usage-bar { min-height: 0; border-radius: 3px 3px 0 0; background: var(--accent); transition: height 160ms ease; }
+.usage-bar-slot span { color: var(--text-subtle); font-size: 9px; text-align: center; white-space: nowrap; }
+.usage-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, .85fr); gap: 12px; margin-top: 12px; }
+.usage-table { display: flex; flex-direction: column; gap: 2px; }
+.usage-table-row { display: grid; grid-template-columns: minmax(0, 1.6fr) repeat(4, minmax(54px, .55fr)); gap: 8px; padding: 7px 6px; border-bottom: 1px solid var(--border); font-size: 12px; align-items: center; }
+.usage-table-row.header { color: var(--text-subtle); font-size: 11px; border-bottom-color: var(--border-strong); }
+.usage-table-row span:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
+.usage-table-row span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.usage-recent { display: flex; flex-direction: column; gap: 5px; }
+.usage-recent-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 8px; border: 1px solid var(--border); border-radius: 5px; font-size: 12px; }
+.usage-recent-row b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.usage-recent-row small { display: block; margin-top: 3px; color: var(--text-subtle); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.usage-recent-row > span { flex: 0 0 auto; color: var(--text-subtle); font-variant-numeric: tabular-nums; }
+.usage-empty, .usage-empty-card { color: var(--text-subtle); }
+.usage-empty-card { display: grid; justify-items: center; gap: 7px; padding: 48px 16px; border: 1px dashed var(--border-strong); border-radius: 10px; text-align: center; }
+.usage-empty-card h2 { margin: 4px 0 0; color: var(--text-strong); font-size: 15px; }
+.usage-empty-card p { margin: 0 0 8px; font-size: 13px; }
+.usage-error { margin: 8px 0; padding: 8px 10px; border: 1px solid var(--danger); border-radius: 6px; color: var(--danger); font-size: 13px; }
+@media (max-width: 820px) { .usage-view { padding: 18px 14px 28px; } .usage-heading { align-items: start; flex-direction: column; } .usage-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } .usage-grid { grid-template-columns: 1fr; } }
+@media (max-width: 460px) { .usage-cards { grid-template-columns: 1fr; } .usage-chart { gap: 2px; } .usage-bar-slot span { font-size: 8px; } }
