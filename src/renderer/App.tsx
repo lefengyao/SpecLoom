@@ -140,7 +140,7 @@ export default function App() {
       try {
         const inventory = await api.plugins.list();
         if (cancelled) return;
-        setPluginPages(inventory.plugins.filter((plugin) => plugin.enabled && plugin.status === "ready").flatMap((plugin) => plugin.nativePages.map((page) => ({ ...page, pluginTitle: plugin.name, pluginId: plugin.id }))));
+        setPluginPages(inventory.plugins.filter((plugin) => plugin.enabled && plugin.status === "ready").flatMap((plugin) => plugin.nativePages.filter((page) => page.id === "git").map((page) => ({ ...page, pluginTitle: plugin.name, pluginId: plugin.id }))));
       } catch { if (!cancelled) setPluginPages([]); }
     };
     void load();
