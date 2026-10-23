@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { CornerUpRight, PanelRightOpen, Pencil, Plus, Settings2, Trash2 } from "lucide-react";
+import { ClipboardList, CornerUpRight, PanelRightOpen, Pencil, Plus, Settings2, Trash2 } from "lucide-react";
 import type { ChangeReview, DesktopApi, TaskView, WorkflowApi } from "../../shared/desktop-api";
 import type { ModelReference, ProviderPublic, ReasoningPreference, SessionModelPreference } from "../../shared/contracts";
 import type { ChatSession, ChatSessionsApi } from "../../shared/chat";
@@ -64,10 +64,10 @@ function ContextUsageIndicator({ current, pending, contextTokens, lastRequestUsa
 
 type ComposerMode = "qa" | "implementation";
 
-export function ChatWorkbench({ api, attachments, projectPath, windowId, tasks, providers, defaultModel, sessionModel, preferences, selectedTaskId, sessionSelection, review, busy, workflow, onOpenWorkflowRun, onSelectTask, onNewTask, onReview, onError, onFinished, onRunningChange, documents }: {
+export function ChatWorkbench({ api, attachments, projectPath, windowId, tasks, providers, defaultModel, sessionModel, preferences, selectedTaskId, sessionSelection, review, busy, workflow, onOpenWorkflowRun, onSelectTask, onNewTask, onEditTaskScope, onReview, onError, onFinished, onRunningChange, documents }: {
   api: ChatSessionsApi; projectPath: string; tasks: TaskView[]; providers: ProviderPublic[]; defaultModel?: ModelReference; sessionModel?: SessionModelPreference; selectedTaskId?: string; review: ChangeReview | undefined; busy: boolean;
   attachments?: DesktopApi["chatAttachments"];
-  onSelectTask: (id: string) => void; onNewTask: () => void; onReview: (action: "approve" | "reject" | "validate" | "refresh") => Promise<void>;
+  onSelectTask: (id: string) => void; onNewTask: () => void; onEditTaskScope?: (task: TaskView) => void; onReview: (action: "approve" | "reject" | "validate" | "refresh") => Promise<void>;
   onError: (error: unknown) => void; onFinished: () => void; onRunningChange?: (running: boolean) => void;
   sessionSelection?: { id: string; sequence: number };
   windowId?: string | undefined;
@@ -233,6 +233,9 @@ export function ChatWorkbench({ api, attachments, projectPath, windowId, tasks, 
   }, [providers, chosen, active?.id, active?.items, active?.usage, active?.lastRequestUsage, active?.contextTokensEstimate, pendingDraft, pendingDocumentText, pendingImageCount, chat.pendingGuidance]);
   useEffect(() => { const identity = tasks.map((t) => t.id).join("|"); if (loadedTasks.current !== identity) { loadedTasks.current = identity; void chat.refresh().catch(onError); } }, [tasks, chat.refresh, onError]);
   useEffect(() => { if (selectedTaskId) { const session = chat.sessions.find((s) => s.taskId === selectedTaskId); if (session) chat.setActiveId(session.id); } }, [selectedTaskId, chat.sessions.find((s) => s.taskId === selectedTaskId)?.id]);
+  // Keep the selected task in step with the open session so task-scoped surfaces
+  // (MCP connection, skills, review) follow the conversation instead of stale state.
+  useEffect(() => { onSelectTask(active?.taskId ?? ""); }, [active?.id, active?.taskId, onSelectTask]);
   useEffect(() => {
     if (!sessionSelection) return;
     chat.setActiveId(sessionSelection.id);
@@ -527,7 +530,7 @@ export function ChatWorkbench({ api, attachments, projectPath, windowId, tasks, 
   }
   const activeReview = task && review?.changeSet.taskId === task.id ? review : undefined;
   return <div className={`chat-workbench${sidebar?.sessionId === active?.id && active ? " has-agent-sidebar" : ""}`}>
-    <aside className="session-sidebar"><header><h2>{tr("会话")}</h2><button type="button" disabled={chat.creating} aria-label={tr("新建会话")} onClick={() => safely(createSession)}>＋</button></header>
+    <aside className="session-sidebar"><header><h2>{tr("会话")}</h2><div className="session-header-actions"><button type="button" disabled={chat.creating} title={tr("新建任务")} onClick={onNewTask}><ClipboardList size={14} /><span>{tr("新建任务")}</span></button><button type="button" disabled={chat.creating} aria-label={tr("新建会话")} onClick={() => safely(createSession)}>＋</button></div></header>
       <div className="session-list">{chat.sessions.filter((s) => showArchived || !s.archived).map((s) => {
         const sessionRunning = chat.sending.includes(s.id) || ["running", "waiting"].includes(s.status);
         return <div key={s.id} className={`session-row${active?.id === s.id ? " active" : ""}`}>
@@ -539,12 +542,12 @@ export function ChatWorkbench({ api, attachments, projectPath, windowId, tasks, 
           }} onExport={() => exportSession(s.id)} onRemove={async () => { setPendingDelete(s); }} />}
         </div>;
       })}</div>
-      <footer><button type="button" onClick={() => setShowArchived((s) => !s)}>{showArchived ? tr("隐藏归档") : tr("显示归档")}</button><button type="button" onClick={() => importFile.current?.click()}>{tr("导入会话")}</button><button type="button" onClick={onNewTask}>{tr("新建任务")}</button></footer>
+      <footer><button type="button" onClick={() => setShowArchived((s) => !s)}>{showArchived ? tr("隐藏归档") : tr("显示归档")}</button><button type="button" onClick={() => importFile.current?.click()}>{tr("导入会话")}</button></footer>
       <input type="file" accept="application/json,.json" hidden ref={importFile} aria-label={tr("导入会话文件")} onChange={(e) => { const file = e.target.files?.[0]; if (file) safely(async () => { if (file.size > sessionFileLimit) throw new Error(tr("会话文件超过导入上限")); const imported = await api.import(projectPath, await file.text()); chat.apply(imported); select(imported.id); }); e.target.value = ""; }} />
     </aside>
     <section className="conversation-pane">
       <header className="conversation-heading"><div><h2 title={active?.title ?? tr("智能体对话")}>{active?.title ?? tr("智能体对话")}</h2><span className="subtle">{task ? <Status status={task.status} /> : tr("项目智能体会话")}{active?.status === "waiting" && (pendingApproval ? ` · ${tr("等待你的审批")}` : ` · ${tr("等待你的回答")}`)}</span></div>{active && <button type="button" className="agent-sidebar-toggle" aria-label={tr("打开智能体侧栏")} aria-expanded={sidebar?.sessionId === active.id} onClick={() => setSidebar(current => current?.sessionId === active.id ? undefined : { sessionId: active.id })}><PanelRightOpen size={16} /><span>{tr("侧栏")}</span></button>}</header>
-      {task && <details className="scope-summary"><summary>{tr("已授权范围")}</summary>{task.scope.goal && <p>{tr("目标：{goal}", { goal: task.scope.goal })}</p>}<p>{tr("读取：{read} · 写入：{write} · {mode}", { read: task.scope.readPaths.join("、"), write: task.scope.writePaths.join("、") || tr("无"), mode: task.scope.mode === "manual" ? tr("手动审查") : tr("自动提交") })}</p>{task.events.length > 0 && <details><summary>{tr("任务审计历史 · {count}", { count: task.events.length })}</summary><AuditEvents task={task} /></details>}</details>}
+      {task && <div className="scope-summary-row"><details className="scope-summary"><summary>{tr("已授权范围")}</summary>{task.scope.goal && <p>{tr("目标：{goal}", { goal: task.scope.goal })}</p>}<p>{tr("读取：{read} · 写入：{write} · {mode}", { read: task.scope.readPaths.join("、"), write: task.scope.writePaths.join("、") || tr("无"), mode: task.scope.mode === "manual" ? tr("手动审查") : tr("自动提交") })}</p>{task.events.length > 0 && <details><summary>{tr("任务审计历史 · {count}", { count: task.events.length })}</summary><AuditEvents task={task} /></details>}</details>{onEditTaskScope && <button type="button" className="scope-edit" disabled={task.running} onClick={() => onEditTaskScope(task)}>{tr("编辑范围")}</button>}</div>}
       <ChatTimeline sessionId={active?.id ?? ""} runId={active?.runId} running={active?.status === "running" || active?.status === "waiting"} items={active?.items ?? []} avatars={preferences} preferences={preferences} introduction={active && <CapabilitySummary capabilities={active.capabilities} error={active.capabilityError} />} onOpenTools={(selection) => { if (active) setSidebar({ sessionId: active.id, selection }); }} onAnswer={async (item, answers) => { chat.apply(await api.answer(projectPath, item.question.sessionId, item.question.runId, item.question.id, answers)); }} onApprove={async (item, approved) => { chat.apply(await api.approve(projectPath, item.request.sessionId, item.request.runId, item.request.id, approved)); }}>
         {!active && <div className="conversation-empty"><h3>{tr("开始一段对话")}</h3><p>{tr("新建会话即可使用当前项目的工具与扩展。")}</p><button type="button" className="primary" disabled={chat.creating} onClick={() => safely(createSession)}>{tr("新建会话")}</button></div>}
         {active && !active.items.length && <p className="empty-state">{tr("输入消息开始对话。")}</p>}

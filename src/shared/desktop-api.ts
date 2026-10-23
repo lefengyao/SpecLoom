@@ -256,6 +256,7 @@ export interface DesktopApi {
   removeTask(taskId: string): Promise<WorkspaceState>;
   createExample(): Promise<WorkspaceState>;
   createTask(scope: Omit<TaskScopeSpec, "id">): Promise<TaskView>;
+  updateTaskScope?(taskId: string, scope: Omit<TaskScopeSpec, "id">): Promise<TaskView>;
   tool(taskId: string, name: string, input: Record<string, unknown>): Promise<unknown>;
   preview(taskId: string): Promise<ChangeReview>;
   approve(taskId: string, digest: string): Promise<ChangeSetData>;

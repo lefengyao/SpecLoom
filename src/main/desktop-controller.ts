@@ -247,6 +247,7 @@ export class DesktopController {
     });
   }
   async createTask(scope: Omit<TaskScopeSpec, "id">) { return this.currentCore().createTask({ ...scope, id: randomUUID() }); }
+  async updateTaskScope(taskId: string, scope: Omit<TaskScopeSpec, "id">) { return this.currentCore().updateTaskScope(taskId, scope); }
   /**
    * Start the project default workflow for a task's first implementation
    * message. The service records a durable binding, so the task starts once;

@@ -56,7 +56,7 @@ export class TaskScope {
       // assertRead/assertWrite, so it cannot widen a task's permissions.
       ...(goal === undefined || goal.length === 0 ? {} : { goal }),
       readPaths: [...new Set(parsed.data.readPaths.map((pattern) => normalizeTaskPattern(pattern, true)))],
-      writePaths: [...new Set(parsed.data.writePaths.map((pattern) => normalizeTaskPattern(pattern)))],
+      writePaths: [...new Set(parsed.data.writePaths.map((pattern) => normalizeTaskPattern(pattern, true)))],
     });
   }
 

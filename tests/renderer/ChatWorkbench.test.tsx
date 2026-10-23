@@ -26,10 +26,18 @@ function fixture(initial = [session("a", "会话A"), session("b", "会话B")], t
     subscribeChanges: listener => { changeListeners.add(listener); return () => { changeListeners.delete(listener); }; },
   };
   const report = vi.fn();
+  const editScope = vi.fn();
   const attachments = attachmentApi();
-  render(<ChatWorkbench api={api} attachments={attachments} projectPath="P" tasks={tasks} providers={[{ id: "p", name: "测试", protocol: "openai", baseUrl: "http://test", models: ["m", ...(sessionModel?.model && sessionModel.model !== "m" ? [sessionModel.model] : [])], modelSettings: { m: { vision } }, hasKey: false, keyStorage: "none" }]} defaultModel={{ providerId: "p", model: "m" }} {...(sessionModel ? { sessionModel } : {})} review={review} busy={false} onSelectTask={vi.fn()} onNewTask={vi.fn()} onReview={vi.fn(async () => undefined)} onError={report} onFinished={vi.fn()} {...(documents ? { documents } : {})} />);
-  return { api, records, attachments, report, invalidate() { act(() => { for (const listener of changeListeners) listener("P"); }); }, emit(next: ChatSession) { act(() => { for (const listener of listeners) listener({ projectPath: "P", sessionId: next.id, ...(next.runId ? { runId: next.runId } : {}), seq: next.seq, session: next }); }); } };
+  render(<ChatWorkbench api={api} attachments={attachments} projectPath="P" tasks={tasks} providers={[{ id: "p", name: "测试", protocol: "openai", baseUrl: "http://test", models: ["m", ...(sessionModel?.model && sessionModel.model !== "m" ? [sessionModel.model] : [])], modelSettings: { m: { vision } }, hasKey: false, keyStorage: "none" }]} defaultModel={{ providerId: "p", model: "m" }} {...(sessionModel ? { sessionModel } : {})} review={review} busy={false} onSelectTask={vi.fn()} onNewTask={vi.fn()} onEditTaskScope={editScope} onReview={vi.fn(async () => undefined)} onError={report} onFinished={vi.fn()} {...(documents ? { documents } : {})} />);
+  return { api, records, attachments, report, editScope, invalidate() { act(() => { for (const listener of changeListeners) listener("P"); }); }, emit(next: ChatSession) { act(() => { for (const listener of listeners) listener({ projectPath: "P", sessionId: next.id, ...(next.runId ? { runId: next.runId } : {}), seq: next.seq, session: next }); }); } };
 }
+
+test("opens the scope editor for the active task session", async () => {
+  const f = fixture([{ ...session("a", "任务会话"), taskId: "task-1" }], [legacyTask]);
+  await screen.findByRole("button", { name: "任务会话" });
+  fireEvent.click(screen.getByRole("button", { name: "编辑范围" }));
+  expect(f.editScope).toHaveBeenCalledWith(expect.objectContaining({ id: "task-1" }));
+});
 
 test("replaces the send shortcut control with session approval permissions", async () => {
   const f = fixture(); await screen.findByRole("button", { name: "会话A" });

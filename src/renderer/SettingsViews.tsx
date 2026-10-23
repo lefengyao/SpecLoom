@@ -338,6 +338,9 @@ export function SettingsView({
 export function McpView({
   connection,
   task,
+  tasks,
+  onSelectTask,
+  onNewTask,
   onError,
   sessionsApi,
   godotPluginApi,
@@ -347,6 +350,9 @@ export function McpView({
 }: {
   connection: McpConnection | undefined;
   task: TaskView | undefined;
+  tasks?: TaskView[] | undefined;
+  onSelectTask?: ((id: string) => void) | undefined;
+  onNewTask?: (() => void) | undefined;
   onError: (value: unknown) => void;
   sessionsApi?: ChatSessionsApi | undefined;
   godotPluginApi?: DesktopApi["pluginManagement"] | undefined;
@@ -429,13 +435,35 @@ export function McpView({
         {visitedSections.has("specloom") && <section className="mcp-connection-panel" aria-label={tr("连接 SpecLoom 的 MCP 服务")}>
           <header className="section-heading"><div><h2>{tr("连接 SpecLoom 的 MCP 服务")}</h2><p className="field-hint">{tr("让外部客户端调用当前 SpecLoom 工作区提供的工具。")}</p></div><span className={`status ${connection ? "status-applied" : "status-staged"}`}>{connection ? tr("已启动") : tr("未连接")}</span></header>
           {connection ? <>
+            <section className="mcp-task" aria-label={tr("MCP 任务")}>
+              <header>
+                <span className="mcp-task-badge">MCP</span>
+                <strong>{tr("调用任务")}</strong>
+              </header>
+              <p className="field-hint">{tr("外部 MCP 客户端调用工具时，需要把这个任务 ID 作为 taskId 传入。")}</p>
+              <div className={`mcp-task-row${task ? "" : " is-missing"}`}>
+                <code>{task?.id ?? tr("未选择任务")}</code>
+                {task && <CopyButton value={task.id} label={tr("复制任务 ID")} onError={onError} />}
+              </div>
+              {tasks && tasks.length > 0 && onSelectTask ? (
+                <label className="mcp-task-picker">
+                  <span>{tr("选择任务")}</span>
+                  <select value={task?.id ?? ""} onChange={(event) => onSelectTask(event.target.value)}>
+                    <option value="">{tr("未选择任务")}</option>
+                    {tasks.map((candidate) => (
+                      <option key={candidate.id} value={candidate.id}>{candidate.scope.title}</option>
+                    ))}
+                  </select>
+                </label>
+              ) : onNewTask ? (
+                <button type="button" onClick={onNewTask}>{tr("新建任务")}</button>
+              ) : null}
+            </section>
             <dl className="connection-fields">
               <dt>{tr("地址")}</dt>
               <dd><code>{connection.url}</code><CopyButton value={connection.url} label={tr("复制 MCP 地址")} onError={onError} /></dd>
               <dt>{tr("访问令牌")}</dt>
               <dd><input type="password" readOnly value={connection.token} aria-label={tr("MCP 访问令牌")} /><CopyButton value={connection.token} label={tr("复制 MCP 访问令牌")} onError={onError} /></dd>
-              <dt>{tr("当前任务 ID")}</dt>
-              <dd><code>{task?.id ?? tr("未选择任务")}</code>{task && <CopyButton value={task.id} label={tr("复制任务 ID")} onError={onError} />}</dd>
             </dl>
             <header className="section-heading"><h2>{tr("连接配置")}</h2><CopyButton value={JSON.stringify(config, null, 2)} label={tr("复制连接配置")} onError={onError} /></header>
             <pre className="config-code">{JSON.stringify(visibleConfig, null, 2)}</pre>

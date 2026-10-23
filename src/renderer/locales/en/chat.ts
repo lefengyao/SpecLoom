@@ -22,6 +22,7 @@ export const chatEnglish: Record<string, string> = {
   "侧栏": "Sidebar",
   // Scope summary
   "已授权范围": "Authorized scope",
+  "编辑范围": "Edit scope",
   "目标：{goal}": "Goal: {goal}",
   "读取：{read} · 写入：{write} · {mode}": "Read: {read} · Write: {write} · {mode}",
   "任务审计历史 · {count}": "Task audit history · {count}",

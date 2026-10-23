@@ -100,6 +100,14 @@ export class ProjectCore {
   }
 
   listTasks(): TaskView[] { return [...this.tasks.values()].map((task) => this.taskView(task)); }
+  /** Replace a task's scope. Running tasks keep the scope their agent started with. */
+  async updateTaskScope(taskId: string, spec: Omit<TaskScopeSpec, "id">): Promise<TaskView> {
+    const task = this.task(taskId);
+    if (task.running) throw new ProjectError("TASK_SCOPE_DENIED", "运行中的任务不能修改范围");
+    task.scope = new TaskScope({ ...spec, id: taskId });
+    await this.persist(task);
+    return this.taskView(task);
+  }
   /** The persisted scope of one task, including its optional goal. */
   taskScope(taskId: string): TaskScopeSpec { return this.task(taskId).scope.describe(); }
   /** Removes one finished task and its persisted history record. */

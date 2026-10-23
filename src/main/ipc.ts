@@ -122,6 +122,7 @@ const operations = {
   forgetProject: z.object({ path: z.string().min(1).max(4096) }).strict(),
   updatePreferences: z.object({ patch: PreferencesPatchSchema }).strict(),
   createTask: z.object({ scope: TaskScopeSpecSchema.omit({ id: true }) }).strict(),
+  updateTaskScope: z.object({ taskId: id, scope: TaskScopeSpecSchema.omit({ id: true }) }).strict(),
   tool: z.object({ taskId: id, name: id, input: z.record(z.string(), z.unknown()) }).strict(),
   preview: z.object({ taskId: id }).strict(), approve: z.object({ taskId: id, digest: id }).strict(),
   reject: z.object({ taskId: id }).strict(), validate: z.object({ taskId: id }).strict(),
@@ -449,6 +450,7 @@ async function dispatch(operation: string, input: Record<string, unknown>, contr
     case "removeTask": return controller.removeTask(input.taskId as string);
     case "createExample": return projects ? projects.example() : controller.createExample();
     case "createTask": return controller.createTask(input.scope as z.infer<typeof TaskScopeSpecSchema>);
+    case "updateTaskScope": return controller.updateTaskScope(input.taskId as string, input.scope as Omit<z.infer<typeof TaskScopeSpecSchema>, "id">);
     case "tool": return controller.currentCore().executeTool(input.taskId as string, input.name as string, input.input as Record<string, unknown>);
     case "preview": return controller.currentCore().previewChanges(input.taskId as string);
     case "approve": return controller.currentCore().approveChanges(input.taskId as string, input.digest as string);

@@ -17,7 +17,6 @@ import {
   PanelLeftOpen,
   PanelsTopLeft,
   Puzzle,
-  Plus,
   SlidersHorizontal,
   Store,
   Sparkles,
@@ -31,6 +30,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { TaskScopeSpec } from "../shared/contracts";
+import type { TaskView } from "../shared/desktop-api";
 import { mergeSession } from "./chat/useChatSessions";
 import type { ChatSession } from "../shared/chat";
 import { applyAppearance, watchSystemTheme } from "./appearance";
@@ -74,7 +74,7 @@ function WelcomeOrbitMascot() {
     return () => window.clearInterval(timer);
   }, []);
 
-  return <Mascot className="entry-mark" size={200} orbit={preset} trackPointer />;
+  return <Mascot className="entry-mark" size={120} orbit={preset} trackPointer />;
 }
 
 const tabs = [
@@ -155,6 +155,7 @@ export default function App() {
     if (tab.startsWith("plugin:") && !pluginPages.some((page) => `plugin:${page.pluginId}:${page.id}` === tab)) setTab("plugins");
   }, [pluginPages, tab]);
   const [scope, setScope] = useState<Omit<TaskScopeSpec, "id"> | true>();
+  const [scopeEdit, setScopeEdit] = useState<{ taskId: string; scope: Omit<TaskScopeSpec, "id"> }>();
   const [revision, setRevision] = useState(0);
   const [materialDrafts, setMaterialDrafts] = useState<MaterialDraft[]>([]);
   const [pendingProjectOpen, setPendingProjectOpen] = useState<boolean>();
@@ -227,6 +228,19 @@ export default function App() {
         allowDelete: selected.scope.allowDelete,
       });
   }
+  function editTaskScope(task: TaskView) {
+    setScopeEdit({
+      taskId: task.id,
+      scope: {
+        title: task.scope.title,
+        ...(task.scope.goal === undefined ? {} : { goal: task.scope.goal }),
+        readPaths: [...task.scope.readPaths],
+        writePaths: [...task.scope.writePaths],
+        mode: task.scope.mode,
+        allowDelete: task.scope.allowDelete,
+      },
+    });
+  }
   function openProject(example = false) {
     if (materialDrafts.length) setPendingProjectOpen(example);
     else void workspace.openProject(example);
@@ -272,16 +286,6 @@ export default function App() {
                 {tr("打开外部编辑器")}
               </button>
             </>
-          )}
-          {state.project && (
-            <button
-              className="primary"
-              disabled={busy}
-              onClick={() => setScope(true)}
-            >
-              <Plus size={16} />
-              {tr("新建任务")}
-            </button>
           )}
           <button
             className={`header-ghost ${tab === "settings" ? "active" : ""}`}
@@ -336,39 +340,43 @@ export default function App() {
           </main>
         ) : (
         <main className="project-entry">
-          <div className="entry-mascot">
-            <div className="entry-mascot-row">
-              <WelcomeOrbitMascot />
+          <aside className="entry-sidebar">
+            <div className="entry-brand">
+              <div className="entry-brand-head">
+                <WelcomeOrbitMascot />
+                <div className="entry-brand-copy">
+                  <span className="mascot-name"><b>络络</b><span>THREAD SPRITE</span></span>
+                  <h1>SpecLoom</h1>
+                  <span className="subtle">{tr("智能体项目工作区")}</span>
+                </div>
+              </div>
               <MascotSpeech />
             </div>
-            <span className="mascot-name"><b>络络</b><span>THREAD SPRITE</span></span>
-          </div>
-          <h1>SpecLoom</h1>
-          <span className="subtle">{tr("智能体项目工作区")}</span>
-          <div className="entry-actions">
-            <button
-              className="primary"
-              disabled={!api || busy}
-              onClick={() => {
-                openProject();
-              }}
-            >
-              <FolderOpen size={17} />
-              {tr("打开项目")}
-            </button>
-            <button
-              disabled={!api || busy}
-              onClick={() => {
-                openProject(true);
-              }}
-            >
-              <Sparkles size={17} />
-              {tr("创建示例项目")}
-            </button>
-          </div>
-          {!api && (
-            <span className="connection-unavailable">桌面连接不可用</span>
-          )}
+            {!api && (
+              <span className="connection-unavailable">桌面连接不可用</span>
+            )}
+            <div className="entry-actions">
+              <button
+                disabled={!api || busy}
+                onClick={() => {
+                  openProject(true);
+                }}
+              >
+                <Sparkles size={17} />
+                {tr("创建示例项目")}
+              </button>
+              <button
+                className="primary"
+                disabled={!api || busy}
+                onClick={() => {
+                  openProject();
+                }}
+              >
+                <FolderOpen size={17} />
+                {tr("打开项目")}
+              </button>
+            </div>
+          </aside>
           {state.recent.length > 0 && (
             <section className="recent-projects" aria-label="近期打开的项目">
               <header>
@@ -460,7 +468,7 @@ export default function App() {
                 {...(sessionSelection ? { sessionSelection } : {})}
                 {...(state.defaultModel ? { defaultModel: state.defaultModel } : {})}
                 {...(state.sessionModel ? { sessionModel: state.sessionModel } : {})}
-                selectedTaskId={workspace.selectedId} onSelectTask={workspace.setSelectedId} onNewTask={() => setScope(true)}
+                selectedTaskId={workspace.selectedId} onSelectTask={workspace.setSelectedId} onNewTask={() => setScope(true)} {...(api?.updateTaskScope ? { onEditTaskScope: editTaskScope } : {})}
                 review={review} busy={busy} onError={workspace.reportError} onRunningChange={setSessionsRunning}
                 {...(api.workflow ? { workflow: api.workflow } : {})}
                 onOpenWorkflowRun={(runId) => {
@@ -608,6 +616,9 @@ export default function App() {
                 onStateChanged={api?.onStateChanged}
                 connection={state.mcp}
                 task={selected}
+                tasks={state.tasks}
+                onSelectTask={workspace.setSelectedId}
+                onNewTask={() => setScope(true)}
                 sessionsApi={api?.sessions}
                 godotPluginApi={state.project.engine === "godot" ? api?.pluginManagement : undefined}
                 configApi={api?.mcpConfig}
@@ -642,6 +653,7 @@ export default function App() {
       )}
       {scope && (
         <ScopeForm
+          api={api}
           initial={scope === true ? undefined : scope}
           busy={busy}
           onClose={() => setScope(undefined)}
@@ -657,6 +669,19 @@ export default function App() {
               setScope(undefined);
               setTab("workspace");
             }
+          }}
+        />
+      )}
+      {scopeEdit && (
+        <ScopeForm
+          api={api}
+          editing
+          initial={scopeEdit.scope}
+          busy={busy || Boolean(state.tasks.find((task) => task.id === scopeEdit.taskId)?.running)}
+          onClose={() => setScopeEdit(undefined)}
+          onCreate={async (spec) => {
+            await workspace.updateTaskScope(scopeEdit.taskId, spec);
+            setScopeEdit(undefined);
           }}
         />
       )}
@@ -698,6 +723,15 @@ export default function App() {
             }}>丢弃修改并重新读取</button>
           </footer>
         </Modal>
+      )}
+      {workspace.openingProject && (
+        <div className="app-loading" role="status" aria-live="polite">
+          <div className="app-loading-card">
+            <span className="app-loading-spinner" aria-hidden="true" />
+            <strong>{tr("正在加载项目…")}</strong>
+            <span className="subtle">{tr("正在读取项目文件与历史记录，请稍候。")}</span>
+          </div>
+        </div>
       )}
       </div>
     </ContextMenu>

@@ -1,4 +1,8 @@
 export const settingsEnglish: Record<string, string> = {
+  // App loading
+  "正在加载项目…": "Loading project…",
+  "正在读取项目文件与历史记录，请稍候。": "Reading project files and history. This can take a moment.",
+
   // External tools
   "可执行文件路径": "Executable paths",
   "头像和外部工具属于本机偏好，应用于所有项目。": "Avatars and external tools are local preferences that apply to all projects.",
@@ -42,6 +46,10 @@ export const settingsEnglish: Record<string, string> = {
   "当前任务 ID": "Current task ID",
   "未选择任务": "No task selected",
   "复制任务 ID": "Copy task ID",
+  "MCP 任务": "MCP task",
+  "调用任务": "Task for tool calls",
+  "外部 MCP 客户端调用工具时，需要把这个任务 ID 作为 taskId 传入。": "External MCP clients must pass this task ID as taskId when calling a tool.",
+  "选择任务": "Select task",
   "连接配置": "Connection config",
   "复制连接配置": "Copy connection config",
   "参数": "Parameters",
@@ -273,10 +281,20 @@ export const settingsEnglish: Record<string, string> = {
 
   // Task scope form
   "确认任务范围": "Confirm task scope",
+  "编辑任务范围": "Edit task scope",
   "任务名称": "Task name",
   "任务目标": "Task goal",
   "这次实现要完成什么？留空时使用任务名称。": "What should this implementation accomplish? Leave blank to use the task name.",
   "首次实现消息会启动默认工作流；目标会随任务保存。": "The first implementation message starts the default workflow; the goal is saved with the task.",
+  "可写文件": "Writable files",
+  "勾选允许任务修改的文件；默认全选。读取范围可在高级选项中调整。": "Check the files this task may modify. All files are selected by default; adjust read access under Advanced.",
+  "正在读取项目文件…": "Reading project files…",
+  "暂时无法读取项目文件，可在高级选项中手动填写路径。": "Project files cannot be read right now; enter paths manually under Advanced.",
+  "筛选文件": "Filter files",
+  "全选": "Select all",
+  "清空": "Clear",
+  "高级：手动填写路径": "Advanced: enter paths manually",
+  "保存范围": "Save scope",
   "可读路径": "Readable paths",
   "可写路径": "Writable paths",
   "提交模式": "Commit mode",

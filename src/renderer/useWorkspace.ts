@@ -34,6 +34,7 @@ export function useWorkspace(api?: DesktopApi) {
     preferences: defaultPreferences,
   });
   const [selectedId, updateSelectedId] = useState("");
+  const [openingProject, setOpeningProject] = useState(false);
   const taskSelectionSeq = useRef(0);
   const setSelectedId = useCallback((id: string) => { taskSelectionSeq.current++; updateSelectedId(id); }, []);
   const projectSelectionSeq = useRef(0);
@@ -150,6 +151,7 @@ export function useWorkspace(api?: DesktopApi) {
     const selection = ++projectSelectionSeq.current;
     refreshSeq.current++;
     selectingProject.current = true;
+    const openingTimer = window.setTimeout(() => setOpeningProject(true), 200);
     try { await perform(async () => {
       const next = await action();
       if (selection !== projectSelectionSeq.current) return;
@@ -160,6 +162,8 @@ export function useWorkspace(api?: DesktopApi) {
       setChats({});
       setChatMessages([]);
     }); } finally {
+      window.clearTimeout(openingTimer);
+      setOpeningProject(false);
       if (selection === projectSelectionSeq.current) {
         selectingProject.current = false;
         if (deferredRefresh.current) { deferredRefresh.current = false; await refresh().catch(reportError); }
@@ -197,6 +201,16 @@ export function useWorkspace(api?: DesktopApi) {
       const task = await api.createTask(scope);
       await refresh();
       setSelectedId(task.id);
+      return task;
+    });
+  }
+  async function updateTaskScope(taskId: string, scope: Omit<TaskScopeSpec, "id">) {
+    const update = api?.updateTaskScope;
+    if (!update) throw new Error("当前桌面版本不支持修改任务范围");
+    return perform(async () => {
+      const task = await update(taskId, scope);
+      await refresh();
+      await inspect(taskId);
       return task;
     });
   }
@@ -301,6 +315,7 @@ export function useWorkspace(api?: DesktopApi) {
     state,
     selected,
     selectedId,
+    openingProject,
     setSelectedId,
     review: review?.changeSet.taskId === selectedId ? review : undefined,
     error,
@@ -320,6 +335,7 @@ export function useWorkspace(api?: DesktopApi) {
     forgetRecent,
     updatePreferences,
     createTask,
+    updateTaskScope,
     refreshReview,
     send,
     sendConversation,

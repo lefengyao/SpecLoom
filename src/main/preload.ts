@@ -136,7 +136,7 @@ const api: DesktopApi = {
     revealDirectory: async (target) => { await invoke("pluginsRevealDirectory", { target }); },
   },
   state: () => invoke("state"), selectProject: () => invoke("selectProject"), openProject: (path) => invoke("openProject", { path }), closeProject: () => invoke("closeProject"), forgetProject: (path) => invoke("forgetProject", { path }), updatePreferences: (patch) => invoke("updatePreferences", { patch }), openGodot: () => invoke("openGodot"), openExternalEditor: () => invoke("openExternalEditor"), removeTask: (taskId) => invoke("removeTask", { taskId }), createExample: () => invoke("createExample"),
-  createTask: (scope) => invoke("createTask", { scope }), tool: (taskId, name, input) => invoke("tool", { taskId, name, input }),
+  createTask: (scope) => invoke("createTask", { scope }), updateTaskScope: (taskId, scope) => invoke("updateTaskScope", { taskId, scope }), tool: (taskId, name, input) => invoke("tool", { taskId, name, input }),
   preview: (taskId) => invoke("preview", { taskId }), approve: (taskId, digest) => invoke("approve", { taskId, digest }),
   reject: (taskId) => invoke("reject", { taskId }), validate: (taskId) => invoke("validate", { taskId }),
   agent: (taskId, modelId, prompt) => invoke("agent", { taskId, modelId, prompt }), cancel: (taskId) => invoke("cancel", { taskId }),

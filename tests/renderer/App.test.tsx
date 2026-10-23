@@ -258,9 +258,7 @@ describe("desktop workspace workflows", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "新建任务" })[0]!);
     const dialog = screen.getByRole("dialog", { name: "确认任务范围" });
     expect(within(dialog).getByLabelText("可读路径")).toHaveValue("*");
-    expect(within(dialog).getByLabelText("可写路径")).toHaveValue(
-      "specs/entities/**\nspecs/components/**\nscenes/**\nscripts/**",
-    );
+    expect(within(dialog).getByLabelText("可写路径")).toHaveValue("*");
     expect(api.createTask).not.toHaveBeenCalled();
     fireEvent.change(within(dialog).getByLabelText("任务名称"), {
       target: { value: "授权角色移动" },

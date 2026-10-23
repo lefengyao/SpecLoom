@@ -8,7 +8,7 @@ import { HubWorkspaces, type HubWorkspaceLease } from "./hub-workspaces";
 
 const projectSelections = new Set(["openProject", "selectProject", "createExample"]);
 const sessionMutations = new Set(["sessionsCreate", "sessionsPatch", "sessionsRemove", "sessionsImport"]);
-const taskMutations = new Set(["createTask", "removeTask", "tool", "approve", "reject", "validate", "agent", "cancel", "pluginsSetGodotPluginEnabled", "pluginsSetGodotMcpEnabled", "pluginsInstallGodotMcp"]);
+const taskMutations = new Set(["createTask", "updateTaskScope", "removeTask", "tool", "approve", "reject", "validate", "agent", "cancel", "pluginsSetGodotPluginEnabled", "pluginsSetGodotMcpEnabled", "pluginsInstallGodotMcp"]);
 const globalMutations = new Set([
   "updatePreferences", "forgetProject", "saveModel", "removeModel", "saveProvider", "removeProvider", "addProviderModels", "removeProviderModel", "discoverProviderModels", "setDefaultModel", "setSessionModel",
   "offlineDocumentsImportFiles", "offlineDocumentsImportDirectory", "offlineDocumentsSetEnabled", "offlineDocumentsSetVersion", "offlineDocumentsRemove",

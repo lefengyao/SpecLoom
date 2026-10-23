@@ -34,6 +34,16 @@ describe("ProjectCore shared project authority", () => {
     expect(entries).not.toContainEqual(expect.objectContaining({ path: ".specloom/project.yaml" }));
   });
 
+  it("updates a task scope so an existing task can gain full write access", async () => {
+    const { core } = await fixture();
+    await expect(core.executeTool("task", "files.write", { path: "notes.txt", expectedVersion: "absent", content: "root\n" }))
+      .rejects.toMatchObject({ code: "TASK_SCOPE_DENIED" });
+    const updated = await core.updateTaskScope("task", { title: "Widen scope", readPaths: ["*"], writePaths: ["*"], allowDelete: false, mode: "manual" });
+    expect(updated.scope).toMatchObject({ id: "task", title: "Widen scope", writePaths: ["*"] });
+    await core.executeTool("task", "files.write", { path: "notes.txt", expectedVersion: "absent", content: "root\n" });
+    expect(core.taskScope("task")).toMatchObject({ id: "task", writePaths: ["*"] });
+  });
+
   it("reports retained startup snapshots while allowing project work", async () => {
     const issue = { code: "COMMAND_FAILED", message: "Snapshot retained after container cleanup failed", path: "private-snapshot" };
     const recover = vi.spyOn(SnapshotRunner.prototype, "recoverAbandoned").mockResolvedValue([issue]);
