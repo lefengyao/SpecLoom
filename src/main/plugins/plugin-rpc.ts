@@ -54,7 +54,7 @@ export class PluginRpc {
     });
   }
 
-  close(error = new PluginRpcError("CLOSED", "Plugin RPC closed")): void {
+  close(error: Error = new PluginRpcError("CLOSED", "Plugin RPC closed")): void {
     if (this.closed) return;
     this.closed = error;
     for (const [id, item] of this.pending) {

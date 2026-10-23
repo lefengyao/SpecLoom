@@ -210,7 +210,6 @@ export interface PluginsApi {
   install(): Promise<SpecLoomPluginInventory>;
   uninstall(id: string): Promise<SpecLoomPluginInventory>;
   reveal(id: string): Promise<void>;
-  pageUrl(id: string, pageId: string): string;
 }
 export interface PluginManagementApi {
   list(): Promise<PluginInventory>;

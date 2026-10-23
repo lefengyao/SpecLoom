@@ -40,9 +40,8 @@ import { ScopeForm } from "./ScopeForm";
 import { HistoryView, McpView, SettingsView } from "./SettingsViews";
 import { SkillsView } from "./SkillsView";
 import { PluginManagementView } from "./PluginManagementView";
-import { PluginPageHost } from "./PluginPageHost";
 import { LuoluoView } from "./LuoluoView";
-import type { PluginPageSummary } from "../shared/plugins";
+import { GitView } from "./GitView";
 import { configureCompletionSound } from "./sound";
 import { WorkflowView } from "./WorkflowView";
 import { WorkspaceView } from "./WorkspaceView";
@@ -100,7 +99,7 @@ const tabs = [
   { id: "about", label: "关于项目", icon: Info },
 ] as const;
 type Tab = (typeof tabs)[number]["id"] | `plugin:${string}:${string}`;
-interface PluginPageEntry extends PluginPageSummary { pluginTitle: string; pluginId: string; pageId: string; }
+interface PluginPageEntry { id: string; title: string; icon?: string | undefined; pluginTitle: string; pluginId: string; }
 const navigationPreferenceKey = "specloom.navigation";
 function readNavigationPreference(): boolean {
   try {
@@ -141,7 +140,7 @@ export default function App() {
       try {
         const inventory = await api.plugins.list();
         if (cancelled) return;
-        setPluginPages(inventory.plugins.filter((plugin) => plugin.enabled && plugin.status === "ready").flatMap((plugin) => plugin.pages.map((page) => ({ ...page, pluginTitle: plugin.name, pluginId: plugin.id, pageId: page.id }))));
+        setPluginPages(inventory.plugins.filter((plugin) => plugin.enabled && plugin.status === "ready").flatMap((plugin) => plugin.nativePages.map((page) => ({ ...page, pluginTitle: plugin.name, pluginId: plugin.id }))));
       } catch { if (!cancelled) setPluginPages([]); }
     };
     void load();
@@ -150,7 +149,7 @@ export default function App() {
     return () => { cancelled = true; window.removeEventListener("specloom:plugins-changed", changed); };
   }, [api, state.project?.path]);
   useEffect(() => {
-    if (tab.startsWith("plugin:") && !pluginPages.some((page) => `plugin:${page.pluginId}:${page.pageId}` === tab)) setTab("plugins");
+    if (tab.startsWith("plugin:") && !pluginPages.some((page) => `plugin:${page.pluginId}:${page.id}` === tab)) setTab("plugins");
   }, [pluginPages, tab]);
   const [scope, setScope] = useState<Omit<TaskScopeSpec, "id"> | true>();
   const [revision, setRevision] = useState(0);
@@ -190,7 +189,7 @@ export default function App() {
   }, [materialDrafts.length]);
   const { preferences } = state;
   const tr = useMemo(() => createTranslator(preferences.locale), [preferences.locale]);
-  const activePluginPage = pluginPages.find((page) => `plugin:${page.pluginId}:${page.pageId}` === tab);
+  const activePluginPage = pluginPages.find((page) => `plugin:${page.pluginId}:${page.id}` === tab);
   useEffect(() => {
     applyAppearance(preferences);
   }, [preferences]);
@@ -438,7 +437,7 @@ export default function App() {
                 </div>;
               })}
               {state.project && pluginPages.map((page, index) => {
-                const pageTab = `plugin:${page.pluginId}:${page.pageId}` as Tab;
+                const pageTab = `plugin:${page.pluginId}:${page.id}` as Tab;
                 const Icon = page.icon === "git-branch" ? GitBranch : Puzzle;
                 return <div key={pageTab} className="nav-entry">
                   {index === 0 && <span className="nav-group-label">插件页面</span>}
@@ -579,7 +578,7 @@ export default function App() {
               {api && <PluginManagementView key={state.project.path} api={api} project={state.project} onError={workspace.reportError} />}
             </NavigationPage>
             <NavigationPage active={tab.startsWith("plugin:")}>
-              {api && activePluginPage && <PluginPageHost key={`${activePluginPage.pluginId}:${activePluginPage.pageId}:${state.project.path}`} api={api} pluginId={activePluginPage.pluginId} pageId={activePluginPage.pageId} title={activePluginPage.title} project={state.project} onError={workspace.reportError} />}
+              {api && activePluginPage?.id === "git" && <GitView key={`${activePluginPage.pluginId}:${state.project.path}`} api={api} pluginId={activePluginPage.pluginId} projectPath={state.project.path} onError={workspace.reportError} />}
             </NavigationPage>
             <NavigationPage active={tab === "offlineDocs"}>{api && <OfflineDocsView api={api} onError={workspace.reportError} />}</NavigationPage>
             <NavigationPage active={tab === "hooks"}>{api && <HooksView api={api} active={tab === "hooks"} onError={workspace.reportError} />}</NavigationPage>

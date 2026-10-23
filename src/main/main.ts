@@ -8,7 +8,6 @@ import { ProviderVault } from "./core/provider-vault";
 import { startMcpServer, type LocalMcpServer } from "./mcp-server";
 import { godotMcpHostRegistry } from "./core/godot-mcp/host-registry";
 import { PluginManager } from "./core/plugins/plugin-manager";
-import { registerPluginProtocol, registerPluginScheme } from "./plugins/plugin-protocol";
 
 let activeWindow: BrowserWindow | undefined;
 let controller: DesktopController;
@@ -105,8 +104,6 @@ function createWindow(): void {
   });
 }
 
-registerPluginScheme();
-
 void app.whenReady().then(async () => {
   const vault = new ModelVault(app.getPath("userData"), { isAvailable: () => safeStorage.isEncryptionAvailable(), encrypt: (value) => safeStorage.encryptString(value), decrypt: (value) => safeStorage.decryptString(value) });
   const encryption = { isAvailable: () => safeStorage.isEncryptionAvailable(), encrypt: (value: string) => safeStorage.encryptString(value), decrypt: (value: Buffer) => safeStorage.decryptString(value) };
@@ -115,9 +112,10 @@ void app.whenReady().then(async () => {
     builtinDirectory: app.isPackaged ? path.join(process.resourcesPath, "plugins") : path.join(applicationRoot, "resources", "plugins"),
     userDataDirectory: app.getPath("userData"),
     getProjectPath: () => { try { return controller.currentCore().metadata.path; } catch { return undefined; } },
+    childPath: app.isPackaged ? path.join(process.resourcesPath, "plugin-host-child.mjs") : path.join(applicationRoot, "resources", "plugin-host-child.mjs"),
+    logDirectory: path.join(app.getPath("userData"), "plugin-logs"),
   });
   controller.plugins = plugins;
-  registerPluginProtocol(plugins);
   mcp = await startMcpServer(() => controller.currentCore());
   controller.mcp = { url: mcp.url, token: mcp.token };
   createWindow();

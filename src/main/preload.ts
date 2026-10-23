@@ -124,7 +124,6 @@ const api: DesktopApi = {
     install: () => invoke("specPluginsInstall"),
     uninstall: (id) => invoke("specPluginsUninstall", { id }),
     reveal: async (id) => { await invoke("specPluginsReveal", { id }); },
-    pageUrl: (id, pageId) => `specloom-plugin://${id}/${pageId}/`,
   },
   pluginManagement: {
     list: () => invoke("pluginsList"),

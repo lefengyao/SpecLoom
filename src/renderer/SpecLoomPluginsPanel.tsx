@@ -51,7 +51,7 @@ function SpecPluginRow({ plugin, busy, onToggle, onReveal, onUninstall }: { plug
     <div className="plugin-row-main">
       <div className="plugin-row-title"><h3>{plugin.name}</h3><span className={`plugin-status-pill ${plugin.status === "error" ? "is-attention" : plugin.enabled ? "is-ready" : "is-disabled"}`}>{status}</span>{plugin.official && <span className="plugin-status-pill is-ready">官方</span>}</div>
       <p>{plugin.error || plugin.description || "此插件未提供说明。"}</p>
-      <div className="plugin-meta-line"><span>v{plugin.version}</span><span>{plugin.source === "builtin" ? "内置" : "本地安装"}</span><span>{plugin.pages.length} 个页面</span><code>{plugin.id}</code></div>
+      <div className="plugin-meta-line"><span>v{plugin.version}</span><span>{plugin.source === "builtin" ? "内置" : "本地安装"}</span><span>{plugin.nativePages.length} 个页面</span><code>{plugin.id}</code></div>
     </div>
     <div className="plugin-row-actions">
       <button type="button" role="switch" aria-checked={plugin.enabled} aria-label={`${plugin.enabled ? "禁用" : "启用"} ${plugin.name}`} disabled={busy} className={`plugin-switch${plugin.enabled ? " is-on" : ""}`} onClick={onToggle}><span /></button>

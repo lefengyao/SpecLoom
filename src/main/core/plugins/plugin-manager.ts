@@ -18,7 +18,7 @@ interface PluginRecord {
   source: "builtin" | "user";
   enabled: boolean;
   error?: string;
-  host?: PluginHost;
+  host?: PluginHost | undefined;
   commands: string[];
 }
 interface PluginState { version: 1; enabled: Record<string, boolean> }
@@ -75,15 +75,15 @@ export class PluginManager {
     const record = this.records.get(id);
     if (!record) throw new ProjectError("VALIDATION_FAILED", "插件不存在");
     if (!record.enabled) throw new ProjectError("VALIDATION_FAILED", "插件未启用");
-    if (record.error) throw new ProjectError("PLUGIN_UNAVAILABLE", record.error);
+    if (record.error) throw new ProjectError("BACKEND_UNAVAILABLE", record.error);
     await this.activateEnabled();
-    if (!record.host) throw new ProjectError("PLUGIN_UNAVAILABLE", "插件进程未运行");
+    if (!record.host) throw new ProjectError("BACKEND_UNAVAILABLE", "插件进程未运行");
     const projectPath = this.options.getProjectPath();
     if (!projectPath) throw new ProjectError("INVALID_PROJECT", "请先打开项目");
     try {
       return await record.host.request("invoke", { command, input, projectPath }, this.timeoutFor(command));
     } catch (error) {
-      throw new ProjectError("PLUGIN_ERROR", message(error));
+      throw new ProjectError("COMMAND_FAILED", message(error));
     }
   }
 
