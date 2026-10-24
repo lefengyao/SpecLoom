@@ -351,12 +351,24 @@
 
 .ewb-create-group-head {
   display: flex;
-  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
   padding: 6px 9px;
+  border: 0;
   background: var(--bg-surface);
   color: var(--text-muted);
   font-size: 10px;
   letter-spacing: 0.04em;
+  text-align: left;
+}
+
+.ewb-create-group-head > span:first-of-type {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ewb-create-item {

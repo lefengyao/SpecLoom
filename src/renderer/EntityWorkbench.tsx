@@ -1,4 +1,4 @@
-import { Image as ImageIcon, ImageOff, LayoutGrid, Plus, Puzzle, RefreshCw, Save, Search, Star, Trash2, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Image as ImageIcon, ImageOff, LayoutGrid, Plus, Puzzle, RefreshCw, Save, Search, Star, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Background,
@@ -1045,6 +1045,7 @@ export function EntityWorkbench({ api, projectPath, onError, onOpenDetail }: Ent
   const [componentDrawerOpen, setComponentDrawerOpen] = useState(false);
   const [componentBrowserOpen, setComponentBrowserOpen] = useState(false);
   const [componentFilter, setComponentFilter] = useState<"all" | "available" | "added" | "inherited">("all");
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
   const [browserSelection, setBrowserSelection] = useState<string>();
   const [recentComponents, setRecentComponents] = useState<string[]>(() => loadComponentPaths(RECENT_COMPONENTS_PREFIX, projectPath));
   const [favoriteComponents, setFavoriteComponents] = useState<string[]>(() => loadComponentPaths(FAVORITE_COMPONENTS_PREFIX, projectPath));
@@ -1970,8 +1971,20 @@ export function EntityWorkbench({ api, projectPath, onError, onOpenDetail }: Ent
                 <ul className="ewb-create-list" aria-label={tr("组件列表")}>
                   {browserSections.map((section) => (
                     <li key={section.key} className="ewb-create-group">
-                      <div className="ewb-create-group-head"><span>{section.label}</span><span>{section.nodes.length}</span></div>
-                      <ul>
+                      <button
+                        type="button"
+                        className="ewb-create-group-head"
+                        aria-expanded={!collapsedSections.has(section.key)}
+                        onClick={() => setCollapsedSections((current) => {
+                          const next = new Set(current);
+                          if (next.has(section.key)) next.delete(section.key); else next.add(section.key);
+                          return next;
+                        })}
+                      >
+                        {collapsedSections.has(section.key) ? <ChevronRight size={12} aria-hidden="true" /> : <ChevronDown size={12} aria-hidden="true" />}
+                        <span>{section.label}</span><span>{section.nodes.length}</span>
+                      </button>
+                      {!collapsedSections.has(section.key) && <ul>
                         {section.nodes.map(({ component, depth }) => {
                           const status = componentStatus(component);
                           const base = component.extendsRef ? resolveComponentReference(component.extendsRef, lookup) : undefined;
@@ -1994,7 +2007,7 @@ export function EntityWorkbench({ api, projectPath, onError, onOpenDetail }: Ent
                             </li>
                           );
                         })}
-                      </ul>
+                      </ul>}
                     </li>
                   ))}
                 </ul>

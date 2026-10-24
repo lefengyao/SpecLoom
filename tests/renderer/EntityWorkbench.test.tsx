@@ -201,9 +201,31 @@ describe("EntityWorkbench", () => {
     const library = await screen.findByRole("dialog", { name: "创建组件" });
     expect(within(library).getAllByText("基础组件").length).toBeGreaterThan(0);
     expect(within(library).getAllByText("武器组件").length).toBeGreaterThan(0);
-    expect(within(library).getByRole("button", { name: /基础/ })).toHaveAttribute("data-depth", "0");
-    expect(within(library).getByRole("button", { name: /派生/ })).toHaveAttribute("data-depth", "1");
-    expect(within(library).getByRole("button", { name: /武器/ })).toHaveAttribute("data-depth", "0");
+    // Group headers are buttons now, so read depth from the component rows themselves.
+    const rows = within(library).getAllByRole("button").filter((element) => element.hasAttribute("data-depth"));
+    const depthOf = (label: string) => rows.find((row) => row.textContent?.includes(label))?.getAttribute("data-depth");
+    expect(depthOf("基础")).toBe("0");
+    expect(depthOf("派生")).toBe("1");
+    expect(depthOf("武器")).toBe("0");
+  });
+
+  it("collapses and expands a component browser group", async () => {
+    setup({
+      "specs/entities/keeper.md": entityFile("keeper", "守灯人"),
+      "specs/project.md": markdown({ schemaVersion: 1, id: "project", title: "项目", type: "project", materialGroups: { component: [
+        { id: "base-group", name: "基础组件", order: 0 },
+      ] } }),
+      "specs/components/base.md": componentFile("base", "基础", healthFields, { groupId: "base-group" }),
+      "specs/components/child.md": componentFile("child", "派生", [], { groupId: "base-group" }),
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "添加组件" }));
+    const library = await screen.findByRole("dialog", { name: "创建组件" });
+    const rows = () => within(library).getAllByRole("button").filter((element) => element.hasAttribute("data-depth")).length;
+    const expanded = rows();
+    fireEvent.click(within(library).getByRole("button", { name: /基础组件/ }));
+    expect(rows()).toBe(0);
+    fireEvent.click(within(library).getByRole("button", { name: /基础组件/ }));
+    expect(rows()).toBe(expanded);
   });
 
   it("shows entity details in the side panel and opens the full editor on demand", async () => {

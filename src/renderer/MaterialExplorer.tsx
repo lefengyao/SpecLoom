@@ -123,7 +123,7 @@ export function MaterialExplorer({ materials, groups, groupsSaving, onGroupsChan
     </div>
     <div className="material-explorer-layout">
       <div className="material-group-pane" hidden={!groupPaneOpen} inert={!groupPaneOpen}>
-        <MaterialGroupTree groups={groups} materials={materials} selection={selection} onSelect={setSelection} groupsSaving={groupsSaving} onGroupsChange={onGroupsChange} />
+        <MaterialGroupTree groups={groups} materials={materials} selection={selection} onSelect={setSelection} selectedPath={selectedPath} onSelectMaterial={onSelect} groupsSaving={groupsSaving} onGroupsChange={onGroupsChange} />
       </div>
       <div className="material-results">
         <header className="material-results-heading"><div><h3>{groupTitle}</h3>{selection.kind === "group" && <span className="subtle">{groupTitle}</span>}</div><span className="subtle">{tr("{count} 项", { count: visible.length })}</span></header>
