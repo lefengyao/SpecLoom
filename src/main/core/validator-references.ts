@@ -14,6 +14,9 @@ export async function validateReferences(specs: ParsedSpec[], source: Validation
     if (relative.startsWith("specs/components/")) return "component";
     if (relative.startsWith("specs/settings/")) return "setting";
     if (relative.startsWith("specs/ui/")) return "ui";
+    if (relative.startsWith("specs/systems/")) return "system";
+    if (relative.startsWith("specs/features/")) return "feature";
+    if (relative.startsWith("specs/decisions/")) return "decision";
     if (/^specs\/[^/]+\.md$/i.test(relative)) return "spec";
     return undefined;
   }
@@ -95,6 +98,7 @@ export async function validateReferences(specs: ParsedSpec[], source: Validation
   const parents = new Map<string, string>();
   const inheritance = new Map<string, string[]>();
   const componentInheritance = new Map<string, string[]>();
+  const systemDependencies = new Map<string, string[]>();
   for (const spec of specs) {
     if (Array.isArray(spec.data.relations)) for (const value of spec.data.relations) await reference(value, spec.path, "RELATION_NOT_FOUND", true);
     if (validationPathIdentity(spec.path).startsWith("specs/tasks/") && Array.isArray(spec.data.inputs)) for (const value of spec.data.inputs) await reference(value, spec.path, "TASK_INPUT_NOT_FOUND");
@@ -116,6 +120,33 @@ export async function validateReferences(specs: ParsedSpec[], source: Validation
     if (kind === "component" && spec.data.extends !== undefined) {
       const target = await semanticReference(spec.data.extends, spec, "COMPONENT_INHERIT", (target) => materialKind(target) === "component" && target.data.type === "component");
       if (target && nonempty(target.data.id)) componentInheritance.set(ownerId, [target.data.id]);
+    }
+    if (kind === "system") {
+      for (const value of Array.isArray(spec.data.components) ? spec.data.components : []) {
+        await semanticReference(value, spec, "SYSTEM_COMPONENT", (target) => materialKind(target) === "component");
+      }
+      for (const value of Array.isArray(spec.data.entities) ? spec.data.entities : []) {
+        await semanticReference(value, spec, "SYSTEM_ENTITY", (target) => materialKind(target) === "entity");
+      }
+      const dependencies: string[] = [];
+      for (const value of Array.isArray(spec.data.dependsOn) ? spec.data.dependsOn : []) {
+        const target = await semanticReference(value, spec, "SYSTEM_DEPENDENCY", (target) => materialKind(target) === "system");
+        if (target && nonempty(target.data.id)) dependencies.push(String(target.data.id));
+      }
+      if (dependencies.length) systemDependencies.set(ownerId, dependencies);
+    }
+    if (kind === "feature") {
+      for (const value of Array.isArray(spec.data.systems) ? spec.data.systems : []) {
+        await semanticReference(value, spec, "FEATURE_SYSTEM", (target) => materialKind(target) === "system");
+      }
+    }
+    if (kind === "decision") {
+      for (const value of Array.isArray(spec.data.affectedSystems) ? spec.data.affectedSystems : []) {
+        await semanticReference(value, spec, "DECISION_SYSTEM", (target) => materialKind(target) === "system");
+      }
+      if (spec.data.supersedes !== undefined) {
+        await semanticReference(spec.data.supersedes, spec, "DECISION_SUPERSEDES", (target) => materialKind(target) === "decision");
+      }
     }
     if (!isEntitySpec(spec)) continue;
     if (spec.data.extends !== undefined) {
@@ -174,6 +205,7 @@ export async function validateReferences(specs: ParsedSpec[], source: Validation
   reportCycles(new Map([...parents].map(([id, parent]) => [id, [parent]])), (spec) => spec && materialKind(spec) === "entity" ? "ENTITY_PARENT_CYCLE" : "MATERIAL_PARENT_CYCLE");
   reportCycles(inheritance, "ENTITY_INHERIT_CYCLE");
   reportCycles(componentInheritance, "COMPONENT_INHERIT_CYCLE");
+  reportCycles(systemDependencies, "SYSTEM_DEPENDENCY_CYCLE");
 
   const manifestPath = ".specloom/generated-manifest.json";
   const content = await source.readManifest();

@@ -513,6 +513,6 @@ export function DocumentsView({ api, projectPath, onError, busy, revision, categ
     {createForm && category === "entity" && <NewEntity busy={busy || saving} onClose={() => setCreateForm(false)} onSave={createDocument} {...(initialParent ? { initialParent } : {})} />}
     {createForm && category === "component" && <NewComponent busy={busy || saving} onClose={() => setCreateForm(false)} onSave={createDocument} />}
     {createForm && category === "map" && <NewEntity kind="map" busy={busy || saving} onClose={() => setCreateForm(false)} onSave={createDocument} />}
-    {createForm && (category === "setting" || category === "ui" || category === "spec") && <NewSpec kind={category} busy={busy || saving} onClose={() => setCreateForm(false)} onSave={createDocument} />}
+    {createForm && (category === "setting" || category === "ui" || category === "spec" || category === "system" || category === "feature" || category === "decision") && <NewSpec kind={category} busy={busy || saving} onClose={() => setCreateForm(false)} onSave={createDocument} />}
   </div>;
 }

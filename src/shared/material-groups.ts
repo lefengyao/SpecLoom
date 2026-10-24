@@ -13,7 +13,8 @@ export interface MaterialGroup {
 
 export type MaterialGroupRegistry = Partial<Record<MaterialGroupCategory, MaterialGroup[]>>;
 
-const categories: MaterialGroupCategory[] = ["entity", "component", "setting", "map", "ui", "spec"];
+export const materialGroupCategories: MaterialGroupCategory[] = ["entity", "component", "setting", "map", "ui", "system", "feature", "decision", "spec"];
+const categories = materialGroupCategories;
 
 function stableLegacyId(category: MaterialGroupCategory, name: string): string {
   let first = 0x811c9dc5;

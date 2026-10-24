@@ -64,6 +64,7 @@ export class Validator {
       return relative.toLowerCase().endsWith(".md") && (
         identity.startsWith("specs/entities/") || identity.startsWith("specs/components/") || identity.startsWith("specs/tasks/")
         || identity.startsWith("specs/settings/") || identity.startsWith("specs/maps/") || identity.startsWith("specs/ui/")
+        || identity.startsWith("specs/systems/") || identity.startsWith("specs/features/") || identity.startsWith("specs/decisions/")
         || /^specs\/[^/]+\.md$/i.test(identity)
       );
     });

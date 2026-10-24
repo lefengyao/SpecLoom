@@ -1,6 +1,6 @@
 import { categoryForPath, referenceId, summarizeMaterial, type DocumentCategory } from "../../../shared/material-catalog";
 import { createMaterialId, parseMaterial, readFields, writeMaterial, type ComponentField } from "../../../shared/project-materials";
-import { groupIncludes, importMissingLegacyGroups, materialGroupPath, normalizeMaterialGroups, validateMaterialGroupRegistry, type MaterialGroup, type MaterialGroupCategory, type MaterialGroupRegistry } from "../../../shared/material-groups";
+import { groupIncludes, importMissingLegacyGroups, materialGroupCategories, materialGroupPath, normalizeMaterialGroups, validateMaterialGroupRegistry, type MaterialGroup, type MaterialGroupCategory, type MaterialGroupRegistry } from "../../../shared/material-groups";
 import { createHash } from "node:crypto";
 import type { FileReadResult, VersionToken } from "../../../shared/contracts";
 import { FileStore } from "../file-store";
@@ -12,7 +12,10 @@ import { resolveComponentFields, type ComponentDefinition } from "../../../share
 import { StateMachineSchema } from "../../../shared/state-machine";
 
 const mimeTypes: Record<string, string> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp", gif: "image/gif" };
-const folders: Record<Exclude<DocumentCategory, "all">, string> = { entity: "entities/", component: "components/", map: "maps/", setting: "settings/", ui: "ui/", spec: "" };
+const folders: Record<Exclude<DocumentCategory, "all">, string> = {
+  entity: "entities/", component: "components/", map: "maps/", setting: "settings/", ui: "ui/",
+  system: "systems/", feature: "features/", decision: "decisions/", spec: "",
+};
 interface MaterialGroupTreeNode extends MaterialGroup { category: MaterialGroupCategory; path: string; children: MaterialGroupTreeNode[] }
 const stableGroupId = (category: string, name: string): string => `group_${category}_${createHash("sha256").update(`${category}\u0000${name.trim()}`).digest("hex").slice(0, 10)}`;
 
@@ -93,7 +96,7 @@ export class WorkMaterials {
       return groupMatches && groupTextMatches && typeMatches && `${item.title} ${item.description ?? ""} ${item.id} ${item.path} ${item.groupPath ?? item.group ?? ""}`.toLocaleLowerCase().includes(query);
     });
     const offset = Number(input.offset ?? 0); const limit = Number(input.limit ?? 50);
-    const categories: MaterialGroupCategory[] = input.category ? [input.category as MaterialGroupCategory] : ["entity", "component", "setting", "map", "ui", "spec"];
+    const categories: MaterialGroupCategory[] = input.category ? [input.category as MaterialGroupCategory] : materialGroupCategories;
     const groupTree = categories.flatMap((category) => this.groupTree(category, registry[category] ?? []));
     const groupNames = groupTree.flatMap((group) => this.groupNames(group));
     return { total: matches.length, offset, limit, groups: [...new Set([...summaries.map(item => item.group).filter((group): group is string => Boolean(group)), ...groupNames])].sort((a, b) => a.localeCompare(b)), groupTree,
@@ -120,7 +123,12 @@ export class WorkMaterials {
     if (properties.fields !== undefined && category !== "component") throw new ProjectError("VALIDATION_FAILED", "仅组件资料可定义 fields");
     if (properties.scope !== undefined && category !== "component") throw new ProjectError("VALIDATION_FAILED", "仅组件资料可定义 scope");
     if (properties.extends !== undefined && !["entity", "map", "component"].includes(category)) throw new ProjectError("VALIDATION_FAILED", "仅实体、地图或组件可继承");
-    if (properties.components !== undefined && category !== "entity" && category !== "map") throw new ProjectError("VALIDATION_FAILED", "仅实体或地图可绑定组件");
+    if (properties.components !== undefined && !["entity", "map", "system"].includes(category)) throw new ProjectError("VALIDATION_FAILED", "仅实体、地图或系统可声明组件");
+    if (properties.entities !== undefined && category !== "system") throw new ProjectError("VALIDATION_FAILED", "仅系统资料可声明实体引用");
+    if (properties.dependsOn !== undefined && category !== "system") throw new ProjectError("VALIDATION_FAILED", "仅系统资料可声明依赖");
+    if (properties.systems !== undefined && category !== "feature") throw new ProjectError("VALIDATION_FAILED", "仅功能资料可关联系统");
+    if (properties.affectedSystems !== undefined && category !== "decision") throw new ProjectError("VALIDATION_FAILED", "仅架构决策可声明影响的系统");
+    if (properties.supersedes !== undefined && category !== "decision") throw new ProjectError("VALIDATION_FAILED", "仅架构决策可声明取代关系");
     if (properties.stateMachine !== undefined) {
       if (category !== "entity") throw new ProjectError("VALIDATION_FAILED", "仅实体资料可配置状态机");
       if (properties.stateMachine !== null && !StateMachineSchema.safeParse(properties.stateMachine).success) throw new ProjectError("VALIDATION_FAILED", "状态机配置无效");
@@ -133,6 +141,8 @@ export class WorkMaterials {
     this.assertProperties(category, properties);
     const data: Record<string, unknown> = { schemaVersion: 1, id, title, type: category, description: "",
       ...(category === "entity" || category === "map" ? { status: "draft", version: 1, relations: [], source: "agent", components: [] } : {}),
+      ...(category === "feature" ? { status: "planned" } : {}),
+      ...(category === "decision" ? { status: "proposed" } : {}),
       ...(category === "component" ? { fields: [], scope: "user" } : {}), ...properties };
     for (const key of ["group", "groupId", "parent", "extends"]) if (data[key] === null || data[key] === "") delete data[key];
     if (data.groupId !== undefined) delete data.group;

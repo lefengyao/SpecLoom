@@ -16,10 +16,15 @@ const changes = z.object({
   title: z.string().trim().min(1).max(200).optional(), description: text.optional(),
   group: z.string().trim().max(100).nullable().optional(), groupId: z.string().trim().min(1).max(200).nullable().optional(), parent: path.nullable().optional(), extends: path.nullable().optional(),
   scope: z.enum(["system", "user"]).optional(),
-  type: z.enum(["entity", "character", "enemy", "map", "system", "item", "event", "component", "setting", "ui", "spec"]).optional(),
+  type: z.enum(["entity", "character", "enemy", "map", "system", "item", "event", "component", "setting", "ui", "spec", "feature", "decision"]).optional(),
   status: z.string().trim().min(1).max(100).optional(), version: z.union([z.number().int().positive(), z.string().min(1).max(100)]).optional(),
   source: z.string().min(1).max(200).optional(), relations: z.array(path).max(256).optional(),
-  fields: z.array(field).max(256).optional(), components: z.array(z.object({
+  fields: z.array(field).max(256).optional(), entities: z.array(path).max(256).optional(),
+  dependsOn: z.array(z.string().trim().min(1).max(200)).max(64).optional(),
+  systems: z.array(path).max(256).optional(),
+  affectedSystems: z.array(path).max(256).optional(),
+  supersedes: z.string().trim().min(1).max(200).optional(),
+  components: z.array(z.object({
     id: path, values: values.optional(),
     mount: z.object({ parent: z.string().min(1).max(200), anchor: z.string().min(1).max(80) }).strict().optional(),
   }).strict()).max(256).optional(),

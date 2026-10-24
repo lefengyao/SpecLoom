@@ -209,7 +209,7 @@ export function NewSpec({
   onClose,
   onSave,
 }: {
-  kind?: "spec" | "setting" | "ui";
+  kind?: "spec" | "setting" | "ui" | "system" | "feature" | "decision";
   busy: boolean;
   onClose: () => void;
   onSave: (
@@ -223,14 +223,17 @@ export function NewSpec({
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [parent, setParent] = useState("");
+  const formTitle = kind === "setting" ? tr("新建设定") : kind === "ui" ? tr("新建 UI") : kind === "system" ? tr("新建系统") : kind === "feature" ? tr("新建功能") : kind === "decision" ? tr("新建架构决策") : tr("新建规范");
+  const submitLabel = kind === "setting" ? tr("创建设定") : kind === "ui" ? tr("创建 UI") : kind === "system" ? tr("创建系统") : kind === "feature" ? tr("创建功能") : kind === "decision" ? tr("创建架构决策") : tr("创建规范");
+  const directory = kind === "spec" || kind === undefined ? "specs" : kind === "setting" ? "specs/settings" : kind === "ui" ? "specs/ui" : `specs/${kind}s`;
   return (
-    <Modal title={kind === "setting" ? tr("新建设定") : kind === "ui" ? tr("新建 UI") : tr("新建规范")} onClose={onClose}>
+    <Modal title={formTitle} onClose={onClose}>
       <form
         className="form-stack"
         onSubmit={(event) => {
           event.preventDefault();
-          const text = `---\n${stringify({ schemaVersion: 1, id: name, title, description: "", ...(kind === "spec" ? {} : { type: kind }), ...(parent.trim() ? { parent: parent.trim() } : {}) })}---\n\n# ${title}\n\n${content}`;
-          const directory = kind === "spec" ? "specs" : kind === "setting" ? "specs/settings" : "specs/ui";
+          const status = kind === "feature" ? { status: "planned" } : kind === "decision" ? { status: "proposed" } : {};
+          const text = `---\n${stringify({ schemaVersion: 1, id: name, title, description: "", ...(kind === "spec" || kind === undefined ? {} : { type: kind }), ...status, ...(parent.trim() ? { parent: parent.trim() } : {}) })}---\n\n# ${title}\n\n${content}`;
           void onSave(`${directory}/${name}.md`, text, "absent").then((ok) => {
             if (ok) onClose();
           });
@@ -240,7 +243,7 @@ export function NewSpec({
           {tr("文件名称")}
           <input
             required
-            pattern="[a-z][a-z0-9_-]*"
+            pattern={kind === "decision" ? "[0-9]{4}-[a-z0-9-]+" : "[a-z][a-z0-9_-]*"}
             value={name}
             onChange={(event) => setName(event.target.value)}
           />
@@ -253,10 +256,13 @@ export function NewSpec({
             onChange={(event) => setTitle(event.target.value)}
           />
         </label>
-        {kind !== "spec" && <label>
+        {kind !== "spec" && kind !== "decision" && <label>
           {tr("父级资料 ID（可选）")}
           <input aria-label={tr("父级资料 ID")} value={parent} onChange={(event) => setParent(event.target.value)} placeholder={tr("例如 world 或 combat")} />
         </label>}
+        {kind === "decision" && <p className="subtle">{tr("文件名使用四位编号，例如 0002-shared-armor-slots。")}</p>}
+        {kind === "system" && <p className="subtle">{tr("创建后可在前端 matter 里填写 components、entities 与 dependsOn。")}</p>}
+        {kind === "feature" && <p className="subtle">{tr("创建后会带上 status: planned；用 systems 关联系统，状态可改为 active 或 done。")}</p>}
         <label>
           {tr("Markdown 正文")}
           <textarea
@@ -272,7 +278,7 @@ export function NewSpec({
           </button>
           <button className="primary" disabled={busy}>
             <Save size={16} />
-            {kind === "setting" ? tr("创建设定") : kind === "ui" ? tr("创建 UI") : tr("创建规范")}
+            {submitLabel}
           </button>
         </footer>
       </form>

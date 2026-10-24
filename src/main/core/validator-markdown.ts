@@ -143,6 +143,31 @@ export function validateFields(spec: ParsedSpec, diagnostics: ValidationDiagnost
         keys.add(value.key);
       }
     }
+  } else if (identity.startsWith("specs/systems/") || identity.startsWith("specs/features/") || identity.startsWith("specs/decisions/")) {
+    const kind = identity.startsWith("specs/systems/") ? "system" : identity.startsWith("specs/features/") ? "feature" : "decision";
+    if (data.type !== kind) diagnostics.push(diagnostic(path, "SPEC_TYPE_INVALID", `Specification type must be ${kind}`));
+    const segments = identity.split("/");
+    const filename = segments[segments.length - 1]!.slice(0, -3);
+    const named = kind === "decision" ? /^\d{4}-[a-z0-9-]+$/i.test(filename) : filename === validationPathIdentity(nonempty(data.id) ? data.id : "");
+    if (segments.length !== 3 || !nonempty(data.id) || !named) {
+      diagnostics.push(diagnostic(path, "SPEC_LAYOUT_INVALID", kind === "decision" ? "Decisions must use specs/decisions/<NNNN>-<slug>.md" : `Specification must use specs/${segments[1]}/<id>.md`));
+    }
+    field("schemaVersion", data.schemaVersion === 1);
+    field("title", nonempty(data.title));
+    field("description", typeof data.description === "string");
+    const referenceList = (value: unknown) => Array.isArray(value) && value.every((item) => validReference(item));
+    if (kind === "system") {
+      if (data.components !== undefined) field("components", referenceList(data.components));
+      if (data.entities !== undefined) field("entities", referenceList(data.entities));
+      if (data.dependsOn !== undefined) field("dependsOn", referenceList(data.dependsOn));
+    } else if (kind === "feature") {
+      field("status", data.status === "planned" || data.status === "active" || data.status === "done");
+      if (data.systems !== undefined) field("systems", referenceList(data.systems));
+    } else {
+      field("status", data.status === "proposed" || data.status === "accepted" || data.status === "superseded");
+      if (data.affectedSystems !== undefined) field("affectedSystems", referenceList(data.affectedSystems));
+      if (data.supersedes !== undefined) field("supersedes", nonempty(data.supersedes));
+    }
   } else if (identity.startsWith("specs/settings/") || identity.startsWith("specs/ui/")) {
     const type = identity.startsWith("specs/settings/") ? "setting" : "ui";
     if (data.type !== type) diagnostics.push(diagnostic(path, "SPEC_TYPE_INVALID", `Specification type must be ${type}`));

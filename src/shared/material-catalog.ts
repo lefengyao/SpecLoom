@@ -1,7 +1,7 @@
 import { parseMaterial, readAnchors, readBindings, readFields, type ComponentAnchor, type ComponentBinding, type ComponentField } from "./project-materials";
 import { materialGroupPath, normalizeMaterialGroups, resolveLegacyGroup, type MaterialGroupRegistry } from "./material-groups";
 
-export type DocumentCategory = "all" | "entity" | "component" | "setting" | "map" | "ui" | "spec";
+export type DocumentCategory = "all" | "entity" | "component" | "setting" | "map" | "ui" | "system" | "feature" | "decision" | "spec";
 export interface MaterialSummary {
   id: string; title: string; type: string; path: string; version: string; content: string;
   description?: string; group?: string; groupId?: string; groupPath?: string; scope?: ComponentScope; image?: string; parent?: string; extends?: string;
@@ -25,11 +25,14 @@ export function componentScope(item: Pick<MaterialSummary, "id" | "type" | "path
   return "user";
 }
 export const categoryLabels: Record<DocumentCategory, string> = {
-  all: "项目文件", entity: "实体", component: "组件", setting: "设定", map: "地图", ui: "UI", spec: "规范",
+  all: "项目文件", entity: "实体", component: "组件", setting: "设定", map: "地图", ui: "UI",
+  system: "系统", feature: "功能", decision: "架构决策", spec: "规范",
 };
 export const categoryRoots: Record<Exclude<DocumentCategory, "all">, string[]> = {
   entity: ["specs/entities"], component: ["specs/components"], setting: ["specs/settings"],
-  map: ["specs/maps", "specs/entities/maps"], ui: ["specs/ui"], spec: ["specs"],
+  map: ["specs/maps", "specs/entities/maps"], ui: ["specs/ui"],
+  system: ["specs/systems"], feature: ["specs/features"], decision: ["specs/decisions"],
+  spec: ["specs"],
 };
 export function categoryForPath(path: string): Exclude<DocumentCategory, "all"> | undefined {
   const identity = path.replaceAll("\\", "/").toLowerCase();
@@ -38,6 +41,9 @@ export function categoryForPath(path: string): Exclude<DocumentCategory, "all"> 
   if (identity.startsWith("specs/components/")) return "component";
   if (identity.startsWith("specs/settings/")) return "setting";
   if (identity.startsWith("specs/ui/")) return "ui";
+  if (identity.startsWith("specs/systems/")) return "system";
+  if (identity.startsWith("specs/features/")) return "feature";
+  if (identity.startsWith("specs/decisions/")) return "decision";
   if (identity.startsWith("specs/")) return "spec";
   return undefined;
 }

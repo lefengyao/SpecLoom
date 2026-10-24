@@ -12,7 +12,7 @@ export interface ProjectLayoutOptions {
 export const EDITABLE_PROJECT_DIRECTORIES = [
   "specs/entities/characters", "specs/entities/enemies", "specs/entities/maps", "specs/entities/systems",
   "specs/entities/items", "specs/entities/events", "specs/components", "specs/settings", "specs/maps", "specs/ui",
-  "specs/tasks", "specs/decisions", "specs/prompts",
+  "specs/systems", "specs/features", "specs/tasks", "specs/decisions", "specs/prompts",
   ".specloom/skills",
 ] as const;
 
