@@ -34,6 +34,68 @@ describe("ProjectCore shared project authority", () => {
     expect(entries).not.toContainEqual(expect.objectContaining({ path: ".specloom/project.yaml" }));
   });
 
+  it("writes direct MCP changes to disk and finalizes them without a staged diff", async () => {
+    const { core, root } = await fixture();
+    const written = await core.executeTool("task", "files.write", { path: "scripts/hero.gd", expectedVersion: "absent", content: "extends Node\n" }, undefined, { direct: true });
+    expect(written).toMatchObject({ path: "scripts/hero.gd", exists: true });
+    expect(await readFile(path.join(root, "scripts/hero.gd"), "utf8")).toBe("extends Node\n");
+    const preview = await core.previewChanges("task");
+    expect(preview.changeSet.entries).toEqual([]);
+    await expect(core.approveChanges("task", preview.changeSet.digest)).resolves.toMatchObject({ status: "applied" });
+    expect((await core.previewChanges("task")).changeSet.status).toBe("applied");
+    await expect(core.executeTool("task", "files.write", { path: "scripts/late.gd", expectedVersion: "absent", content: "extends Node\n" }, undefined, { direct: true }))
+      .rejects.toMatchObject({ code: "TASK_SCOPE_DENIED" });
+  });
+
+  it("re-reads and edits a direct file repeatedly after an external app write", async () => {
+    const { core, root } = await fixture();
+    const readVersion = async () => (await core.executeTool("task", "files.list_versions", { paths: ["specs/project.md"] }, undefined, { direct: true }) as FileVersion[])[0]!.version;
+    const first = await readVersion();
+    const initial = await core.executeTool("task", "files.read", { path: "specs/project.md", expectedVersion: first }, undefined, { direct: true }) as FileReadResult;
+    await writeFile(path.join(root, "specs/project.md"), `${initial.content}\\n<!-- app write -->\\n`);
+    const second = await readVersion();
+    expect(second).not.toBe(first);
+    const reread = await core.executeTool("task", "files.read", { path: "specs/project.md", expectedVersion: second }, undefined, { direct: true }) as FileReadResult;
+    expect(reread.content).toContain("app write");
+    await core.executeTool("task", "files.patch", { path: "specs/project.md", expectedVersion: second, patch: { search: "<!-- app write -->", replace: "<!-- first patch -->" } }, undefined, { direct: true });
+    const third = await readVersion();
+    await core.executeTool("task", "files.read", { path: "specs/project.md", expectedVersion: third }, undefined, { direct: true });
+    await core.executeTool("task", "files.patch", { path: "specs/project.md", expectedVersion: third, patch: { search: "<!-- first patch -->", replace: "<!-- second patch -->" } }, undefined, { direct: true });
+    const content = await readFile(path.join(root, "specs/project.md"), "utf8");
+    expect(content).toContain("<!-- second patch -->");
+    expect(content).not.toContain("<!-- first patch -->");
+  });
+
+  it("refuses direct MCP writes while a task still has staged changes", async () => {
+    const { core } = await fixture();
+    await core.executeTool("task", "files.write", { path: "specs/new.md", expectedVersion: "absent", content: "staged" });
+    await expect(core.executeTool("task", "files.write", { path: "specs/other.md", expectedVersion: "absent", content: "direct" }, undefined, { direct: true }))
+      .rejects.toMatchObject({ code: "TASK_SCOPE_DENIED" });
+  });
+
+  it("refreshes a stale read baseline after the app saves a document outside the task", async () => {
+    const { core, root } = await fixture();
+    const first = await read(core, "specs/project.md");
+    const saved = `${first.content}\n<!-- saved from the material page -->\n`;
+    // The material page saves straight to disk, bypassing the task change set.
+    await writeFile(path.join(root, "specs/project.md"), saved);
+    // A task read must follow the file instead of failing with
+    // "A dependency was read at incompatible versions".
+    const second = await read(core, "specs/project.md");
+    expect(second.content).toBe(saved);
+    expect((await core.previewChanges("task")).changeSet.dependencies["specs/project.md"]).toBe(second.version);
+  });
+
+  it("runs direct bash in the project and lists the files it touched", async () => {
+    const { core, root } = await fixture();
+    const command = "node -e \"require('fs').writeFileSync('direct.txt','hello')\"";
+    const result = await core.executeTool("task", "bash.exec", { command }, undefined, { direct: true });
+    expect(result).toMatchObject({ exitCode: 0 });
+    expect(await readFile(path.join(root, "direct.txt"), "utf8")).toBe("hello");
+    const preview = await core.previewChanges("task");
+    expect(preview.directFiles).toContainEqual({ path: "direct.txt", operation: "create" });
+  });
+
   it("updates a task scope so an existing task can gain full write access", async () => {
     const { core } = await fixture();
     await expect(core.executeTool("task", "files.write", { path: "notes.txt", expectedVersion: "absent", content: "root\n" }))

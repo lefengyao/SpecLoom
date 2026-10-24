@@ -214,6 +214,19 @@ export function useWorkspace(api?: DesktopApi) {
       return task;
     });
   }
+  async function removeTask(taskId: string) {
+    if (!api) return;
+    await perform(async () => {
+      await api.removeTask(taskId);
+      if (selectedId === taskId) setSelectedId("");
+      await refresh();
+    });
+  }
+  async function rotateMcp() {
+    const rotate = api?.rotateMcp;
+    if (!rotate) throw new Error("当前桌面版本不支持刷新 MCP 令牌");
+    await perform(async () => { setState(await rotate()); });
+  }
   async function refreshReview(taskId = selectedId) {
     if (!api || !taskId) return;
     await perform(async () => {
@@ -336,6 +349,8 @@ export function useWorkspace(api?: DesktopApi) {
     updatePreferences,
     createTask,
     updateTaskScope,
+    removeTask,
+    rotateMcp,
     refreshReview,
     send,
     sendConversation,

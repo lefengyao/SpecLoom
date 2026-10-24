@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { GitBranch, RefreshCw } from "lucide-react";
 import type { DesktopApi } from "../shared/desktop-api";
+import { GitDiff } from "./GitDiff";
 import "./git.css";
 
 type FileStatus = { path: string; index: string; worktree: string; staged: boolean; unstaged: boolean };
@@ -15,6 +16,7 @@ export function GitView({ api, pluginId, projectPath, onError }: { api: DesktopA
   const [history, setHistory] = useState<Commit[]>([]);
   const [selected, setSelected] = useState<FileStatus>();
   const selectedRef = useRef<FileStatus | undefined>(undefined);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
   const [diff, setDiff] = useState("");
   const [diffTitle, setDiffTitle] = useState("差异");
   const [message, setMessage] = useState("");
@@ -37,6 +39,11 @@ export function GitView({ api, pluginId, projectPath, onError }: { api: DesktopA
     try {
       const next = await invoke("state") as Repo;
       setRepo(next);
+      setPicked((previous) => {
+        if (!previous.size) return previous;
+        const kept = [...previous].filter((path) => next.files.some((file) => file.path === path));
+        return kept.length === previous.size ? previous : new Set(kept);
+      });
       if (next.state !== "repository") { setBranches({ current: "", branches: [] }); setHistory([]); return; }
       setBranches(await invoke("branches") as BranchResult);
       setHistory((await invoke("history") as { commits: Commit[] }).commits);
@@ -94,6 +101,14 @@ export function GitView({ api, pluginId, projectPath, onError }: { api: DesktopA
   if (repo.state === "unavailable") return <section className="git-view"><h1>Git</h1><p role="alert" className="git-error">{error || "Git 插件不可用。"}</p><button disabled={busy} onClick={() => void refresh()}>重试</button></section>;
   if (repo.state === "not-repository") return <section className="git-view"><div className="git-heading"><div><span className="git-eyebrow">SPECLOOM</span><h1>Git</h1></div></div><p className="git-empty">当前项目还没有 Git 仓库。</p><button className="primary" disabled={busy} onClick={() => void act("init")}>初始化仓库</button>{error && <p role="alert" className="git-error">{error}</p>}</section>;
 
+  const allPicked = repo.files.length > 0 && repo.files.every((file) => picked.has(file.path));
+  const somePicked = !allPicked && repo.files.some((file) => picked.has(file.path));
+  const pickedFiles = repo.files.filter((file) => picked.has(file.path));
+  const stagePaths = pickedFiles.filter((file) => !(file.staged && !file.unstaged)).map((file) => file.path);
+  const unstagePaths = pickedFiles.filter((file) => file.staged).map((file) => file.path);
+  const togglePick = (path: string) => setPicked((previous) => { const next = new Set(previous); if (next.has(path)) next.delete(path); else next.add(path); return next; });
+  const toggleAll = () => setPicked(allPicked ? new Set() : new Set(repo.files.map((file) => file.path)));
+
   return <section className="git-view">
     <header className="git-heading">
       <div><span className="git-eyebrow">SPECLOOM</span><h1>Git</h1><span className="git-branch"><GitBranch size={14} />{repo.branch || "detached"}</span>{repo.upstream && <span className="git-sync">↑{repo.ahead} ↓{repo.behind}</span>}</div>
@@ -102,9 +117,15 @@ export function GitView({ api, pluginId, projectPath, onError }: { api: DesktopA
     {error && <p role="alert" className="git-error">{error}</p>}
     <div className="git-layout">
       <aside className="git-panel git-files"><div className="git-panel-heading"><h2>变更</h2><span>{repo.files.length ? `${repo.files.length} 个文件` : ""}</span></div>
-        {repo.files.length === 0 ? <p className="git-empty">工作区干净。</p> : repo.files.map((file) => <div key={file.path} className={`git-file${selected?.path === file.path ? " active" : ""}`}><button className="git-file-name" onClick={() => void select(file)}><b>{statusText(file)}</b>{file.path}</button><button disabled={busy} onClick={() => void act(file.staged && !file.unstaged ? "unstage" : "stage", { paths: [file.path] })}>{file.staged && !file.unstaged ? "取消暂存" : "暂存"}</button></div>)}
+        {repo.files.length === 0 ? <p className="git-empty">工作区干净。</p> : <>
+          <div className="git-bulk"><label className="git-pick-all"><input type="checkbox" aria-label="全选变更文件" checked={allPicked} ref={(input) => { if (input) input.indeterminate = somePicked; }} onChange={toggleAll} />全选</label>
+            <span>{pickedFiles.length ? `已选 ${pickedFiles.length}` : ""}</span>
+            <button disabled={busy || !stagePaths.length} onClick={() => void act("stage", { paths: stagePaths })}>暂存所选</button>
+            <button disabled={busy || !unstagePaths.length} onClick={() => void act("unstage", { paths: unstagePaths })}>取消暂存所选</button></div>
+          {repo.files.map((file) => <div key={file.path} className={`git-file${selected?.path === file.path ? " active" : ""}`}><input type="checkbox" aria-label={`选择 ${file.path}`} checked={picked.has(file.path)} disabled={busy} onChange={() => togglePick(file.path)} /><button className="git-file-name" onClick={() => void select(file)}><b>{statusText(file)}</b>{file.path}</button><button disabled={busy} onClick={() => void act(file.staged && !file.unstaged ? "unstage" : "stage", { paths: [file.path] })}>{file.staged && !file.unstaged ? "取消暂存" : "暂存"}</button></div>)}
+        </>}
       </aside>
-      <main className="git-panel git-diff"><div className="git-panel-heading"><h2>{diffTitle}</h2></div><pre>{diff || "选择一个文件查看差异。"}</pre></main>
+      <main className="git-panel git-diff"><div className="git-panel-heading"><h2>{diffTitle}</h2></div><GitDiff text={diff || "选择一个文件查看差异。"} /></main>
       <aside className="git-panel git-side">
         <div className="git-panel-heading"><h2>提交</h2></div>
         <textarea value={message} maxLength={20000} placeholder="提交说明" onChange={(event) => setMessage(event.target.value)} />

@@ -1037,7 +1037,10 @@ export class WorkflowRunner {
 
   /** Resolve a project-relative read path one segment at a time, refusing symlinks. */
   private async readTarget(value: string): Promise<string | undefined> {
-    const segments = value
+    const normalized = value.replace(/\/+$/, "");
+    if (normalized === "*") return this.root;
+    const base = normalized.endsWith("/**") ? normalized.slice(0, -3) : normalized;
+    const segments = (base || ".")
       .replaceAll("\\", "/")
       .split("/")
       .filter((segment) => segment.length > 0 && segment !== ".");
@@ -1077,6 +1080,8 @@ export class WorkflowRunner {
     let files = 0;
     let symlinks = 0;
     for (const entry of entries) {
+      // A project-wide read wildcard never grants engine or tool state, matching TaskScope.
+      if (directory === this.root && [".specloom", ".git", ".godot"].includes(entry.name)) continue;
       // Dirent types come from directory entries and are not followed.
       if (entry.isSymbolicLink()) {
         symlinks += 1;

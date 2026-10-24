@@ -9,11 +9,23 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { parse } from "yaml";
 import App from "../../src/renderer/App";
 import type { ValidationResult } from "../../src/shared/contracts";
 import { fixture, task, version } from "./fixtures";
+
+beforeAll(() => {
+  vi.stubGlobal("ResizeObserver", class {
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+  });
+  Object.defineProperty(SVGElement.prototype, "getBBox", {
+    configurable: true,
+    value: () => ({ x: 0, y: 0, width: 40, height: 14 }),
+  });
+});
 
 afterEach(() => {
   cleanup();
@@ -510,6 +522,7 @@ describe("desktop workspace workflows", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     const componentId = (parse(f.api.saveDocument.mock.calls[1]![2].split("---")[1]!) as { id: string }).id;
     fireEvent.click(screen.getByRole("button", { name: "实体" }));
+    fireEvent.click(screen.getByRole("tab", { name: "详情" }));
     fireEvent.click(await screen.findByRole("button", { name: "查看 待配置的小怪" }));
     await waitFor(() => expect(screen.getByLabelText("说明")).toHaveValue("保留本地编辑"));
     const picker = screen.getByLabelText("选择组件");

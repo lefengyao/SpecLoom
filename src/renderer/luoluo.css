@@ -1,10 +1,15 @@
 .luoluo-view {
   width: min(100%, 980px);
+  height: calc(100dvh - 60px);
+  box-sizing: border-box;
   margin: 0 auto;
-  padding: 26px 24px 40px;
+  padding: 26px 24px 24px;
+  display: flex;
+  flex-direction: column;
 }
 .luoluo-heading {
   display: flex;
+  flex: 0 0 auto;
   align-items: end;
   justify-content: space-between;
   gap: 18px;
@@ -16,19 +21,25 @@
   letter-spacing: .06em;
 }
 .luoluo-poster {
+  flex: 1 1 auto;
+  min-height: 0;
   margin: 0;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  overflow: hidden;
-  background: var(--bg-sunken);
-  box-shadow: 0 18px 50px rgb(20 38 35 / 12%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 .luoluo-poster img {
   display: block;
-  width: 100%;
+  width: auto;
   height: auto;
+  max-width: 100%;
+  max-height: 100%;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-sunken);
+  box-shadow: 0 18px 50px rgb(20 38 35 / 12%);
 }
 @media (max-width: 700px) {
-  .luoluo-view { padding: 18px 14px 28px; }
+  .luoluo-view { padding: 18px 14px 20px; }
   .luoluo-heading { align-items: start; flex-direction: column; gap: 4px; }
 }

@@ -20,11 +20,12 @@ export const record = (value: unknown): value is SpecData => value !== null && t
 export function validReference(value: unknown, componentBinding = false): boolean {
   if (nonempty(value)) return true;
   if (!record(value)) return false;
-  const keys = ["id", "path", "type", "version", ...(componentBinding ? ["values"] : [])];
+  const keys = ["id", "path", "type", "version", ...(componentBinding ? ["values", "notes"] : [])];
   return Object.keys(value).every((key) => keys.includes(key))
     && ((nonempty(value.id) && value.path === undefined) || (nonempty(value.path) && value.id === undefined))
     && (value.type === undefined || nonempty(value.type))
-    && (!componentBinding || value.values === undefined || record(value.values));
+    && (!componentBinding || value.values === undefined || record(value.values))
+    && (!componentBinding || value.notes === undefined || (Array.isArray(value.notes) && value.notes.length <= 32 && value.notes.every((note) => nonempty(note) && note.trim().length <= 2000)));
 }
 
 export function componentValueMatches(type: unknown, value: unknown): boolean {
@@ -110,7 +111,9 @@ export function validateFields(spec: ParsedSpec, diagnostics: ValidationDiagnost
     field("schemaVersion", data.schemaVersion === 1);
     field("title", nonempty(data.title));
     field("description", typeof data.description === "string");
+    if (data.notes !== undefined) field("notes", Array.isArray(data.notes) && data.notes.length <= 32 && data.notes.every((note) => typeof note === "string" && note.length <= 2000));
     if (data.scope !== undefined) field("scope", data.scope === "system" || data.scope === "user");
+    if (data.extends !== undefined) field("extends", validReference(data.extends));
     field("fields", Array.isArray(data.fields));
     const keys = new Set<string>();
     for (const [index, value] of (Array.isArray(data.fields) ? data.fields : []).entries()) {

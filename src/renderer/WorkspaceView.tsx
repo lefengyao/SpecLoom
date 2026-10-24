@@ -246,9 +246,6 @@ export function WorkspaceView({
             >
               <strong>{task.scope.title}</strong>
               <Status status={task.status} running={task.running} />
-              <span className="subtle">
-                {task.scope.mode === "manual" ? tr("手动审查") : tr("自动提交")}
-              </span>
             </button>
           ))}
         </div>
@@ -330,9 +327,8 @@ export function WorkspaceView({
                     ))
                   : tr("无")}
               </dd>
-              <dt>{tr("提交")}</dt>
+              <dt>{tr("删除")}</dt>
               <dd>
-                {selected.scope.mode === "manual" ? tr("手动审查") : tr("自动提交")} ·{" "}
                 {selected.scope.allowDelete ? tr("允许删除") : tr("禁止删除")}
               </dd>
             </dl>

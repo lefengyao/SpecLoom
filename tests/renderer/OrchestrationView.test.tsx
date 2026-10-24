@@ -192,7 +192,9 @@ describe("OrchestrationView", () => {
     fireEvent.change(screen.getByLabelText("步骤 1 审批"), { target: { value: "auto" } });
     expect((await screen.findAllByText("自动批准：该步骤将跳过人工审查。")).length).toBeGreaterThan(0);
 
-    fireEvent.click(screen.getByRole("button", { name: "保存编排" }));
+    fireEvent.click(screen.getByRole("button", { name: "运行" }));
+    fireEvent.change(screen.getByLabelText("运行目标"), { target: { value: "orchestration" } });
+    fireEvent.click(await screen.findByRole("button", { name: "保存为编排" }));
     await waitFor(() => expect(orchestrations.save).toHaveBeenCalledTimes(1));
     const [id, content, expectedVersion] = vi.mocked(orchestrations.save).mock.calls[0]!;
     expect(id).toBe("orch_release");

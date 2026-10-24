@@ -9,7 +9,7 @@
 .about-scroll { overflow: auto; max-height: 360px; }
 .about-table { width: 100%; border-collapse: collapse; text-align: left; }
 .about-table th, .about-table td { padding: 8px 12px; border-bottom: 1px solid var(--border, #303846); overflow-wrap: anywhere; }
-.about-table th { position: sticky; top: 0; background: var(--panel, #191f29); }
+.about-table th { position: sticky; top: 0; background: var(--bg-sunken, #191f29); color: var(--text-muted, #8e98a9); font-weight: 600; }
 .about-current { margin-left: 10px; color: var(--accent, #a9b9ff); font-size: 12px; }
 .about-remote { padding: 12px 0; border-bottom: 1px solid var(--border, #303846); }
 .about-document { padding: 14px 0; border-bottom: 1px solid var(--border, #303846); }

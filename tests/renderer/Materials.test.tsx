@@ -12,8 +12,8 @@ const markdown = (data: Record<string, unknown>, body = "") => `---\n${stringify
 const entity = (id: string, title: string, extra: Record<string, unknown> = {}) => markdown({
   id, title, type: "entity", status: "draft", version: 1, relations: [], source: "developer", components: [], ...extra,
 });
-const component = (id: string, title: string, fields: { key: string; label: string; type: string; default: unknown }[] = [{ key: "current", label: "当前生命值", type: "number", default: 100 }]) => markdown({
-  schemaVersion: 1, id, title, type: "component", description: "", fields,
+const component = (id: string, title: string, fields: { key: string; label: string; type: string; default: unknown }[] = [{ key: "current", label: "当前生命值", type: "number", default: 100 }], extra: Record<string, unknown> = {}) => markdown({
+  schemaVersion: 1, id, title, type: "component", description: "", fields, ...extra,
 });
 const frontMatter = (content: string) => parse(content.split("---")[1]!) as Record<string, unknown>;
 
@@ -46,6 +46,32 @@ it("edits and persists entity states and transitions with the reusable base comp
   expect(screen.getByLabelText("初始状态")).toHaveValue("idle");
   expect(screen.queryByLabelText("转换事件 1")).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "移除状态 1" })).toBeDisabled();
+});
+
+it("adds itemized notes to a component definition", async () => {
+  const { onStage } = materials("component", { "specs/components/health.md": component("health", "生命值") });
+  await selectMaterial("生命值");
+  fireEvent.click(await screen.findByRole("button", { name: "添加说明" }));
+  fireEvent.change(screen.getByLabelText("说明 1"), { target: { value: "生命值不得为负" } });
+  fireEvent.click(screen.getByRole("button", { name: "保存资料" }));
+  await waitFor(() => expect(onStage).toHaveBeenCalledOnce());
+  expect(frontMatter(onStage.mock.calls[0]![1]).notes).toEqual(["生命值不得为负"]);
+});
+
+it("shows a loading message until the entity catalog arrives", async () => {
+  const f = fixture({ project: true });
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  f.api.documents.mockImplementation(async () => {
+    await gate;
+    return [{ path: "specs/entities/hero.md", version, size: 10 }];
+  });
+  f.api.projectTree.mockResolvedValue([]);
+  f.api.readDocument.mockResolvedValue({ path: "specs/entities/hero.md", version, content: entity("hero", "角色") });
+  render(<DocumentsView api={f.api} onError={vi.fn()} projectPath="C:/Godot/lantern" busy={false} revision={0} category="entity" />);
+  expect(screen.getAllByText("读取资料…").length).toBeGreaterThan(0);
+  await act(async () => { release(); await Promise.resolve(); });
+  expect((await screen.findAllByText("角色")).length).toBeGreaterThan(0);
 });
 
 function materials(category: DocumentCategory, contents: Record<string, string> = {}, read?: (path: string) => Promise<FileReadResult>) {
@@ -102,13 +128,77 @@ describe("hierarchical project materials and components", () => {
     expect(within(screen.getByRole("region", { name: "实体组件" })).getByText("组件绑定用于组合数据和能力，不决定父级资料层级。")).toBeVisible();
   });
 
-  it("explains component hierarchy and filing without offering entity inheritance", async () => {
+  it("offers component inheritance while keeping entity inheritance entity-only", async () => {
     materials("component", { "specs/components/health.md": component("health", "生命值") });
     await selectMaterial("生命值");
     expect(await screen.findByLabelText("父级资料")).toHaveAccessibleDescription("父级资料决定列表和关系图中的层级。");
     expect(screen.getByLabelText("分组")).toHaveAccessibleDescription("分组用于归档和筛选，与资料层级独立。");
     expect(screen.queryByRole("region", { name: "实体继承" })).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("继承自")).not.toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: "组件继承" })).getByLabelText("继承自")).toHaveAccessibleDescription("继承另一组件的字段与默认值；同名自身字段会覆盖基类字段。实体之间的继承仍只指向实体。");
+  });
+
+  it("shows inherited component fields and copies one as a local override", async () => {
+    const { onStage } = materials("component", {
+      "specs/components/base.md": component("base", "基础组件", [{ key: "hp", label: "生命", type: "number", default: 100 }]),
+      "specs/components/derived.md": component("derived", "派生组件", [{ key: "speed", label: "速度", type: "number", default: 200 }], { extends: "base" }),
+    });
+    await selectMaterial("派生组件");
+    const inheritance = await screen.findByRole("region", { name: "组件继承" });
+    expect(within(inheritance).getByLabelText("继承自")).toHaveValue("base");
+    const inherited = await screen.findByRole("heading", { name: "继承字段" });
+    expect(within(inherited.closest("div")!).getByText("生命")).toBeVisible();
+    fireEvent.click(within(inherited.closest("div")!).getByRole("button", { name: "覆盖" }));
+    expect(screen.getByLabelText("字段名称 2")).toHaveValue("hp");
+    fireEvent.click(screen.getByRole("button", { name: "保存资料" }));
+    await waitFor(() => expect(onStage).toHaveBeenCalledOnce());
+    const data = frontMatter(onStage.mock.calls[0]![1]);
+    expect(data.extends).toBe("base");
+    expect((data.fields as { key: string }[]).map((field) => field.key)).toEqual(["speed", "hp"]);
+  });
+
+  it("opens the crop dialog for an existing illustration and imports the cropped result", async () => {
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({ drawImage: vi.fn() } as unknown as CanvasRenderingContext2D);
+    vi.spyOn(HTMLCanvasElement.prototype, "toBlob").mockImplementation((callback) => callback(new Blob(["webp"], { type: "image/webp" })));
+    const image = `assets/specloom/materials/${"a".repeat(64)}.png`;
+    const { api, onStage } = materials("entity", { "specs/entities/hero.md": entity("hero", "角色", { image }) });
+    api.importMaterialImage.mockResolvedValue(`assets/specloom/materials/${"b".repeat(64)}.webp`);
+    await selectMaterial("角色");
+    fireEvent.click(await screen.findByRole("button", { name: "裁剪" }));
+    const dialog = await screen.findByRole("dialog", { name: "裁剪配图" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "应用裁剪" }));
+    await waitFor(() => expect(api.importMaterialImage).toHaveBeenCalledOnce());
+    expect(api.importMaterialImage.mock.calls[0]![1]).toMatch(/^data:image\/webp;base64,/);
+    fireEvent.click(screen.getByRole("button", { name: "保存资料" }));
+    await waitFor(() => expect(onStage).toHaveBeenCalledOnce());
+    expect(frontMatter(onStage.mock.calls[0]![1]).image).toBe(`assets/specloom/materials/${"b".repeat(64)}.webp`);
+  });
+
+  it("shrinks dense art by the measured overshoot so a large illustration still fits", async () => {
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({ drawImage: vi.fn() } as unknown as CanvasRenderingContext2D);
+    const attempts: { width: number; height: number; quality: number | undefined }[] = [];
+    vi.spyOn(HTMLCanvasElement.prototype, "toBlob").mockImplementation(function (this: HTMLCanvasElement, callback: BlobCallback, _type?: string, quality?: number) {
+      attempts.push({ width: this.width, height: this.height, quality });
+      // Dense art: the encoded size tracks pixel count, so no full-resolution attempt can fit.
+      const blob = new Blob(["webp"], { type: "image/webp" });
+      Object.defineProperty(blob, "size", { value: Math.round(this.width * this.height * (quality ?? 0.9) * 0.9) });
+      callback(blob);
+    });
+    const image = `assets/specloom/materials/${"a".repeat(64)}.png`;
+    const { api } = materials("entity", { "specs/entities/hero.md": entity("hero", "角色", { image }) });
+    api.importMaterialImage.mockResolvedValue(`assets/specloom/materials/${"b".repeat(64)}.webp`);
+    await selectMaterial("角色");
+    fireEvent.click(await screen.findByRole("button", { name: "裁剪" }));
+    const dialog = await screen.findByRole("dialog", { name: "裁剪配图" });
+    const element = dialog.querySelector("img")!;
+    Object.defineProperty(element, "naturalWidth", { value: 4032 });
+    Object.defineProperty(element, "naturalHeight", { value: 3024 });
+    fireEvent.click(within(dialog).getByRole("button", { name: "应用裁剪" }));
+    await waitFor(() => expect(api.importMaterialImage).toHaveBeenCalledOnce());
+    expect(api.importMaterialImage.mock.calls[0]![1]).toMatch(/^data:image\/webp;base64,/);
+    // Quality drops first, then the canvas shrinks below the source instead of repeating a size.
+    expect(attempts.map((step) => step.quality)).toEqual(expect.arrayContaining([0.9, 0.5]));
+    expect(attempts.length).toBeLessThanOrEqual(10);
+    expect(attempts[attempts.length - 1]!.width).toBeLessThan(attempts[0]!.width);
   });
 
   it("persists parent, extends and filing independently without changing component bindings", async () => {

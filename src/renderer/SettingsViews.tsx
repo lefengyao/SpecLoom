@@ -222,6 +222,7 @@ export function SettingsView({
             <span className="field-hint">{tr("配置 Godot 与外部代码编辑器的可执行文件路径。")}</span>
           </div>
           <label className="setting-label">{tr("Godot 可执行文件")}<input aria-label={tr("Godot 可执行文件")} value={godotPath} disabled={busy} onChange={(event) => setGodotPath(event.target.value)} /></label>
+          <span className="field-hint">{tr("Godot 校验会优先使用这个程序，无需 Docker；未配置时才回退到 Docker。")}</span>
           <label className="setting-label">{tr("外部编辑器可执行文件")}<input aria-label={tr("外部编辑器可执行文件")} value={externalEditorPath} disabled={busy} onChange={(event) => setExternalEditorPath(event.target.value)} /></label>
           <div className="setting-actions">
             <button type="button" className="primary" disabled={busy} onClick={() => void onUpdate({ godotPath, externalEditorPath })}>{tr("保存外部工具路径")}</button>
@@ -341,6 +342,9 @@ export function McpView({
   tasks,
   onSelectTask,
   onNewTask,
+  onRemoveTask,
+  onRotateMcp,
+  rotatingMcp = false,
   onError,
   sessionsApi,
   godotPluginApi,
@@ -353,6 +357,9 @@ export function McpView({
   tasks?: TaskView[] | undefined;
   onSelectTask?: ((id: string) => void) | undefined;
   onNewTask?: (() => void) | undefined;
+  onRemoveTask?: ((id: string) => void) | undefined;
+  onRotateMcp?: (() => void) | undefined;
+  rotatingMcp?: boolean | undefined;
   onError: (value: unknown) => void;
   sessionsApi?: ChatSessionsApi | undefined;
   godotPluginApi?: DesktopApi["pluginManagement"] | undefined;
@@ -458,12 +465,23 @@ export function McpView({
               ) : onNewTask ? (
                 <button type="button" onClick={onNewTask}>{tr("新建任务")}</button>
               ) : null}
+              {task && onRemoveTask && (
+                <button type="button" className="mcp-task-remove" onClick={() => {
+                  if (window.confirm(tr("移除任务会删除它的历史记录，确定吗？"))) onRemoveTask(task.id);
+                }}>{tr("移除任务")}</button>
+              )}
             </section>
             <dl className="connection-fields">
               <dt>{tr("地址")}</dt>
               <dd><code>{connection.url}</code><CopyButton value={connection.url} label={tr("复制 MCP 地址")} onError={onError} /></dd>
               <dt>{tr("访问令牌")}</dt>
-              <dd><input type="password" readOnly value={connection.token} aria-label={tr("MCP 访问令牌")} /><CopyButton value={connection.token} label={tr("复制 MCP 访问令牌")} onError={onError} /></dd>
+              <dd>
+                <input type="password" readOnly value={connection.token} aria-label={tr("MCP 访问令牌")} />
+                <CopyButton value={connection.token} label={tr("复制 MCP 访问令牌")} onError={onError} />
+                {onRotateMcp && <button type="button" disabled={rotatingMcp} onClick={() => {
+                  if (window.confirm(tr("刷新令牌会让现有 MCP 客户端断开，确定吗？"))) onRotateMcp();
+                }}>{tr("刷新令牌")}</button>}
+              </dd>
             </dl>
             <header className="section-heading"><h2>{tr("连接配置")}</h2><CopyButton value={JSON.stringify(config, null, 2)} label={tr("复制连接配置")} onError={onError} /></header>
             <pre className="config-code">{JSON.stringify(visibleConfig, null, 2)}</pre>

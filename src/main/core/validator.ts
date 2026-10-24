@@ -3,6 +3,8 @@ import { FileStore } from "./file-store";
 import { ProjectError } from "./errors";
 import { TaskScope } from "./task-scope";
 import { GODOT_IMAGE } from "./snapshot-runner";
+import { runLocalGodot } from "./local-godot";
+import type { ProcessExecutor } from "./docker-process";
 import { godotDiagnostics } from "./validator-godot";
 import { diagnostic, nonempty, parseSpec, projectBudgets, validateFields, validationPathIdentity, type ParsedSpec } from "./validator-markdown";
 import { validateReferences } from "./validator-references";
@@ -12,6 +14,8 @@ export const GODOT_VALIDATION_IMAGE = GODOT_IMAGE;
 
 export interface ValidatorSnapshotSession {
   runContainer(request: { image: string; entrypoint: string; args: string[]; timeoutMs?: number; signal?: AbortSignal; readOnlyWorkspace?: boolean }): Promise<{ stdout: string; stderr: string; exitCode: number; durationMs: number; command: string[] }>;
+  /** Runs the same command with a locally installed Godot instead of Docker. */
+  runLocalGodot?(request: { executable: string; args: string[]; timeoutMs?: number; signal?: AbortSignal }): Promise<{ stdout: string; stderr: string; exitCode: number; durationMs: number; command: string[] }>;
   dependencies(): Record<string, VersionToken>;
   dispose(): Promise<void>;
 }
@@ -25,6 +29,8 @@ export interface ValidationOptions {
   smokeScene?: string;
   signal?: AbortSignal;
   runGodot?: boolean;
+  /** Direct-to-disk changes have no overlay; their paths still decide whether Godot can be skipped. */
+  changedPaths?: string[];
   /** Manual material saves need specification references, without scanning generated/source directories. */
   specificationsOnly?: boolean;
 }
@@ -36,7 +42,12 @@ export interface ValidationWithDependencies {
 }
 
 export class Validator {
-  constructor(private readonly store: FileStore, private readonly snapshotRunner?: ValidatorSnapshotRunner) {}
+  constructor(private readonly store: FileStore, private readonly snapshotRunner?: ValidatorSnapshotRunner, private readonly options: { godotExecutable?: () => string; process?: ProcessExecutor } = {}) {}
+
+  /** Markdown cannot affect Godot's importer, whether staged or written directly. */
+  private static documentationOnly(paths: readonly string[]): boolean {
+    return paths.length > 0 && paths.every((path) => path.replaceAll("\\", "/").toLowerCase().endsWith(".md"));
+  }
 
   async validate(options: ValidationOptions = {}): Promise<ValidationResult> {
     return (await this.validateWithDependencies(options)).result;
@@ -82,7 +93,13 @@ export class Validator {
       }
     }
     const checks: ValidationCheck[] = [{ id: "specifications", name: "Specifications and references", status: diagnostics.some((item) => item.severity === "error") ? "fail" : "pass", stdout: "", stderr: "" }];
-    if (options.runGodot !== false) await this.validateGodot(options, specs, source, checks, diagnostics);
+    const taskSpec = specs.find((spec) => validationPathIdentity(spec.path).startsWith("specs/tasks/") && spec.data.id === options.taskId);
+    const changedPaths = options.overlay?.length ? options.overlay.map((entry) => entry.path) : options.changedPaths ?? [];
+    const docsOnly = Validator.documentationOnly(changedPaths);
+    // A task-spec smoke scene is a project-level check; documentation cannot affect it.
+    const requestedSmoke = options.smokeScene ?? (nonempty(taskSpec?.data.smokeScene) ? taskSpec.data.smokeScene : undefined);
+    const smoke = options.smokeScene !== undefined ? options.smokeScene : docsOnly ? undefined : requestedSmoke;
+    if (options.runGodot === true || (options.runGodot !== false && !docsOnly)) await this.validateGodot(options, source, checks, diagnostics, smoke);
     diagnostics.sort((a, b) => {
       const left = `${a.path ?? ""}:${a.code ?? ""}:${a.message}`;
       const right = `${b.path ?? ""}:${b.code ?? ""}:${b.message}`;
@@ -94,28 +111,53 @@ export class Validator {
     return { result, dependencies, sources: Object.entries(dependencies).map(([path, version]) => ({ path, version })), inventory: source.inventory };
   }
 
-  private async validateGodot(options: ValidationOptions, specs: ParsedSpec[], source: ValidationSource, checks: ValidationCheck[], diagnostics: ValidationDiagnostic[]): Promise<void> {
+  private async validateGodot(options: ValidationOptions, source: ValidationSource, checks: ValidationCheck[], diagnostics: ValidationDiagnostic[], smoke?: string): Promise<void> {
     let pending = { id: "godot-import", name: "Godot headless import" };
-    const unavailable = () => {
-      checks.push({ ...pending, status: "skipped", stdout: "", stderr: "Docker with the pinned Godot image is unavailable" });
-      diagnostics.push({ path: "project.godot", code: "GODOT_NOT_FOUND", severity: "warning", message: "Godot validation requires Docker and the pinned Godot image" });
+    if (!(await this.store.listVersion("project.godot")).exists) {
+      checks.push({ ...pending, status: "skipped", stdout: "", stderr: "Not a Godot project: project.godot is absent" });
+      return;
+    }
+    const localGodot = this.options.godotExecutable?.().trim() ?? "";
+    const unavailable = (message = localGodot
+      ? "The configured Godot executable is unavailable"
+      : "Docker with the pinned Godot image is unavailable") => {
+      checks.push({ ...pending, status: "skipped", stdout: "", stderr: message });
+      diagnostics.push({ path: "project.godot", code: "GODOT_NOT_FOUND", severity: "warning", message: localGodot
+        ? "Configured Godot executable is unavailable"
+        : "Godot validation requires either a configured Godot executable or Docker with the pinned image" });
     };
-    if (!this.snapshotRunner) { unavailable(); return; }
-    const task = specs.find((spec) => validationPathIdentity(spec.path).startsWith("specs/tasks/") && spec.data.id === options.taskId);
-    const smoke = options.smokeScene ?? (nonempty(task?.data.smokeScene) ? task.data.smokeScene : undefined);
+    if (!this.snapshotRunner && !(localGodot && (options.overlay?.length ?? 0) === 0)) { unavailable(); return; }
     const base = options.scope?.describe();
     const scope = new TaskScope({ id: base?.id ?? options.taskId ?? options.overlay?.[0]?.sourceTaskId ?? "validation", title: "Validation snapshot", readPaths: ["*"], writePaths: base?.writePaths ?? (options.overlay ?? []).map((entry) => entry.path), allowDelete: base?.allowDelete ?? (options.overlay ?? []).some((entry) => entry.operation === "delete"), mode: "manual" });
+    const direct = localGodot !== "" && (options.overlay?.length ?? 0) === 0;
     let session: ValidatorSnapshotSession | undefined;
+    let runDirect: ((args: string[]) => Promise<{ stdout: string; stderr: string; exitCode: number; durationMs: number; command: string[] }>) | undefined;
     try {
-      session = await this.snapshotRunner.create(scope, { ...(options.overlay === undefined ? {} : { overlay: options.overlay }) });
-      for (const [relative, version] of Object.entries(session.dependencies())) {
-        const existing = source.dependencies[relative];
-        if (existing !== undefined && existing !== version) throw new ProjectError("VERSION_CONFLICT", "Project sources changed while validation snapshot was created", { path: relative });
-        source.dependencies[relative] = version;
+      if (direct) {
+        runDirect = (args) => runLocalGodot(localGodot, args, {
+          cwd: this.store.root,
+          timeoutMs: 300_000,
+          maxOutputBytes: 1024 * 1024,
+          ...(options.signal === undefined ? {} : { signal: options.signal }),
+          ...(this.options.process === undefined ? {} : { process: this.options.process }),
+        });
+      } else {
+        if (!this.snapshotRunner) { unavailable(); return; }
+        session = await this.snapshotRunner.create(scope, { ...(options.overlay === undefined ? {} : { overlay: options.overlay }) });
+        for (const [relative, version] of Object.entries(session.dependencies())) {
+          const existing = source.dependencies[relative];
+          if (existing !== undefined && existing !== version) throw new ProjectError("VERSION_CONFLICT", "Project sources changed while validation snapshot was created", { path: relative });
+          source.dependencies[relative] = version;
+        }
       }
+      const localRunner = !direct && localGodot ? session?.runLocalGodot?.bind(session) : undefined;
       const execute = async (id: string, name: string, args: string[]): Promise<boolean> => {
         pending = { id, name };
-        const execution = await session!.runContainer({ image: GODOT_VALIDATION_IMAGE, entrypoint: "godot", args, timeoutMs: 60000, readOnlyWorkspace: false, ...(options.signal === undefined ? {} : { signal: options.signal }) });
+        const execution = runDirect
+          ? await runDirect(args)
+          : localRunner
+            ? await localRunner({ executable: localGodot, args, timeoutMs: 300_000, ...(options.signal === undefined ? {} : { signal: options.signal }) })
+            : await session!.runContainer({ image: GODOT_VALIDATION_IMAGE, entrypoint: "godot", args, timeoutMs: 300_000, readOnlyWorkspace: false, ...(options.signal === undefined ? {} : { signal: options.signal }) });
         const parsed = godotDiagnostics(`${execution.stdout}\n${execution.stderr}`);
         diagnostics.push(...parsed);
         const failed = execution.exitCode !== 0 || parsed.length > 0;

@@ -1,32 +1,134 @@
 /**
- * Canvas positions for the entity workbench.
+ * Canvas geometry for the entity workbench.
  *
- * The workbench keeps one fixed entity card in the center and arranges the
- * mounted component cards around it. Only component positions belong to the
- * user: they are stored per project in localStorage, keyed by entity id and
- * then by component binding id.
+ * Every card is an axis-aligned rectangle whose `x`/`y` is its top-left corner.
+ * The entity card sits at the canvas origin (0, 0); components are arranged
+ * around it. Sizes are measured from the rendered cards and stored back into the
+ * layout so overlap can be detected without reading card internals.
  */
 
-import { validateEntityLayout, type EntityLayout, type EntityPoint } from "../shared/entity-layout";
-export { validateEntityLayout, type EntityLayout, type EntityPoint } from "../shared/entity-layout";
+import { validateEntityLayout, type EntityComponentLayout, type EntityLayout, type EntityPoint, type EntitySize } from "../shared/entity-layout";
+export { ENTITY_ANCHOR_SIDES, ENTITY_SELF_LAYOUT_ID, validateEntityLayout, type EntityAnchor, type EntityAnchorSide, type EntityComponentLayout, type EntityLayout, type EntityPoint, type EntitySize } from "../shared/entity-layout";
+import { ENTITY_SELF_LAYOUT_ID } from "../shared/entity-layout";
 
 export const ENTITY_LAYOUT_STORAGE_PREFIX = "specloom.entity-layouts.";
 
 /** Node id of the fixed entity card; component nodes use the "component:" prefix. */
-export const ENTITY_NODE_ID = "__entity__";
+export const ENTITY_NODE_ID = ENTITY_SELF_LAYOUT_ID;
 
-/** Absolute canvas position of the entity card every component is arranged around. */
-export const ENTITY_CENTER: EntityPoint = { x: 420, y: 280 };
+/** The entity card's top-left corner is the canvas origin. */
+export const ENTITY_ORIGIN: EntityPoint = { x: 0, y: 0 };
 
-const CIRCLE_X_RADIUS = 300;
-const CIRCLE_Y_RADIUS = 220;
-const GRID_COLUMN_SPACING = 230;
-const GRID_ROW_SPACING = 160;
-const MAX_RING_SIZE = 8;
+/** Minimum free space between two cards. */
+export const CARD_GAP = 24;
+
+export const ENTITY_CARD_SIZE: EntitySize = { width: 220, height: 170 };
+export const COMPONENT_CARD_SIZE: EntitySize = { width: 196, height: 120 };
+
+/** Layouts saved before sizes existed were positioned around this centred card. */
+const LEGACY_ORIGIN: EntityPoint = { x: 420, y: 280 };
+
+/** Payload marker so only genuinely old layouts get shifted. */
+const LAYOUT_PAYLOAD_VERSION = 2;
+
+export interface EntityRect extends EntityPoint, EntitySize {}
 
 function layoutKey(projectPath: string): string | undefined {
   const normalized = projectPath.trim();
   return normalized ? `${ENTITY_LAYOUT_STORAGE_PREFIX}${normalized}` : undefined;
+}
+
+/** Stored size, falling back to the card's design size until it has been measured. */
+export function layoutSize(entry: EntityComponentLayout | undefined, fallback: EntitySize): EntitySize {
+  const size = entry?.size;
+  return size && size.width > 0 && size.height > 0 ? size : fallback;
+}
+
+export function rectOf(point: EntityPoint, size: EntitySize): EntityRect {
+  return { x: point.x, y: point.y, width: size.width, height: size.height };
+}
+
+/** True when two cards touch or sit closer than `gap` on both axes. */
+export function rectsOverlap(a: EntityRect, b: EntityRect, gap = CARD_GAP): boolean {
+  return a.x < b.x + b.width + gap && b.x < a.x + a.width + gap && a.y < b.y + b.height + gap && b.y < a.y + a.height + gap;
+}
+
+/**
+ * Closest top-left that keeps `size` clear of every obstacle, searched in rings
+ * around the drop point. Falls back to the requested point when the canvas is full.
+ */
+export function nearestFreePosition(desired: EntityPoint, size: EntitySize, obstacles: EntityRect[], gap = CARD_GAP): EntityPoint {
+  const start = { x: Math.round(desired.x), y: Math.round(desired.y) };
+  const fits = (point: EntityPoint) => !obstacles.some((obstacle) => rectsOverlap(rectOf(point, size), obstacle, gap));
+  if (fits(start)) return start;
+  const step = 20;
+  for (let radius = step; radius <= 600; radius += step) {
+    for (let index = 0; index < 16; index++) {
+      const angle = (index * Math.PI) / 8;
+      const candidate = { x: Math.round(start.x + Math.cos(angle) * radius), y: Math.round(start.y + Math.sin(angle) * radius) };
+      if (fits(candidate)) return candidate;
+    }
+  }
+  return start;
+}
+
+export interface PackedCard {
+  id: string;
+  size: EntitySize;
+}
+
+/**
+ * Deterministic, size-aware arrangement: alternating columns to the right and
+ * left of the entity card, each stacking downwards. Produces no overlapping
+ * cards for the sizes it is given.
+ */
+export function packComponentPositions(cards: PackedCard[], entitySize: EntitySize = ENTITY_CARD_SIZE, gap = CARD_GAP): Record<string, EntityPoint> {
+  const positions: Record<string, EntityPoint> = {};
+  if (!cards.length) return positions;
+  const columnWidth = Math.max(...cards.map((card) => card.size.width)) + gap;
+  const rowHeight = Math.max(...cards.map((card) => card.size.height)) + gap;
+  const columnHeight = Math.max(entitySize.height, rowHeight * 4);
+  const capacity = Math.max(1, Math.floor((columnHeight + gap) / rowHeight));
+  let column = 0;
+  let row = 0;
+  for (const card of cards) {
+    if (row >= capacity) { column += 1; row = 0; }
+    const onRight = column % 2 === 0;
+    const depth = Math.floor(column / 2);
+    const x = onRight ? entitySize.width + gap + depth * columnWidth : -(gap + columnWidth * (depth + 1));
+    positions[card.id] = { x: Math.round(x), y: Math.round(row * rowHeight) };
+    row += 1;
+  }
+  return positions;
+}
+
+/** Default positions for the components of one entity, packed without overlap. */
+export function defaultEntityPositions(componentIds: string[], sizes?: Record<string, EntitySize>, entitySize: EntitySize = ENTITY_CARD_SIZE): Record<string, EntityPoint> {
+  const ids = [...new Set(componentIds.filter((id) => id.trim()))];
+  const cards = ids.map((id) => ({ id, size: sizes?.[id] ?? COMPONENT_CARD_SIZE }));
+  return packComponentPositions(cards, entitySize);
+}
+
+/**
+ * Layouts saved before sizes and the origin existed were centred on a card at
+ * (420, 280). Shift them so the entity corner becomes the origin; the presence
+ * of the entity's own row marks an already-migrated layout.
+ */
+export function migrateLegacyPositions(layout: EntityLayout): EntityLayout {
+  const next: EntityLayout = {};
+  for (const [entityId, components] of Object.entries(layout)) {
+    if (components[ENTITY_SELF_LAYOUT_ID]) {
+      next[entityId] = { ...components };
+      continue;
+    }
+    const shifted: Record<string, EntityComponentLayout> = {};
+    for (const [id, entry] of Object.entries(components)) {
+      shifted[id] = { ...entry, x: Math.round(entry.x - LEGACY_ORIGIN.x), y: Math.round(entry.y - LEGACY_ORIGIN.y) };
+    }
+    shifted[ENTITY_SELF_LAYOUT_ID] = { x: 0, y: 0, size: ENTITY_CARD_SIZE };
+    next[entityId] = shifted;
+  }
+  return next;
 }
 
 export function loadEntityLayout(projectPath: string): EntityLayout {
@@ -35,7 +137,13 @@ export function loadEntityLayout(projectPath: string): EntityLayout {
   try {
     const raw = window.localStorage.getItem(key);
     if (!raw) return {};
-    return validateEntityLayout(JSON.parse(raw) as unknown);
+    const parsed = JSON.parse(raw) as unknown;
+    // Layouts written before sizes and the origin existed stored the entity map directly,
+    // so only those are shifted; a versioned payload is already in canvas coordinates.
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && (parsed as { version?: unknown }).version === LAYOUT_PAYLOAD_VERSION) {
+      return validateEntityLayout((parsed as { entities?: unknown }).entities);
+    }
+    return migrateLegacyPositions(validateEntityLayout(parsed));
   } catch {
     return {};
   }
@@ -45,66 +153,13 @@ export function saveEntityLayout(projectPath: string, layout: EntityLayout): voi
   const key = layoutKey(projectPath);
   if (!key) return;
   try {
-    window.localStorage.setItem(key, JSON.stringify(layout));
+    window.localStorage.setItem(key, JSON.stringify({ version: LAYOUT_PAYLOAD_VERSION, entities: layout }));
   } catch {
     // Storage can be full or unavailable; positions stay best effort.
   }
 }
 
-/** FNV-1a keeps the default ring rotation stable for one entity id. */
-function stableHash(value: string): number {
-  let hash = 0x811c9dc5;
-  for (const character of value) {
-    hash ^= character.codePointAt(0) ?? 0;
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
-  return hash;
-}
-
-/**
- * Deterministic default positions for the components of one entity. Positions
- * are absolute canvas coordinates arranged around ENTITY_CENTER. The ring
- * rotation is derived from the entity id, so two entities do not stack exactly
- * the same way while one entity always renders the same layout.
- */
-export function defaultEntityPositions(entityId: string, componentIds: string[]): Record<string, EntityPoint> {
-  const ids = [...new Set(componentIds.filter((id) => id.trim()))];
-  const positions: Record<string, EntityPoint> = {};
-  if (!ids.length) return positions;
-  if (ids.length === 1) {
-    positions[ids[0]!] = { x: ENTITY_CENTER.x, y: ENTITY_CENTER.y - 140 };
-    return positions;
-  }
-  if (ids.length === 2) {
-    positions[ids[0]!] = { x: ENTITY_CENTER.x, y: ENTITY_CENTER.y - 160 };
-    positions[ids[1]!] = { x: ENTITY_CENTER.x, y: ENTITY_CENTER.y + 180 };
-    return positions;
-  }
-  if (ids.length <= MAX_RING_SIZE) {
-    const start = ((stableHash(entityId) % 360) * Math.PI) / 180;
-    ids.forEach((id, index) => {
-      const angle = start + (index * Math.PI * 2) / ids.length;
-      positions[id] = {
-        x: Math.round(ENTITY_CENTER.x + Math.cos(angle) * CIRCLE_X_RADIUS),
-        y: Math.round(ENTITY_CENTER.y + Math.sin(angle) * CIRCLE_Y_RADIUS),
-      };
-    });
-    return positions;
-  }
-  const columns = Math.ceil(Math.sqrt(ids.length));
-  const rows = Math.ceil(ids.length / columns);
-  ids.forEach((id, index) => {
-    const column = index % columns;
-    const row = Math.floor(index / columns);
-    positions[id] = {
-      x: Math.round(ENTITY_CENTER.x + (column - (columns - 1) / 2) * GRID_COLUMN_SPACING),
-      y: Math.round(ENTITY_CENTER.y + (row - (rows - 1) / 2) * GRID_ROW_SPACING),
-    };
-  });
-  return positions;
-}
-
-/** Drop positions for components no longer mounted on this entity, leaving other entities untouched. */
+/** Drop positions for components no longer mounted on this entity, keeping the entity's own row. */
 export function pruneEntityLayout(layout: EntityLayout, entityId: string, activeComponentIds: string[]): EntityLayout {
   const active = new Set(activeComponentIds);
   const next: EntityLayout = {};
@@ -113,7 +168,7 @@ export function pruneEntityLayout(layout: EntityLayout, entityId: string, active
       next[id] = { ...components };
       continue;
     }
-    const kept = Object.fromEntries(Object.entries(components).filter(([componentId]) => active.has(componentId)));
+    const kept = Object.fromEntries(Object.entries(components).filter(([componentId]) => componentId === ENTITY_SELF_LAYOUT_ID || active.has(componentId)));
     if (Object.keys(kept).length) next[id] = kept;
   }
   return next;

@@ -20,6 +20,56 @@ function imageType(bytes: Buffer): string | undefined {
   return undefined;
 }
 
+function pngHasAlpha(bytes: Buffer): boolean {
+  if (bytes.length < 26) return false;
+  const colorType = bytes[25];
+  return colorType === 4 || colorType === 6 || (colorType === 3 && bytes.includes(Buffer.from("tRNS")));
+}
+
+export interface ImageCrop { x: number; y: number; width: number; height: number }
+
+function assertCrop(crop: ImageCrop): void {
+  const values = [crop.x, crop.y, crop.width, crop.height];
+  if (values.some((value) => typeof value !== "number" || !Number.isFinite(value))) throw new ProjectError("VALIDATION_FAILED", "裁剪区域必须是归一化数值");
+  if (crop.width <= 0 || crop.height <= 0 || crop.x < 0 || crop.y < 0 || crop.x + crop.width > 1 || crop.y + crop.height > 1) throw new ProjectError("VALIDATION_FAILED", "裁剪区域必须位于图片范围内且宽高大于 0");
+}
+
+/** Crop in desktop; always re-encode because only Electron can decode the source reliably. */
+async function cropImage(bytes: Buffer, extension: string, crop: ImageCrop): Promise<Buffer> {
+  if (extension === "gif") throw new ProjectError("VALIDATION_FAILED", "GIF 可能包含动画，不能裁剪");
+  if (process.versions.electron === undefined) throw new ProjectError("VALIDATION_FAILED", "当前运行环境不支持图片裁剪");
+  assertCrop(crop);
+  const { nativeImage } = await import("electron");
+  const image = nativeImage.createFromBuffer(bytes);
+  if (image.isEmpty()) throw new ProjectError("VALIDATION_FAILED", "图片无法解码");
+  const { width, height } = image.getSize();
+  const left = Math.min(width - 1, Math.round(crop.x * width));
+  const top = Math.min(height - 1, Math.round(crop.y * height));
+  const cropWidth = Math.max(1, Math.min(width - left, Math.round(crop.width * width)));
+  const cropHeight = Math.max(1, Math.min(height - top, Math.round(crop.height * height)));
+  return image.crop({ x: left, y: top, width: cropWidth, height: cropHeight }).toPNG();
+}
+
+/** Desktop imports re-encode oversized PNG/JPEG art so portraits are not rejected at the size limit. */
+async function compressImage(bytes: Buffer, extension: string): Promise<{ bytes: Buffer; extension: "png" | "jpg" } | undefined> {
+  if (process.versions.electron === undefined || (extension !== "png" && extension !== "jpg")) return undefined;
+  try {
+    const { nativeImage } = await import("electron");
+    const image = nativeImage.createFromBuffer(bytes);
+    if (image.isEmpty()) return undefined;
+    const { width, height } = image.getSize();
+    const alpha = extension === "png" && pngHasAlpha(bytes);
+    let scale = Math.min(1, 4096 / Math.max(width, height));
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const resized = scale >= 1 ? image : image.resize({ width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)), quality: "best" });
+      const encoded = alpha ? resized.toPNG() : resized.toJPEG(82);
+      if (encoded.length <= materialImageLimit) return { bytes: encoded, extension: alpha ? "png" : "jpg" };
+      scale *= 0.8;
+    }
+  } catch { /* Keep the explicit size error when the runtime cannot decode the image. */ }
+  return undefined;
+}
+
 /** Desktop and agent materials share validation and persistence, independently of tasks and models. */
 export class ProjectDocuments {
   constructor(private readonly store: FileStore) {}
@@ -98,12 +148,17 @@ export class ProjectDocuments {
     return result;
   }
 
-  async importImage(dataUrl: string): Promise<string> {
+  async importImage(dataUrl: string, crop?: ImageCrop): Promise<string> {
     const match = /^data:(image\/(?:png|jpeg|webp|gif));base64,([A-Za-z0-9+/]+={0,2})$/.exec(dataUrl);
     if (!match) throw new ProjectError("VALIDATION_FAILED", "支持 PNG、JPEG、WebP、GIF 图片");
-    const bytes = Buffer.from(match[2]!, "base64");
-    const extension = imageType(bytes);
-    if (!bytes.length || bytes.length > materialImageLimit || !extension || mimeTypes[extension] !== match[1]) throw new ProjectError("VALIDATION_FAILED", "图片格式无效或超过 2 MiB");
+    let bytes: Buffer = Buffer.from(match[2]!, "base64");
+    let extension = imageType(bytes);
+    if (crop) { if (!extension) throw new ProjectError("VALIDATION_FAILED", "图片格式无效"); bytes = await cropImage(bytes, extension, crop); extension = "png"; }
+    if (bytes.length > materialImageLimit && extension) {
+      const compressed = await compressImage(bytes, extension);
+      if (compressed) { bytes = compressed.bytes; extension = compressed.extension; }
+    }
+    if (!bytes.length || bytes.length > materialImageLimit || !extension) throw new ProjectError("VALIDATION_FAILED", "图片格式无效或压缩后仍超过 2 MiB");
     const relative = `${materialImagePrefix}${createHash("sha256").update(bytes).digest("hex")}.${extension}`;
     await this.store.withLock(async () => {
       const target = await this.store.policy.resolve(relative);

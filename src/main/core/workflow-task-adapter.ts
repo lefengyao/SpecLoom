@@ -53,7 +53,7 @@ export interface WorkflowTaskAdapter {
  */
 function taskScopePattern(value: string): string {
   const normalized = value.replace(/\/+$/, "");
-  if (normalized.endsWith("/**") || /\.[a-z0-9]{1,12}$/i.test(normalized)) return normalized;
+  if (normalized === "*" || normalized.endsWith("/**") || /\.[a-z0-9]{1,12}$/i.test(normalized)) return normalized;
   return normalized + "/**";
 }
 

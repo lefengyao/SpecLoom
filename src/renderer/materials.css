@@ -14,6 +14,21 @@
 .material-values { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-top: 14px; }
 .component-field { display: grid; grid-template-columns: 1fr 1fr 110px 1fr auto; gap: 10px; align-items: end; padding: 12px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px; }
 .component-field label { min-width: 0; }
+.component-notes-section { gap: 10px; }
+.component-note-list { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.component-note-list li { display: flex; align-items: flex-start; gap: 8px; }
+.component-note-list textarea { flex: 1 1 auto; min-height: 46px; resize: vertical; }
+.component-inherited-fields { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px dashed var(--border); border-radius: 8px; }
+.component-inherited-fields h4 { margin: 0; font-size: 13px; }
+.component-inherited-fields ul { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.component-inherited-fields li { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.component-inherited-fields li > span { display: flex; gap: 8px; align-items: baseline; min-width: 0; }
+.material-crop-overlay { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 24px; background: #0008; }
+.material-crop-dialog { display: flex; flex-direction: column; gap: 12px; width: min(860px, 100%); max-height: calc(100vh - 48px); overflow: auto; padding: 18px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-surface); box-shadow: 0 24px 60px #0005; }
+.material-crop-dialog header h3 { margin: 0 0 4px; }
+.material-crop-stage { position: relative; display: inline-grid; align-self: center; max-width: 100%; cursor: crosshair; touch-action: none; user-select: none; overflow: hidden; }
+.material-crop-stage img { display: block; max-width: 100%; max-height: 60vh; width: auto; height: auto; pointer-events: none; }
+.material-crop-rect { position: absolute; border: 2px solid #fff; box-shadow: 0 0 0 9999px #0008; pointer-events: none; }
 .state-machine-editor { gap: 14px; }
 .state-machine-editor > header { align-items: flex-end; }
 .state-machine-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; }

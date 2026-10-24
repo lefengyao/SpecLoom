@@ -12,9 +12,13 @@ import { OfflineDocumentStore } from "./core/offline-documents";
 import { HooksStore } from "./core/hooks";
 import { SkillStore } from "./core/skill-store";
 import { startMcpServer } from "./mcp-server";
+import { McpCredentialStore } from "./core/mcp-credentials";
+import { WorkspaceTools } from "./core/tools/workspace-tools";
+import { createWorkflowToolRuntime } from "./core/workflow-tool-runtime";
+import { PluginManager } from "./core/plugins/plugin-manager";
 
 const identity = (root: string) => process.platform === "win32" ? path.resolve(root).toLowerCase() : path.resolve(root);
-type Backend = { controller: DesktopController; closeMcp(): Promise<void>; unsubscribe(): void };
+type Backend = { controller: DesktopController; closeMcp(): Promise<void>; closePlugins(): Promise<void>; unsubscribe(): void };
 type Entry = { key: string; refs: number; ready: Promise<Backend>; operations: Set<Promise<unknown>>; closing?: Promise<void> };
 export interface HubWorkspaceLease { controller: DesktopController; entry: Entry; release(): Promise<void> }
 type Observer = { session(event: SessionEvent): void; changed(channel: string, projectPath?: string): void };
@@ -28,12 +32,14 @@ export class HubWorkspaces {
   private readonly shared: DesktopSharedServices;
   private readonly vault: ModelVault;
   private readonly providers: ProviderVault;
+  private readonly credentials: McpCredentialStore;
   private mutations: Promise<unknown> = Promise.resolve();
 
   private constructor(private readonly context: HubRuntimeContext, private readonly key: string) {
     const { dataDirectory, encryption } = context;
     this.vault = new ModelVault(dataDirectory, encryption);
     this.providers = new ProviderVault(dataDirectory, encryption);
+    this.credentials = new McpCredentialStore(dataDirectory);
     this.shared = { preferences: new PreferencesStore(dataDirectory), recentProjects: new RecentProjects(dataDirectory),
       offlineDocuments: new OfflineDocumentStore(dataDirectory), hooks: new HooksStore(dataDirectory), skills: new SkillStore(dataDirectory),
       godotMcpResourceRoot: path.join(context.moduleRoot, "resources", "godot-mcp"), chatAttachmentWorkerPath: path.join(context.moduleRoot, "runtime", "chat-attachment-worker.cjs") };
@@ -90,7 +96,7 @@ export class HubWorkspaces {
       if (--owned.refs > 0) return Promise.resolve();
       // Cancellation starts with the final window release, independently of pending sends.
       owned.closing = Promise.resolve().then(async () => {
-        const results = await Promise.allSettled([backend.controller.shutdown(), backend.closeMcp(), ...owned.operations]);
+        const results = await Promise.allSettled([backend.controller.shutdown(), backend.closeMcp(), backend.closePlugins(), ...owned.operations]);
         backend.unsubscribe();
         if (this.entries.get(owned.key) === owned) this.entries.delete(owned.key);
         const failed = results.find(result => result.status === "rejected");
@@ -102,13 +108,63 @@ export class HubWorkspaces {
 
   private async initialize(root: string, example: boolean): Promise<Backend> {
     const controller = new DesktopController(this.vault, this.context.dataDirectory, path.join(this.context.moduleRoot, "skills"), this.providers, this.shared);
+    let plugins: PluginManager | undefined;
     try {
       if (example) await controller.createExample(); else if (root) await controller.openProject(root);
-      const mcp = await startMcpServer(() => controller.currentCore()); controller.mcp = { url: mcp.url, token: mcp.token };
+      plugins = new PluginManager({
+        builtinDirectory: path.join(this.context.moduleRoot, "resources", "plugins"),
+        userDataDirectory: this.context.dataDirectory,
+        getProjectPath: () => { try { return controller.currentCore().metadata.path; } catch { return undefined; } },
+        childPath: path.join(this.context.moduleRoot, "resources", "plugin-host-child.mjs"),
+        logDirectory: path.join(this.context.dataDirectory, "plugin-logs"),
+      });
+      controller.plugins = plugins;
+      let projectKey = "no-project";
+      try { projectKey = identity(controller.currentCore().metadata.path); } catch { /* Home windows start without a project. */ }
+      const stored = await this.credentials.get(projectKey);
+      const externalTools = (root: string) => {
+        const core = controller.currentCore();
+        const tools = new WorkspaceTools(root, "mcp", {
+          offlineDocuments: this.shared.offlineDocuments,
+          globalMcpConfigPath: path.join(this.context.dataDirectory, "mcp.json"),
+          workflowTools: createWorkflowToolRuntime({ service: controller.workflowServiceFor(core) }),
+        });
+        tools.setPermissions("full");
+        tools.setDelegate(controller.mcpChildAgent(root));
+        return tools;
+      };
+      let current = await startMcpServer(() => controller.currentCore(), {
+        ...(stored?.token ? { token: stored.token } : {}),
+        ...(stored?.port ? { port: stored.port } : {}),
+        offlineDocuments: this.shared.offlineDocuments,
+        configRevision: () => controller.mcpConfigRevision,
+        externalTools,
+      });
+      const remember = () => this.credentials.remember(projectKey, { token: current.token, port: Number(new URL(current.url).port) }).catch(() => undefined);
+      await remember();
+      controller.mcp = { url: current.url, token: current.token };
+      controller.mcpRotator = async () => {
+        const credential = await this.credentials.rotate(projectKey);
+        await current.close();
+        current = await startMcpServer(() => controller.currentCore(), {
+          token: credential.token,
+          ...(credential.port ? { port: credential.port } : {}),
+          offlineDocuments: this.shared.offlineDocuments,
+          configRevision: () => controller.mcpConfigRevision,
+          externalTools,
+        });
+        await remember();
+        controller.mcp = { url: current.url, token: current.token };
+        return controller.mcp;
+      };
       const unsubscribe = controller.sessions.subscribe(event => {
         for (const observer of this.observers) { try { observer.session(event); } catch { /* Other observers still receive this event. */ } }
       });
-      return { controller, closeMcp: () => mcp.close(), unsubscribe };
-    } catch (error) { await controller.shutdown().catch(() => undefined); throw error; }
+      return { controller, closeMcp: () => current.close(), closePlugins: () => plugins!.close(), unsubscribe };
+    } catch (error) {
+      await plugins?.close().catch(() => undefined);
+      await controller.shutdown().catch(() => undefined);
+      throw error;
+    }
   }
 }

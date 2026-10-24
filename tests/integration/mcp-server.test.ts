@@ -1,11 +1,14 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { request } from "node:http";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { z } from "zod";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ProjectCore } from "../../src/main/core/project-core";
+import { OfflineDocumentStore } from "../../src/main/core/offline-documents";
+import { WorkspaceTools } from "../../src/main/core/tools/workspace-tools";
 import { startMcpServer } from "../../src/main/mcp-server";
 import type { ChangeReview } from "../../src/shared/desktop-api";
 
@@ -46,7 +49,7 @@ describe("Authenticated loopback MCP", () => {
     expect(spoofedStatus).toBe(403);
     expect((await fetch(server.url, { method: "POST", headers: { Authorization: `Bearer ${server.token}` }, body: "x".repeat(1_048_577) })).status).toBe(413);
   });
-  it("shares task scopes, staged changes and UI approval with the same core", async () => {
+  it("writes MCP file changes directly while keeping task scopes enforced", async () => {
     const { server, core, root } = await fixture();
     const client = await clientFor(server);
     const tools = await client.listTools();
@@ -56,13 +59,127 @@ describe("Authenticated loopback MCP", () => {
     const denied = await client.callTool({ name: "files.write", arguments: { taskId: "unknown", path: "specs/new.md", expectedVersion: "absent", content: "hello" } });
     expect(denied.isError).toBe(true);
     await client.callTool({ name: "files.write", arguments: { taskId: "approved", path: "specs/new.md", expectedVersion: "absent", content: "hello" } });
+    expect(await readFile(path.join(root, "specs/new.md"), "utf8")).toBe("hello");
     const review = output(await client.callTool({ name: "changes.preview", arguments: { taskId: "approved" } })) as unknown as ChangeReview;
+    expect(review.changeSet.entries).toEqual([]);
     expect(review.changeSet.digest).toBe((await core.previewChanges("approved")).changeSet.digest);
     const commit = await client.callTool({ name: "changes.commit", arguments: { taskId: "approved", digest: review.changeSet.digest } });
-    expect(output(commit)).toMatchObject({ code: "APPROVAL_REQUIRED" });
-    await core.approveChanges("approved", review.changeSet.digest);
-    expect(await readFile(path.join(root, "specs/new.md"), "utf8")).toBe("hello");
+    expect(output(commit)).toMatchObject({ status: "applied" });
   });
+  it("loads a project skill without an explicit version", async () => {
+    const { server, root } = await fixture();
+    await mkdir(path.join(root, ".specloom", "skills", "guide"), { recursive: true });
+    await writeFile(path.join(root, ".specloom", "skills", "guide", "SKILL.md"), "---\nid: guide\nname: Guide\npurpose: Test skill\nallowedSources:\n  - specs/**\n---\n\n# Guide\n\nDo the thing.\n");
+    const client = await clientFor(server);
+    const listed = output(await client.callTool({ name: "skills.list", arguments: { taskId: "approved" } })) as unknown as { id: string; version: string }[];
+    expect(listed).toContainEqual(expect.objectContaining({ id: "guide" }));
+    const loaded = output(await client.callTool({ name: "skills.load", arguments: { taskId: "approved", id: "guide" } }));
+    expect(loaded).toMatchObject({ id: "guide", name: "Guide" });
+    expect(String(loaded.instructions)).toContain("Do the thing.");
+  });
+
+  it("exposes built-in offline document tools to external clients", async () => {
+    const { core } = await fixture();
+    const userData = await mkdtemp(path.join(os.tmpdir(), "specloom-mcp-offline-"));
+    cleanup.push(() => rm(userData, { force: true, recursive: true }));
+    const store = new OfflineDocumentStore(userData);
+    const source = path.join(userData, "guide.txt");
+    const second = path.join(userData, "guide-2.txt");
+    await writeFile(source, "offline content");
+    await writeFile(second, "second page");
+    const bundle = await store.importFiles([source, second], "Guide", "1", true);
+    const server = await startMcpServer(() => core, { offlineDocuments: store });
+    cleanup.push(() => server.close());
+    const client = await clientFor(server);
+    const listed = await client.callTool({ name: "OfflineDocsList", arguments: {} });
+    expect(output(listed)).toContainEqual(expect.objectContaining({ id: bundle.id, name: "Guide" }));
+    const page = output(await client.callTool({ name: "OfflineDocsList", arguments: { bundleId: bundle.id, limit: 1 } })) as unknown as { versions: { files: unknown[]; fileCount: number; nextOffset?: number }[] }[];
+    expect(page[0]!.versions[0]!.files).toHaveLength(1);
+    expect(page[0]!.versions[0]!.fileCount).toBe(2);
+    expect(page[0]!.versions[0]!.nextOffset).toBe(1);
+    const file = bundle.versions[0]!.files.find((candidate) => candidate.path.endsWith("guide.txt"))!;
+    const read = output(await client.callTool({ name: "OfflineDocsRead", arguments: { bundleId: bundle.id, path: file.path } })) as { content?: string };
+    expect(read.content).toContain("offline content");
+  });
+
+  it("shares the in-app workspace tool catalog and external MCP tools with clients", async () => {
+    const { core } = await fixture();
+    const execute = vi.fn(async () => ({ ok: true }));
+    const external = {
+      capabilities: vi.fn(async () => ({ tools: [], skills: [], mcp: [], plugins: [] })),
+      catalog: { all: () => [
+        { name: "mcp_docs_search_abcd1234", description: "Search connected docs", schema: {}, parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"], additionalProperties: false } },
+        { name: "Glob", description: "Find files", schema: z.object({ pattern: z.string().min(1) }).strict() },
+      ] },
+      execute,
+      close: vi.fn(async () => undefined),
+    } as unknown as WorkspaceTools;
+    const server = await startMcpServer(() => core, { externalTools: () => external });
+    cleanup.push(() => server.close());
+    const instructions = await core.mcpInstructions();
+    expect(instructions).toContain("SpecLoom");
+    expect(instructions).toContain("files.list_versions");
+    expect(instructions).toContain("MaterialsList");
+    expect(instructions).toContain("borrowed access");
+    expect(instructions).not.toContain("Monitor poll");
+
+    const client = await clientFor(server);
+    expect(client.getInstructions()).toBeTruthy();
+    const listed = await client.listTools();
+    const proxied = listed.tools.find((tool) => tool.name === "mcp_docs_search_abcd1234");
+    expect(proxied?.inputSchema).toMatchObject({ type: "object", properties: { query: { type: "string" } }, required: ["query"] });
+    const glob = listed.tools.find((tool) => tool.name === "Glob");
+    expect(glob?.inputSchema).toMatchObject({ type: "object", properties: { pattern: { type: "string" } }, required: ["pattern"] });
+    const result = await client.callTool({ name: "mcp_docs_search_abcd1234", arguments: { query: "x" } });
+    expect(output(result)).toMatchObject({ ok: true });
+    expect(execute).toHaveBeenCalledWith("mcp_docs_search_abcd1234", { query: "x" }, expect.anything());
+    const globResult = await client.callTool({ name: "Glob", arguments: { pattern: "**/*.md", taskId: "approved" } });
+    expect(output(globResult)).toMatchObject({ ok: true });
+    expect(execute).toHaveBeenCalledWith("Glob", { pattern: "**/*.md" }, expect.anything());
+  });
+
+  it("exposes the same workspace tool catalog the in-app agent uses", async () => {
+    const { core, root } = await fixture();
+    const tools = new WorkspaceTools(root, "mcp-parity");
+    tools.setPermissions("full");
+    cleanup.push(() => tools.close());
+    const server = await startMcpServer(() => core, { externalTools: () => tools });
+    cleanup.push(() => server.close());
+    const client = await clientFor(server);
+    const listed = (await client.listTools()).tools.map((tool) => tool.name);
+    for (const name of ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "Monitor", "Skill", "ToolSearch", "MaterialsList", "MaterialCreate", "TaskCreate", "TaskUpdate", "TaskList", "memory", "code_execution", "screenshot"]) {
+      expect(listed).toContain(name);
+    }
+    const created = output(await client.callTool({ name: "TaskCreate", arguments: { title: "parity check" } }));
+    expect(created).toMatchObject({ title: "parity check", status: "pending" });
+    const tasks = output(await client.callTool({ name: "TaskList", arguments: {} }));
+    expect(tasks).toContainEqual(expect.objectContaining({ title: "parity check" }));
+  });
+
+  it("rediscovers downstream servers after the MCP config changes", async () => {
+    const { core } = await fixture();
+    let revision = 0;
+    let catalog: { name: string; description: string; schema: z.ZodType }[] = [];
+    const refresh = vi.fn(async () => {
+      catalog = [{ name: "mcp_late_echo_abcd1234", description: "Late server", schema: z.object({ text: z.string() }) }];
+      return { tools: [], skills: [], mcp: [], plugins: [] };
+    });
+    const external = {
+      capabilities: vi.fn(async () => ({ tools: [], skills: [], mcp: [], plugins: [] })),
+      catalog: { all: () => catalog },
+      execute: vi.fn(async () => ({ ok: true })),
+      refresh,
+      close: vi.fn(async () => undefined),
+    } as unknown as WorkspaceTools;
+    const server = await startMcpServer(() => core, { externalTools: () => external, configRevision: () => revision });
+    cleanup.push(() => server.close());
+    const client = await clientFor(server);
+    expect((await client.listTools()).tools.some((tool) => tool.name === "mcp_late_echo_abcd1234")).toBe(false);
+    revision = 1;
+    expect((await client.listTools()).tools.some((tool) => tool.name === "mcp_late_echo_abcd1234")).toBe(true);
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
   it("publishes the eight Godot tools and returns screenshots as MCP image blocks", async () => {
     const { server, core } = await fixture();
     const client = await clientFor(server);
@@ -84,15 +201,17 @@ describe("Authenticated loopback MCP", () => {
       expect(JSON.stringify(metadata)).not.toContain(png);
     }
   });
-  it("cannot approve or broaden scope and rejects stale external edits at UI commit", async () => {
+  it("enforces task scopes and never rewrites external edits", async () => {
     const { server, core, root } = await fixture();
     const client = await clientFor(server);
     const bad = await client.callTool({ name: "files.write", arguments: { taskId: "approved", path: "scripts/unauthorized.gd", expectedVersion: "absent", content: "extends Node" } });
     expect(output(bad)).toMatchObject({ code: "TASK_SCOPE_DENIED" });
     await client.callTool({ name: "files.write", arguments: { taskId: "approved", path: "specs/new.md", expectedVersion: "absent", content: "agent" } });
+    expect(await readFile(path.join(root, "specs/new.md"), "utf8")).toBe("agent");
     const review = await core.previewChanges("approved");
+    expect(review.changeSet.entries).toEqual([]);
     await writeFile(path.join(root, "specs/new.md"), "developer");
-    await expect(core.approveChanges("approved", review.changeSet.digest)).rejects.toMatchObject({ code: "VERSION_CONFLICT" });
+    await expect(core.approveChanges("approved", review.changeSet.digest)).resolves.toMatchObject({ status: "applied" });
     expect(await readFile(path.join(root, "specs/new.md"), "utf8")).toBe("developer");
   });
 });

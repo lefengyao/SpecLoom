@@ -57,6 +57,27 @@ export class StagedChangeSet {
     if (this.entries.delete(this.store.pathIdentity(relative))) this.invalidate();
   }
 
+  /** Direct tasks follow the file on disk; an external writer may advance its baseline between reads. */
+  replaceDependency(relative: string, version: VersionToken): void {
+    this.assertMutable();
+    const normalized = this.store.normalizePath(relative);
+    if (!VersionTokenSchema.safeParse(version).success) throw new ProjectError("VALIDATION_FAILED", "Invalid read dependency version");
+    const key = this.store.pathIdentity(normalized);
+    if (this.entries.has(key)) throw new ProjectError("VERSION_CONFLICT", "Staged outputs cannot change their baseline", { path: normalized });
+    const dependency = this.dependencies.get(key);
+    if (dependency?.version !== version) {
+      this.dependencies.set(key, { path: dependency?.path ?? normalized, version });
+      this.invalidate();
+    }
+  }
+
+  /** Close a direct-to-disk task that has no staged entries to apply. */
+  finalize(): ChangeSetData {
+    this.assertMutable();
+    this.status = "applied";
+    return this.preview();
+  }
+
   preview(): ChangeSetData {
     const entries = [...this.entries.values()].sort((a, b) => a.path.localeCompare(b.path)).map((entry) => Object.freeze(structuredClone(entry)));
     const dependencies = Object.fromEntries([...this.dependencies.values()].sort((a, b) => a.path.localeCompare(b.path)).map((dependency) => [dependency.path, dependency.version]));

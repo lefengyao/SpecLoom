@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import { rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { ChangeEntrySchema, type ChangeEntry, type SkillSource, type VersionToken } from "../../shared/contracts";
-import { executeDocker, type DockerExecutor, type DockerExecutionResult } from "./docker-process";
+import { executeDocker, executeProcess, type DockerExecutor, type DockerExecutionResult, type ProcessExecutor } from "./docker-process";
+import { runLocalGodot } from "./local-godot";
 import { ProjectError } from "./errors";
 import { FileStore } from "./file-store";
 import { SnapshotRegistry, type SnapshotLease, type SnapshotLifecycleOptions, type SnapshotRecoveryDiagnostic } from "./snapshot-lifecycle";
@@ -15,10 +16,12 @@ export const GODOT_IMAGE = "barichello/godot-ci:4.4.1@sha256:274a9a1849ec64d0ce8
 export interface SnapshotRunnerOptions {
   maxFiles?: number;
   maxTotalBytes?: number;
+  maxFileBytes?: number;
   maxOutputBytes?: number;
   timeoutMs?: number;
   maxTimeoutMs?: number;
   docker?: DockerExecutor;
+  process?: ProcessExecutor;
   lifecycle?: SnapshotLifecycleOptions;
 }
 
@@ -39,6 +42,7 @@ export interface SnapshotCommandResult extends DockerExecutionResult { command: 
 interface SnapshotLimits {
   maxFiles: number;
   maxTotalBytes: number;
+  maxFileBytes: number;
   maxOutputBytes: number;
   timeoutMs: number;
   maxTimeoutMs: number;
@@ -46,11 +50,12 @@ interface SnapshotLimits {
 
 function limitsFrom(options: SnapshotRunnerOptions): SnapshotLimits {
   const limits: SnapshotLimits = {
-    maxFiles: options.maxFiles ?? 10_000,
-    maxTotalBytes: options.maxTotalBytes ?? 64 * 1024 * 1024,
+    maxFiles: options.maxFiles ?? 100_000,
+    maxTotalBytes: options.maxTotalBytes ?? 8 * 1024 * 1024 * 1024,
+    maxFileBytes: options.maxFileBytes ?? 1024 * 1024 * 1024,
     maxOutputBytes: options.maxOutputBytes ?? 1024 * 1024,
     timeoutMs: options.timeoutMs ?? 30_000,
-    maxTimeoutMs: options.maxTimeoutMs ?? 120_000,
+    maxTimeoutMs: options.maxTimeoutMs ?? 300_000,
   };
   if (Object.values(limits).some((value) => !Number.isSafeInteger(value) || value < 1) || limits.timeoutMs > limits.maxTimeoutMs) {
     throw new ProjectError("VALIDATION_FAILED", "Snapshot limits must be positive bounded integers");
@@ -136,11 +141,13 @@ async function readBytes(store: FileStore, relative: string, limit: number, expe
 export class SnapshotRunner {
   private readonly limits: SnapshotLimits;
   private readonly docker: DockerExecutor;
+  private readonly process: ProcessExecutor;
   private readonly registry: SnapshotRegistry;
 
   constructor(private readonly store: FileStore, options: SnapshotRunnerOptions = {}) {
     this.limits = limitsFrom(options);
     this.docker = options.docker ?? executeDocker;
+    this.process = options.process ?? executeProcess;
     this.registry = new SnapshotRegistry(this.store, this.docker, options.lifecycle);
   }
 
@@ -160,6 +167,7 @@ export class SnapshotRunner {
         if (!canRead(scope, relative, extra, this.store)) continue;
         if (baseline.size >= this.limits.maxFiles) throw new ProjectError("VALIDATION_FAILED", "Snapshot exceeds its file count limit");
         const stats = await this.store.fs.lstat(await this.store.policy.resolve(relative));
+        if (stats.size > this.limits.maxFileBytes) throw new ProjectError("VALIDATION_FAILED", "Snapshot file exceeds the per-file byte limit", { path: relative, limit: this.limits.maxFileBytes });
         if (stats.size > this.limits.maxTotalBytes - total) throw new ProjectError("VALIDATION_FAILED", "Snapshot exceeds its total byte limit");
         const original = await this.store.listVersion(relative);
         const bytes = await readBytes(this.store, relative, this.limits.maxTotalBytes - total, original.version);
@@ -209,7 +217,7 @@ export class SnapshotRunner {
           sizes.set(canonical, bytes.length);
         }
       }
-      return new SnapshotSession(snapshotStore, scope, baseline, editable, this.limits, this.docker, lease);
+      return new SnapshotSession(snapshotStore, scope, baseline, editable, this.limits, this.docker, this.process, lease);
     } catch (error) {
       await lease.dispose();
       throw error;
@@ -224,6 +232,7 @@ export class SnapshotSession {
   readonly #editable: Set<string>;
   readonly #limits: SnapshotLimits;
   readonly #docker: DockerExecutor;
+  readonly #process: ProcessExecutor;
   readonly #lease: SnapshotLease;
   readonly #containers = new Set<string>();
   #disposed = false;
@@ -232,13 +241,14 @@ export class SnapshotSession {
   #interrupted = false;
   #active: { controller: AbortController; operation: Promise<SnapshotCommandResult> } | undefined;
 
-  constructor(store: FileStore, scope: TaskScope, baseline: Map<string, VersionToken>, editable: Set<string>, limits: SnapshotLimits, docker: DockerExecutor, lease: SnapshotLease) {
+  constructor(store: FileStore, scope: TaskScope, baseline: Map<string, VersionToken>, editable: Set<string>, limits: SnapshotLimits, docker: DockerExecutor, process: ProcessExecutor, lease: SnapshotLease) {
     this.#store = store;
     this.#scope = scope;
     this.#versions = baseline;
     this.#editable = editable;
     this.#limits = limits;
     this.#docker = docker;
+    this.#process = process;
     this.#lease = lease;
   }
 
@@ -268,6 +278,33 @@ export class SnapshotSession {
     const operation = this.executeContainer(options, timeoutMs, signal);
     this.#active = { controller, operation };
     try { return await operation; } finally { this.#active = undefined; }
+  }
+
+  async runLocalGodot(options: { executable: string; args: string[]; timeoutMs?: number; signal?: AbortSignal }): Promise<SnapshotCommandResult> {
+    this.assertIdle();
+    const executable = options.executable.trim();
+    const argsValid = Array.isArray(options.args) && options.args.every((argument) => typeof argument === "string" && !argument.includes("\0"));
+    if (!executable || executable.includes("\0") || !argsValid || Buffer.byteLength(JSON.stringify(options.args), "utf8") > 64 * 1024) {
+      throw new ProjectError("VALIDATION_FAILED", "The Godot executable and its arguments must be bounded strings");
+    }
+    const timeoutMs = options.timeoutMs ?? this.#limits.timeoutMs;
+    if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > this.#limits.maxTimeoutMs) throw new ProjectError("VALIDATION_FAILED", "Invalid Godot timeout");
+    if (options.signal?.aborted) throw new ProjectError("COMMAND_FAILED", "Godot command was cancelled", { reason: "aborted" });
+    const controller = new AbortController();
+    const signal = options.signal === undefined ? controller.signal : AbortSignal.any([options.signal, controller.signal]);
+    const operation = this.executeLocalGodot(executable, options.args, timeoutMs, signal);
+    this.#active = { controller, operation };
+    try { return await operation; } finally { this.#active = undefined; }
+  }
+
+  private async executeLocalGodot(executable: string, args: string[], timeoutMs: number, signal: AbortSignal): Promise<SnapshotCommandResult> {
+    return runLocalGodot(executable, args, {
+      cwd: this.#store.root,
+      timeoutMs,
+      maxOutputBytes: this.#limits.maxOutputBytes,
+      signal,
+      process: this.#process,
+    });
   }
 
   private async executeContainer(options: SnapshotContainerOptions, timeoutMs: number, signal: AbortSignal): Promise<SnapshotCommandResult> {

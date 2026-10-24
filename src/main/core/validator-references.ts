@@ -1,5 +1,7 @@
 import type { ValidationDiagnostic } from "../../shared/contracts";
 import { VersionTokenSchema } from "../../shared/contracts";
+import { resolveComponentFields, type ComponentDefinition } from "../../shared/component-inheritance";
+import { readFields } from "../../shared/project-materials";
 import { componentValueMatches, diagnostic, nonempty, record, validReference, validationPathIdentity, type ParsedSpec } from "./validator-markdown";
 import { ValidationSource } from "./validator-source";
 import { normalizeProjectPath } from "./path-policy";
@@ -24,6 +26,10 @@ export async function validateReferences(specs: ParsedSpec[], source: Validation
     if (existing) diagnostics.push(diagnostic(spec.path, "SPEC_ID_DUPLICATE", `ID '${spec.data.id}' is already defined in ${existing.path}`));
     else ids.set(spec.data.id, spec);
   }
+  const componentDefinitions: ComponentDefinition[] = specs
+    .filter((spec) => materialKind(spec) === "component" && spec.data.type === "component" && nonempty(spec.data.id))
+    .map((spec) => ({ path: spec.path, id: String(spec.data.id), data: spec.data }));
+  const effectiveFields = new Map<string, ReturnType<typeof readFields>>(componentDefinitions.map((definition) => [validationPathIdentity(definition.path), resolveComponentFields(componentDefinitions, definition).fields]));
 
   async function resolveReference(value: unknown, owner: string, missingCode: string, invalidCode = "REFERENCE_INVALID", componentBinding = false): Promise<{ spec?: ParsedSpec; path: string } | undefined> {
     const target = typeof value === "string" ? value : record(value) ? value.path ?? value.id : undefined;
@@ -88,6 +94,7 @@ export async function validateReferences(specs: ParsedSpec[], source: Validation
 
   const parents = new Map<string, string>();
   const inheritance = new Map<string, string[]>();
+  const componentInheritance = new Map<string, string[]>();
   for (const spec of specs) {
     if (Array.isArray(spec.data.relations)) for (const value of spec.data.relations) await reference(value, spec.path, "RELATION_NOT_FOUND", true);
     if (validationPathIdentity(spec.path).startsWith("specs/tasks/") && Array.isArray(spec.data.inputs)) for (const value of spec.data.inputs) await reference(value, spec.path, "TASK_INPUT_NOT_FOUND");
@@ -100,6 +107,10 @@ export async function validateReferences(specs: ParsedSpec[], source: Validation
       const code = kind === "entity" ? "ENTITY_PARENT" : "MATERIAL_PARENT";
       const parent = await semanticReference(spec.data.parent, spec, code, (target) => materialKind(target) === kind);
       if (parent && nonempty(parent.data.id)) parents.set(ownerId, parent.data.id);
+    }
+    if (kind === "component" && spec.data.extends !== undefined) {
+      const target = await semanticReference(spec.data.extends, spec, "COMPONENT_INHERIT", (target) => materialKind(target) === "component" && target.data.type === "component");
+      if (target && nonempty(target.data.id)) componentInheritance.set(ownerId, [target.data.id]);
     }
     if (!isEntitySpec(spec)) continue;
     if (spec.data.extends !== undefined) {
@@ -115,8 +126,8 @@ export async function validateReferences(specs: ParsedSpec[], source: Validation
         if (attached.has(targetIdentity)) diagnostics.push(diagnostic(spec.path, "ENTITY_COMPONENT_DUPLICATE", `Component '${String(target.data.id)}' is already attached`));
         attached.add(targetIdentity);
         if (!record(value) || !record(value.values)) continue;
-        const fields = new Map<string, Record<string, unknown>>();
-        for (const field of Array.isArray(target.data.fields) ? target.data.fields : []) if (record(field) && nonempty(field.key)) fields.set(field.key, field);
+        const fields = new Map<string, ReturnType<typeof readFields>[number]>();
+        for (const field of effectiveFields.get(targetIdentity) ?? []) fields.set(field.key, field);
         for (const [key, override] of Object.entries(value.values)) {
           const field = fields.get(key);
           if (!field) diagnostics.push(diagnostic(spec.path, "ENTITY_COMPONENT_FIELD_UNKNOWN", `Component '${String(target.data.id)}' has no field '${key}'`));
@@ -146,6 +157,7 @@ export async function validateReferences(specs: ParsedSpec[], source: Validation
   }
   reportCycles(new Map([...parents].map(([id, parent]) => [id, [parent]])), (spec) => spec && materialKind(spec) === "entity" ? "ENTITY_PARENT_CYCLE" : "MATERIAL_PARENT_CYCLE");
   reportCycles(inheritance, "ENTITY_INHERIT_CYCLE");
+  reportCycles(componentInheritance, "COMPONENT_INHERIT_CYCLE");
 
   const manifestPath = ".specloom/generated-manifest.json";
   const content = await source.readManifest();

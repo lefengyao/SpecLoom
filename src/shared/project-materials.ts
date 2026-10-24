@@ -7,7 +7,7 @@ export interface ComponentField {
   type: "number" | "string" | "boolean";
   default: ComponentValue;
 }
-export interface ComponentBinding { id: string; values: Record<string, ComponentValue> }
+export interface ComponentBinding { id: string; values: Record<string, ComponentValue>; notes?: string[] }
 export interface MaterialDocument { data: Record<string, unknown>; body: string }
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -63,7 +63,10 @@ export function readBindings(data: Record<string, unknown>): ComponentBinding[] 
     const values = record(value) && record(value.values)
       ? Object.fromEntries(Object.entries(value.values).filter((entry): entry is [string, ComponentValue] => componentValue(entry[1])))
       : {};
-    bindings.push({ id, values });
+    const notes = record(value) && Array.isArray(value.notes)
+      ? value.notes.filter((note): note is string => typeof note === "string").map((note) => note.trim()).slice(0, 32)
+      : [];
+    bindings.push({ id, values, ...(notes.length ? { notes } : {}) });
     seen.add(id);
   }
   return bindings;

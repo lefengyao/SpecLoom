@@ -30,9 +30,10 @@ async function put(root: string, relative: string, content: string) {
 
 function backend(exitCode = 0, stderr = "") {
   const runContainer = vi.fn().mockResolvedValue({ exitCode, stdout: "Godot 4.4.1", stderr, durationMs: 3, command: ["docker", "run", "godot"] });
+  const runLocalGodot = vi.fn().mockResolvedValue({ exitCode, stdout: "Godot 4.4.1", stderr, durationMs: 3, command: ["godot"] });
   const dispose = vi.fn().mockResolvedValue(undefined);
-  const create = vi.fn().mockResolvedValue({ runContainer, dispose, dependencies: () => ({ "project.godot": "sha256:" + "a".repeat(64) }) });
-  return { runner: { create } as unknown as ValidatorSnapshotRunner, create, runContainer, dispose };
+  const create = vi.fn().mockResolvedValue({ runContainer, runLocalGodot, dispose, dependencies: () => ({ "project.godot": "sha256:" + "a".repeat(64) }) });
+  return { runner: { create } as unknown as ValidatorSnapshotRunner, create, runContainer, runLocalGodot, dispose };
 }
 
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
@@ -228,6 +229,33 @@ describe("specification validation", () => {
     expect(await readFile(path.join(root, previous.path), "utf8")).toBe(entity());
   });
 
+  it("skips Godot import and its snapshot for documentation-only overlays", async () => {
+    const { store } = await fixture();
+    const previous = await store.listVersion("specs/entities/characters/hero.md");
+    const overlay: ChangeEntry[] = [{ path: previous.path, operation: "update", expectedVersion: previous.version, nextContent: entity(), sourceTaskId: "docs", sourceTool: "test" }];
+    const mock = backend();
+    const result = await new Validator(store, mock.runner).validate({ overlay });
+    expect(result.status).toBe("pass");
+    expect(mock.create).not.toHaveBeenCalled();
+    expect(result.checks.map((check) => check.id)).toEqual(["specifications"]);
+  });
+
+  it("skips Godot for direct markdown changes without an overlay", async () => {
+    const { store } = await fixture();
+    const mock = backend();
+    const result = await new Validator(store, mock.runner).validate({ changedPaths: ["docs/guide.md", "specs/entities/characters/hero.md"] });
+    expect(result.status).toBe("pass");
+    expect(mock.create).not.toHaveBeenCalled();
+    expect(result.checks.map((check) => check.id)).toEqual(["specifications"]);
+  });
+
+  it("still validates Godot when direct changes include source files", async () => {
+    const { store } = await fixture();
+    const mock = backend();
+    await new Validator(store, mock.runner).validate({ changedPaths: ["scripts/player.gd"] });
+    expect(mock.create).toHaveBeenCalledOnce();
+  });
+
   it("rejects overlays outside scope and stale baseline versions", async () => {
     const { store } = await fixture();
     const previous = await store.listVersion("specs/entities/characters/hero.md");
@@ -310,6 +338,19 @@ describe("isolated Godot validation", () => {
     expect(mock.runContainer.mock.calls[0]![0]).toMatchObject({ image: GODOT_VALIDATION_IMAGE, entrypoint: "godot", args: ["--headless", "--path", "/workspace", "--editor", "--quit"], readOnlyWorkspace: false });
     expect(mock.runContainer.mock.calls[1]![0].args).toContain("--quit-after");
     expect(mock.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("prefers the configured local Godot executable over Docker", async () => {
+    const { store } = await fixture();
+    const mock = backend();
+    const process = vi.fn().mockResolvedValue({ exitCode: 0, stdout: "Godot 4.4.1", stderr: "", durationMs: 3, command: ["godot"] });
+    const result = await new Validator(store, mock.runner, { godotExecutable: () => "C:/Godot/godot.exe", process }).validate();
+    expect(result.status).toBe("pass");
+    expect(process).toHaveBeenCalledOnce();
+    expect(mock.create).not.toHaveBeenCalled();
+    expect(mock.runContainer).not.toHaveBeenCalled();
+    expect(process.mock.calls[0]![0]).toBe("C:/Godot/godot.exe");
+    expect(process.mock.calls[0]![1]).toEqual(["--headless", "--path", store.root, "--editor", "--quit"]);
   });
 
   it("recognizes parser errors even when Godot exits zero and does not run smoke", async () => {

@@ -29,6 +29,16 @@ describe("EntityLayoutStore", () => {
     expect(raw.endsWith("\n")).toBe(true);
   });
 
+  test("persists custom anchors and explicit connection ends", async () => {
+    const directory = await root();
+    const store = new EntityLayoutStore(directory);
+    const layout = {
+      keeper: { health: { x: 12, y: 34, sourceAnchor: "left", targetAnchor: "custom-right", anchors: [{ id: "custom-right", side: "right", offset: 25 }] } },
+    } as unknown as EntityLayout;
+    expect(await store.save(layout)).toEqual(layout);
+    expect(await store.read()).toEqual(layout);
+  });
+
   test("filters hostile points and tolerates corrupt JSON", async () => {
     const directory = await root();
     const store = new EntityLayoutStore(directory);

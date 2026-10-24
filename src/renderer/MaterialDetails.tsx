@@ -8,6 +8,7 @@ import { StateMachineEditor } from "./StateMachineEditor";
 import { useI18n } from "./i18n";
 
 type FieldValue = ComponentField["default"];
+const fieldTypeLabels: Record<ComponentField["type"], string> = { number: "数值", string: "文本", boolean: "布尔" };
 function stateMachineValue(value: unknown): StateMachine | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const record = value as Record<string, unknown>;
@@ -61,6 +62,8 @@ export function MaterialDetails({ material, catalog, groups = [], onChange, disa
   const parentChoices = sameCategory.filter((item) => owner && !wouldCycle(catalog, owner, item, "parent"));
   const baseChoices = catalog.filter((item) => categoryForPath(item.path) === "entity" && !item.invalid && owner && !wouldCycle(catalog, owner, item, "extends"));
   const components = catalog.filter((item) => categoryForPath(item.path) === "component" && item.type === "component" && !item.invalid);
+  const componentBaseChoices = components.filter((item) => owner && item.path !== owner.path && !wouldCycle(catalog, owner, item, "extends"));
+  const componentBase = isComponent ? resolveMaterial(components, referenceId(data.extends)) : undefined;
   const stateMachine = stateMachineValue(data.stateMachine);
   const stateMachineComponent = components.find((item) => item.id === "state_machine" || item.path.endsWith("/state_machine.md"));
   const bindings = rawBindings.map((entry, index) => {
@@ -75,6 +78,9 @@ export function MaterialDetails({ material, catalog, groups = [], onChange, disa
     scope, title: tr(componentScopeLabels[scope]), items: availableComponents.filter((item) => componentScope(item) === scope),
   })).filter((section) => section.items.length > 0);
   const consumers = isComponent ? catalog.filter((item) => ["entity", "map"].includes(categoryForPath(item.path) ?? "") && item.components.some((binding) => resolveMaterial(components, binding.id)?.id === data.id)) : [];
+  const componentConsumers = isComponent ? catalog.filter((item) => categoryForPath(item.path) === "component" && item.type === "component" && resolveMaterial(components, item.extends)?.id === data.id) : [];
+  const ownFieldKeys = new Set(fields.map((field) => field.key));
+  const inheritedFields = isComponent && componentBase ? componentBase.fields.filter((field) => !ownFieldKeys.has(field.key)) : [];
   const emit = (value: Record<string, unknown>, nextBody?: string) => {
     const updated = { ...value };
     if (updated.groupId === undefined && typeof updated.group === "string") {
@@ -84,6 +90,14 @@ export function MaterialDetails({ material, catalog, groups = [], onChange, disa
     onChange(updated, nextBody);
   };
   const patch = (value: Record<string, unknown>) => emit({ ...data, ...value });
+  const componentNotes = Array.isArray(data.notes) ? data.notes.filter((note): note is string => typeof note === "string").slice(0, 32) : [];
+  const updateComponentNotes = (notes: string[]) => {
+    const updated = { ...data };
+    const next = notes.slice(0, 32);
+    if (next.length) updated.notes = next;
+    else delete updated.notes;
+    emit(updated);
+  };
   const currentGroupId = typeof data.groupId === "string" && groups.some((group) => group.id === data.groupId)
     ? data.groupId
     : typeof data.group === "string" ? resolveLegacyGroup(groups, data.group)?.id ?? "" : "";
@@ -156,7 +170,7 @@ export function MaterialDetails({ material, catalog, groups = [], onChange, disa
     </section>;
   };
   const updateField = (index: number, value: Partial<ComponentField>) => patch({ fields: fields.map((field, position) => position === index ? { ...field, ...value } : field) });
-  const fieldLocked = (index: number) => consumers.length > 0 && index < originalFields.length;
+  const fieldLocked = (index: number) => (consumers.length > 0 || componentConsumers.length > 0) && index < originalFields.length;
   const fieldKeyError = (index: number): string => {
     const key = fields[index]!.key;
     if (["__proto__", "prototype", "constructor"].includes(key)) return tr("字段名称不能使用保留键：{key}", { key });
@@ -174,6 +188,19 @@ export function MaterialDetails({ material, catalog, groups = [], onChange, disa
       </select></label>}
     </div>
     <label>{tr("说明")}<textarea rows={2} value={String(data.description ?? "")} onChange={(event) => patch({ description: event.target.value })} /></label>
+    {isComponent && <section className="material-section component-notes-section" aria-label={tr("说明条目")}>
+      <header><div><h3>{tr("说明条目")}</h3><span className="subtle">{tr("用于补充字段无法表达的内容，可添加多条。")}</span></div><button type="button" disabled={componentNotes.length >= 32} onClick={() => updateComponentNotes([...componentNotes, ""])}><Plus size={16} />{tr("添加说明")}</button></header>
+      {componentNotes.length ? <ul className="component-note-list">
+        {componentNotes.map((note, index) => <li key={index}>
+          <textarea aria-label={tr("说明 {index}", { index: index + 1 })} rows={2} maxLength={2000} value={note} onChange={(event) => {
+            const next = [...componentNotes];
+            next[index] = event.target.value;
+            updateComponentNotes(next);
+          }} onBlur={() => { if (!note.trim()) updateComponentNotes(componentNotes.filter((_, position) => position !== index)); }} />
+          <button type="button" aria-label={tr("移除说明 {index}", { index: index + 1 })} onClick={() => updateComponentNotes(componentNotes.filter((_, position) => position !== index))}><Trash2 size={15} /></button>
+        </li>)}
+      </ul> : <p className="subtle">{tr("还没有说明条目。")}</p>}
+    </section>}
     <div className="material-relationships">
       <section className="material-relationship" aria-label={tr("资料层级")}>
         <h3>{tr("资料层级")}</h3>
@@ -184,6 +211,11 @@ export function MaterialDetails({ material, catalog, groups = [], onChange, disa
         <h3>{tr("实体继承")}</h3>
         {selectRelationship("extends", tr("继承自"), baseChoices)}
         <p id={`${relationshipId}-extends`} className="material-relationship-hint">{tr("继承实体模板的数据和组件，与父级资料层级独立。")}</p>
+      </section>}
+      {isComponent && <section className="material-relationship" aria-label={tr("组件继承")}>
+        <h3>{tr("组件继承")}</h3>
+        {selectRelationship("extends", tr("继承自"), componentBaseChoices)}
+        <p id={`${relationshipId}-extends`} className="material-relationship-hint">{tr("继承另一组件的字段与默认值；同名自身字段会覆盖基类字段。实体之间的继承仍只指向实体。")}</p>
       </section>}
       <section className="material-relationship" aria-label={tr("资料分组")}>
         <h3>{tr("资料分组")}</h3>
@@ -225,6 +257,7 @@ export function MaterialDetails({ material, catalog, groups = [], onChange, disa
       }}><Plus size={16} />{tr("添加字段")}</button></header>
       {!fields.length && <p className="subtle">{tr("添加组件所需的数据字段，实体挂载时可以覆盖默认值。")}</p>}
       {consumers.length > 0 && <p className="field-hint">{tr("已被 {count} 个实体使用。先从这些实体移除组件，再修改字段名称、类型或删除字段：{entities}。", { count: consumers.length, entities: consumers.map((item) => item.title).join("、") })}</p>}
+      {componentConsumers.length > 0 && <p className="field-hint">{tr("已被 {count} 个组件继承。先解除这些组件的继承，再修改字段名称、类型或删除字段：{components}。", { count: componentConsumers.length, components: componentConsumers.map((item) => item.title).join("、") })}</p>}
       {fields.map((field, index) => <div key={index} className="component-field">
         <label>{tr("字段名称")}<input aria-label={tr("字段名称 {index}", { index: index + 1 })} required disabled={fieldLocked(index)} pattern="[a-zA-Z_][a-zA-Z0-9_]*" aria-invalid={Boolean(fieldKeyError(index))} aria-describedby={fieldKeyError(index) ? `component-field-error-${index}` : undefined} ref={(input) => { input?.setCustomValidity(fieldKeyError(index)); }} value={field.key} onChange={(event) => updateField(index, { key: event.target.value })} />
           {fieldKeyError(index) && <span role="alert" id={`component-field-error-${index}`} className="field-hint">{fieldKeyError(index)}</span>}
@@ -237,6 +270,16 @@ export function MaterialDetails({ material, catalog, groups = [], onChange, disa
         <label>{tr("默认值")}<ValueInput label={tr("默认值 {index}", { index: index + 1 })} type={field.type} value={field.default} onChange={(value) => updateField(index, { default: value })} /></label>
         <button type="button" disabled={fieldLocked(index)} aria-label={tr("移除字段 {index}", { index: index + 1 })} onClick={() => patch({ fields: fields.filter((_, position) => position !== index) })}><Trash2 size={15} /></button>
       </div>)}
+      {inheritedFields.length > 0 && <div className="component-inherited-fields">
+        <h4>{tr("继承字段")}</h4>
+        <p className="subtle">{tr("来自 {source}；添加同名字段即可覆盖。", { source: componentBase?.title ?? "" })}</p>
+        <ul>
+          {inheritedFields.map((field) => <li key={field.key}>
+            <span><strong>{field.label || field.key}</strong><span className="subtle">{field.key} · {tr(fieldTypeLabels[field.type])}</span></span>
+            <button type="button" onClick={() => patch({ fields: [...fields, { ...field }] })}>{tr("覆盖")}</button>
+          </li>)}
+        </ul>
+      </div>}
     </section>}
     <label>{tr("Markdown 正文")}<textarea className="material-body" rows={16} value={body} spellCheck={false} onChange={(event) => emit(data, event.target.value)} /></label>
   </fieldset>;

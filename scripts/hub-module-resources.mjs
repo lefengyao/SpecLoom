@@ -43,6 +43,9 @@ export async function prepareHubModuleResources({ directory }) {
   });
   await cp(join(root, "skills"), join(target, "skills"), { recursive: true });
   await cp(join(root, "resources/godot-mcp"), join(target, "resources/godot-mcp"), { recursive: true });
+  await cp(join(root, "resources/plugins"), join(target, "resources/plugins"), { recursive: true });
+  await cp(join(root, "resources/plugin-host-child.mjs"), join(target, "resources/plugin-host-child.mjs"));
+  await cp(join(root, "resources/workflows"), join(target, "resources/workflows"), { recursive: true });
   // PDF.js loads its worker and optional native canvas relative to the module.
   for (const name of ["package.json", "LICENSE", "legacy/build", "cmaps", "standard_fonts", "wasm"]) {
     await cp(join(root, "node_modules/pdfjs-dist", name), join(target, "node_modules/pdfjs-dist", name), { recursive: true, filter: file => !file.endsWith(".map") });

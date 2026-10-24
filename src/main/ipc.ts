@@ -88,13 +88,22 @@ export const WorkflowStartForTaskRequestSchema = z.object({
 /** Start a chat implementation turn with a validated scope and optional workflow. */
 export const WorkflowStartForChatRequestSchema = z.object({ input: WorkflowTriggerChatInputSchema }).strict();
 /** Editor-only entity layout; keys are bounded entity/component ids and finite points. */
+const EntityAnchorSchema = z.object({
+  id: z.string().min(1).max(80),
+  side: z.enum(["top", "right", "bottom", "left"]),
+  offset: z.number().finite().min(5).max(95),
+}).strict();
+const EntityLayoutEntrySchema = z.object({
+  x: z.number().finite(),
+  y: z.number().finite(),
+  sourceAnchor: z.enum(["top", "right", "bottom", "left"]).optional(),
+  targetAnchor: z.string().min(1).max(80).optional(),
+  anchors: z.array(EntityAnchorSchema).max(16).optional(),
+}).strict();
 export const EntityLayoutRequestSchema = z.object({
   layout: z.record(
     z.string().min(1).max(200),
-    z.record(
-      z.string().min(1).max(200),
-      z.object({ x: z.number().finite(), y: z.number().finite() }).strict(),
-    ),
+    z.record(z.string().min(1).max(200), EntityLayoutEntrySchema),
   ),
 }).strict();
 const operations = {
@@ -117,6 +126,7 @@ const operations = {
   sessionsAnswer: z.object({ projectPath: z.string().max(4096), sessionId: id, runId: id, questionId: id, answers: AnswerSchema }).strict(),
   sessionsApprove: z.object({ projectPath: z.string().max(4096), sessionId: id, runId: id, approvalId: id, approved: z.boolean() }).strict(),
   state: z.object({}).strict(), selectProject: z.object({}).strict(), openGodot: z.object({}).strict(), openExternalEditor: z.object({}).strict(), removeTask: z.object({ taskId: id }).strict(), createExample: z.object({}).strict(),
+  rotateMcp: z.object({}).strict(),
   openProject: z.object({ path: z.string().min(1).max(4096) }).strict(),
   closeProject: z.object({}).strict(),
   forgetProject: z.object({ path: z.string().min(1).max(4096) }).strict(),
@@ -448,6 +458,7 @@ async function dispatch(operation: string, input: Record<string, unknown>, contr
     case "openGodot": return controller.openGodot();
     case "openExternalEditor": return controller.openExternalEditor();
     case "removeTask": return controller.removeTask(input.taskId as string);
+    case "rotateMcp": return controller.rotateMcp();
     case "createExample": return projects ? projects.example() : controller.createExample();
     case "createTask": return controller.createTask(input.scope as z.infer<typeof TaskScopeSpecSchema>);
     case "updateTaskScope": return controller.updateTaskScope(input.taskId as string, input.scope as Omit<z.infer<typeof TaskScopeSpecSchema>, "id">);

@@ -64,6 +64,8 @@ export interface ChangeReview {
   before: Record<string, string>;
   validation?: ValidationResult;
   approved: boolean;
+  /** Files written directly by an external MCP session; they are already on disk. */
+  directFiles?: { path: string; operation: "create" | "update" | "delete" }[];
 }
 export interface McpConnection { url: string; token: string }
 export interface HooksApi {
@@ -252,6 +254,8 @@ export interface DesktopApi {
   forgetProject(path: string): Promise<WorkspaceState>;
   updatePreferences(patch: Partial<Preferences>): Promise<WorkspaceState>;
   openGodot(): Promise<void>;
+  /** Rotate the current MCP loopback token and port; hosts without a local MCP server omit it. */
+  rotateMcp?(): Promise<WorkspaceState>;
   openExternalEditor(): Promise<void>;
   removeTask(taskId: string): Promise<WorkspaceState>;
   createExample(): Promise<WorkspaceState>;

@@ -87,15 +87,32 @@ export function registerEditablePaste(target: EditableTarget, capture: () => Edi
 }
 type ContextAction = "copy" | "cut" | "paste";
 interface ContextMenuState {
-  paste?: EditablePasteHandler;
-  target: EditableTarget;
-  start: number;
-  end: number;
   x: number;
   y: number;
   canCopy: boolean;
   canCut: boolean;
   canPaste: boolean;
+  copy: () => Promise<void>;
+  cut?: () => Promise<void>;
+  paste?: () => Promise<void>;
+}
+
+function editableContainer(node: Node | null): HTMLElement | undefined {
+  const element = node instanceof Element ? node : node?.parentElement ?? undefined;
+  return element?.closest<HTMLElement>('[contenteditable]:not([contenteditable="false"])') ?? undefined;
+}
+
+function restoreSelection(range: Range): void {
+  const selection = window.getSelection();
+  if (!selection) return;
+  selection.removeAllRanges();
+  selection.addRange(range);
+  editableContainer(range.commonAncestorContainer)?.focus();
+}
+
+async function readClipboard(): Promise<string> {
+  if (!navigator.clipboard?.readText) throw new Error("Clipboard access is unavailable");
+  return navigator.clipboard.readText();
 }
 
 function isEditableTarget(value: EventTarget | null): value is EditableTarget {
@@ -124,7 +141,7 @@ function dispatchInput(target: EditableTarget): void {
   target.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
-/** App-wide text editing context menu for the native input and textarea controls. */
+/** App-wide clipboard context menu for text fields, editable content and selected page text. */
 export function ContextMenu({
   children,
   onError,
@@ -142,19 +159,70 @@ export function ContextMenu({
     }
     function handleContextMenu(event: MouseEvent) {
       const target = event.target;
-      if (!isEditableTarget(target) || target.disabled) return;
-      const { start, end } = selectionFor(target);
+      if (isEditableTarget(target) && !target.disabled) {
+        const { start, end } = selectionFor(target);
+        const selected = target.value.slice(start, end);
+        const customPaste = editablePasteHandlers.get(target)?.();
+        event.preventDefault();
+        setMenu({
+          x: event.clientX,
+          y: event.clientY,
+          canCopy: end > start,
+          canCut: end > start && !target.readOnly,
+          canPaste: !target.readOnly,
+          copy: async () => {
+            if (!target.isConnected) return;
+            target.focus();
+            target.setSelectionRange(start, end);
+            await writeClipboard(selected);
+          },
+          cut: async () => {
+            if (!target.isConnected) return;
+            target.focus();
+            target.setSelectionRange(start, end);
+            await writeClipboard(selected);
+            target.setRangeText("", start, end, "start");
+            dispatchInput(target);
+          },
+          paste: async () => {
+            if (!target.isConnected) return;
+            target.focus();
+            target.setSelectionRange(start, end);
+            if (customPaste) { await customPaste({ start, end }); return; }
+            const pasted = await readClipboard();
+            target.setRangeText(pasted, start, end, "end");
+            dispatchInput(target);
+          },
+        });
+        return;
+      }
+      const selection = window.getSelection();
+      const text = selection?.toString() ?? "";
+      if (!selection || !selection.rangeCount || !text.trim()) return;
+      const range = selection.getRangeAt(0).cloneRange();
+      const editable = editableContainer(range.commonAncestorContainer);
       event.preventDefault();
       setMenu({
-        target,
-        ...(editablePasteHandlers.has(target) ? { paste: editablePasteHandlers.get(target)!() } : {}),
-        start,
-        end,
         x: event.clientX,
         y: event.clientY,
-        canCopy: end > start,
-        canCut: end > start && !target.readOnly,
-        canPaste: !target.readOnly,
+        canCopy: true,
+        canCut: !!editable,
+        canPaste: !!editable,
+        copy: async () => { await writeClipboard(text); },
+        ...(editable ? {
+          cut: async () => {
+            if (!range.startContainer.isConnected) return;
+            await writeClipboard(text);
+            restoreSelection(range);
+            document.execCommand("delete");
+          },
+          paste: async () => {
+            if (!range.startContainer.isConnected) return;
+            const pasted = await readClipboard();
+            restoreSelection(range);
+            document.execCommand("insertText", false, pasted);
+          },
+        } : {}),
       });
     }
     function handleKeyDown(event: KeyboardEvent) {
@@ -178,29 +246,10 @@ export function ContextMenu({
 
   async function run(action: ContextAction): Promise<void> {
     if (!menu) return;
-    const { target, start, end } = menu;
-    if (!target.isConnected) {
-      setMenu(undefined);
-      return;
-    }
-    target.focus();
-    target.setSelectionRange(start, end);
     try {
-      if (action === "copy") {
-        await writeClipboard(target.value.slice(start, end));
-      } else if (action === "cut") {
-        await writeClipboard(target.value.slice(start, end));
-        target.setRangeText("", start, end, "start");
-        dispatchInput(target);
-      } else {
-        if (menu.paste) await menu.paste({ start, end });
-        else {
-          if (!navigator.clipboard?.readText) throw new Error("Clipboard access is unavailable");
-          const pasted = await navigator.clipboard.readText();
-          target.setRangeText(pasted, start, end, "end");
-          dispatchInput(target);
-        }
-      }
+      if (action === "copy") await menu.copy();
+      else if (action === "cut") await menu.cut?.();
+      else await menu.paste?.();
     } catch (error) {
       onError?.(error);
     } finally {

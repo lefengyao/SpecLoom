@@ -619,6 +619,9 @@ export default function App() {
                 tasks={state.tasks}
                 onSelectTask={workspace.setSelectedId}
                 onNewTask={() => setScope(true)}
+                onRemoveTask={(id) => { void workspace.removeTask(id); }}
+                onRotateMcp={() => { void workspace.rotateMcp(); }}
+                rotatingMcp={busy}
                 sessionsApi={api?.sessions}
                 godotPluginApi={state.project.engine === "godot" ? api?.pluginManagement : undefined}
                 configApi={api?.mcpConfig}

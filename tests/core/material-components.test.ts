@@ -69,6 +69,7 @@ describe("component project materials", () => {
     { id: "health" },
     { id: "health", values: { current: 200 } },
     { path: "specs/components/health.md", values: { current: 200 } },
+    { id: "health", values: { current: 200 }, notes: ["当前生命不得低于 0", "死亡后从场上移除"] },
   ])("attaches components using their defaults or typed entity overrides %j", async (binding) => {
     const { root, validator } = await fixture();
     await put(root, "specs/components/health.md", component());
@@ -81,6 +82,8 @@ describe("component project materials", () => {
     [{ id: "health", values: { unknown: 200 } }, "ENTITY_COMPONENT_FIELD_UNKNOWN"],
     [{ id: "health", values: [] }, "SPEC_FIELD_INVALID"],
     [{ id: "health", values: { current: { amount: 200 } } }, "ENTITY_COMPONENT_VALUE_INVALID"],
+    [{ id: "health", notes: "说明" }, "SPEC_FIELD_INVALID"],
+    [{ id: "health", notes: ["", "  "] }, "SPEC_FIELD_INVALID"],
   ])("rejects invalid entity component overrides %j", async (binding, code) => {
     const { root, validator } = await fixture();
     await put(root, "specs/components/health.md", component());
@@ -155,6 +158,35 @@ describe("component project materials", () => {
     for (const field of ["extends", "parent", "components"]) {
       expect(result.diagnostics).toContainEqual(expect.objectContaining({ path: "specs/entities/hero.md", code: "SPEC_FIELD_INVALID", message: expect.stringContaining(field) }));
     }
+  });
+
+  it("allows component definitions to inherit from another component", async () => {
+    const { root, validator } = await fixture();
+    await put(root, "specs/components/base.md", component("base", { fields: [{ key: "hp", type: "number", default: 100 }] }));
+    await put(root, "specs/components/derived.md", component("derived", { extends: "base", fields: [{ key: "speed", type: "number", default: 200 }] }));
+    await put(root, "specs/entities/hero.md", entity("hero", { components: [{ id: "derived", values: { hp: 50, speed: 300 } }] }));
+    expect((await validator.validate({ runGodot: false })).diagnostics).toEqual([]);
+  });
+
+  it("validates component inheritance targets and cycles", async () => {
+    const { root, validator } = await fixture();
+    await put(root, "specs/components/missing_base.md", component("missing_base", { extends: "absent" }));
+    await put(root, "specs/components/first.md", component("first", { extends: "second" }));
+    await put(root, "specs/components/second.md", component("second", { extends: "first" }));
+    const result = await validator.validate({ runGodot: false });
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({ path: "specs/components/missing_base.md", code: "COMPONENT_INHERIT_NOT_FOUND" }));
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({ code: "COMPONENT_INHERIT_CYCLE" }));
+  });
+
+  it("accepts inherited component fields in entity bindings and still rejects unknown keys", async () => {
+    const { root, validator } = await fixture();
+    await put(root, "specs/components/base.md", component("base", { fields: [{ key: "hp", type: "number", default: 100 }] }));
+    await put(root, "specs/components/derived.md", component("derived", { extends: "base", fields: [{ key: "speed", type: "number", default: 200 }] }));
+    await put(root, "specs/entities/hero.md", entity("hero", { components: [{ id: "derived", values: { hp: 50 } }] }));
+    await put(root, "specs/entities/npc.md", entity("npc", { components: [{ id: "derived", values: { typo: 1 } }] }));
+    const result = await validator.validate({ runGodot: false });
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({ path: "specs/entities/npc.md", code: "ENTITY_COMPONENT_FIELD_UNKNOWN" }));
+    expect(result.diagnostics.some((entry) => entry.path === "specs/entities/hero.md")).toBe(false);
   });
 
   it.each(["island", { path: "specs/maps/island.md" }])("rejects a map as an entity inheritance target %j", async (base) => {

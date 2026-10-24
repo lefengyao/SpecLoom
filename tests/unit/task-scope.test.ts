@@ -72,7 +72,9 @@ describe("TaskScope", () => {
     expect(scope.assertRead(".specloom/skills/project-context/SKILL.md")).toBe(".specloom/skills/project-context/SKILL.md");
     expect(scope.assertWrite(".specloom/skills/new/SKILL.md", "create")).toBe(".specloom/skills/new/SKILL.md");
     expect(() => scope.assertWrite(".specloom/history/new.md", "create")).toThrow();
-    expect(() => new TaskScope(specification({ writePaths: ["*"] }))).toThrow();
+    const wildcard = new TaskScope(specification({ writePaths: ["*"] }));
+    expect(wildcard.assertWrite("specs/hero.md", "update")).toBe("specs/hero.md");
+    expect(() => wildcard.assertWrite(".specloom/history/new.md", "create")).toThrow();
   });
 
   it("keeps caller mutations from changing permission grants", () => {

@@ -105,13 +105,14 @@ export function ReviewPane({
 }) {
   const tr = useI18n();
   const entries = review?.changeSet.entries ?? [];
+  const directFiles = review?.directFiles ?? [];
   const final = review && isTerminal(review.changeSet.status);
   return (
     <section className="review-pane">
       <header className="section-heading">
         <div>
           <h2>{tr("变更审查")}</h2>
-          <span className="subtle">{tr("{count} 个文件", { count: entries.length })}</span>
+          <span className="subtle">{tr("{count} 个文件", { count: entries.length + directFiles.length })}</span>
         </div>
         <div className="toolbar">
           {review && <Status status={review.changeSet.status} />}
@@ -126,7 +127,7 @@ export function ReviewPane({
       </header>
       <ValidationReport result={review?.validation} />
       <div className="change-list">
-        {entries.length === 0 ? (
+        {entries.length === 0 && directFiles.length === 0 ? (
           <p className="empty-state">{tr("暂无暂存变更")}</p>
         ) : (
           entries.map((entry) => {
@@ -159,6 +160,36 @@ export function ReviewPane({
           })
         )}
       </div>
+      {directFiles.length > 0 && (
+        <section className="direct-change-list" aria-label={tr("已直接修改的文件")}>
+          <h3>{tr("已直接修改的文件")} · {tr("{count} 个文件", { count: directFiles.length })}</h3>
+          <ul>
+            {directFiles.map((file) => (
+              <li key={file.path}>
+                <span>{file.operation === "create" ? tr("新增") : file.operation === "delete" ? tr("删除") : tr("修改")}</span>
+                <code>{file.path}</code>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {review && entries.length === 0 && directFiles.length > 0 && !final && (
+        <footer className="review-footer">
+          <code className="digest" title={review.changeSet.digest}>
+            {tr("摘要 {digest}", { digest: review.changeSet.digest })}
+          </code>
+          <div className="toolbar">
+            <button disabled={busy || running} onClick={onValidate}>
+              <ShieldCheck size={16} />
+              {tr("验证")}
+            </button>
+            <button className="primary" disabled={busy || running} onClick={onApprove}>
+              <CheckCheck size={16} />
+              {tr("标记完成")}
+            </button>
+          </div>
+        </footer>
+      )}
       {review && entries.length > 0 && (
         <footer className="review-footer">
           <code className="digest" title={review.changeSet.digest}>

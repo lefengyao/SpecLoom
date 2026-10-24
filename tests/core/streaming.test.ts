@@ -106,6 +106,16 @@ test("omits unknown transport error names and codes", async () => {
   expect(JSON.stringify((error as { details: unknown }).details)).not.toContain("private-token");
 });
 
+test("accepts MiMo usage frames with null choices and null tool arguments", async () => {
+  const frames = [
+    { choices: null, usage: { prompt_tokens: 1, completion_tokens: 2, total_tokens: 3 } },
+    { choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: "c", function: { name: "write", arguments: null } }] }, finish_reason: "tool_calls" }] },
+  ];
+  const result = await requestProtocolCompletion({ ...base, protocol: "openai", fetcher: async () => new Response(frames.map(sse).join("") + "data: [DONE]\n\n", { headers: { "content-type": "text/event-stream" } }) });
+  expect(result.message.tool_calls?.[0]?.function.arguments).toBe("{}");
+  expect(result.usage).toMatchObject({ promptTokens: 1, completionTokens: 2 });
+});
+
 test("still classifies invalid UTF-8 as a recoverable parsing failure", async () => {
   const request = requestProtocolCompletion({ ...base, protocol: "openai", fetcher: async () => new Response(new Uint8Array([0xc3, 0x28]), { headers: { "content-type": "application/json" } }) });
   await expect(request).rejects.toMatchObject({ code: "MODEL_ERROR", details: { reason: "response_parse_error" } });
@@ -120,7 +130,7 @@ test.each([
   ["openai", { choices: [{ delta: { tool_calls: [{ index: "bad", id: "c", function: { name: "write", arguments: "{}" } }] } }] }],
   ["openai", { choices: [{ delta: { tool_calls: [{ index: -1, id: "c", function: { name: "write", arguments: "{}" } }] } }] }],
   ["openai", { choices: [{ delta: { tool_calls: [{ index: 0, id: "c", function: { name: "write", arguments: 123 } }] } }] }],
-  ["openai", { choices: [{ delta: { tool_calls: [{ index: 0, id: "c", function: { name: "write", arguments: null } }] } }] }],
+  ["openai", { choices: [{ delta: { tool_calls: [{ index: 0, id: "c", function: { name: "write", arguments: {} } }] } }] }],
   ["openai", { choices: [{ delta: { content: 123 } }] }],
   ["openai", { choices: [{ delta: { reasoning_content: {} } }] }],
   ["anthropic", { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: 123 } }],

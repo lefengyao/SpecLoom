@@ -32,14 +32,17 @@ export function openAIText(value: unknown): string | undefined {
   let text = "";
   for (const part of value) {
     if (typeof part === "string") { text += part; continue; }
-    if (!responseObject(part) || typeof part.text !== "string") malformedStream();
+    if (!responseObject(part)) malformedStream();
     if (part.type !== undefined && typeof part.type !== "string") malformedStream();
+    if (part.text === undefined || part.text === null) continue;
+    if (typeof part.text !== "string") malformedStream();
     text += part.text;
   }
   return text;
 }
 function streamIndex(value: unknown, fallback: number): number {
   if (value === undefined) return fallback;
+  if (typeof value === "string" && /^\d+$/.test(value)) return Number(value);
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) malformedStream();
   return value;
 }
@@ -127,22 +130,24 @@ export async function readProtocolBody(response: Response, protocol: Protocol, o
       if (reason === "stop" || reason === "tool_calls") ended = true;
       assertCompletionStatus(protocol, reason);
       if (value.usage) usage = value.usage;
-      const delta = value.choices?.[0]?.delta;
-      if (value.choices !== undefined && !Array.isArray(value.choices)) malformedStream();
-      if (delta !== undefined && !responseObject(delta)) malformedStream();
+      if (value.choices !== undefined && value.choices !== null && !Array.isArray(value.choices)) malformedStream();
+      const rawDelta = Array.isArray(value.choices) ? value.choices[0]?.delta : undefined;
+      if (rawDelta !== undefined && rawDelta !== null && !responseObject(rawDelta)) malformedStream();
+      const delta = responseObject(rawDelta) ? rawDelta : undefined;
       const reasoning = openAIText(delta?.reasoning_content ?? delta?.reasoning);
       if (reasoning) { reasoningContent += reasoning; await emitThinking(reasoning); }
       const textValue = openAIText(delta?.content);
       if (textValue) await emitText(textValue);
       if (delta?.tool_calls != null && !Array.isArray(delta.tool_calls)) malformedStream();
       for (const item of delta?.tool_calls ?? []) {
-        if (!responseObject(item) || (item.function !== undefined && !responseObject(item.function))) malformedStream();
-        optionalString(item.id); optionalString(item.function?.name); optionalString(item.function?.arguments);
+        if (!responseObject(item) || (item.function !== undefined && item.function !== null && !responseObject(item.function))) malformedStream();
+        optionalString(item.id, true); optionalString(item.function?.name, true); optionalString(item.function?.arguments, true);
         const index = streamIndex(item.index, calls.size);
         const call = calls.get(index) ?? { id: "", name: "", raw: "" };
         if (item.id) call.id = item.id;
         if (item.function?.name) call.name += item.function.name;
-        const fragment = item.function?.arguments ?? "";
+        const rawArguments = item.function?.arguments;
+        const fragment = typeof rawArguments === "string" ? rawArguments : rawArguments === undefined || rawArguments === null ? "" : stringifyResponseValue(rawArguments);
         call.raw += fragment; calls.set(index, call); await emitTool(index, call, fragment);
       }
     } else if (protocol === "anthropic") {
@@ -155,10 +160,10 @@ export async function readProtocolBody(response: Response, protocol: Protocol, o
       if (value.type === "content_block_start") {
         const block = value.content_block;
         if (!responseObject(block)) malformedStream();
-        if (block.type === "text" && typeof block.text !== "string") malformedStream();
-        if (block.type === "thinking") { optionalString(block.thinking); optionalString(block.signature); }
+        if (block.type === "text" && block.text !== undefined && block.text !== null && typeof block.text !== "string") malformedStream();
+        if (block.type === "thinking") { optionalString(block.thinking, true); optionalString(block.signature, true); }
         if (block.type === "redacted_thinking" && typeof block.data !== "string") malformedStream();
-        if (block.type === "tool_use" && (typeof block.id !== "string" || !block.id || typeof block.name !== "string" || !block.name || (block.input !== undefined && !responseObject(block.input)))) malformedStream();
+        if (block.type === "tool_use" && (typeof block.id !== "string" || !block.id || typeof block.name !== "string" || !block.name || (block.input !== undefined && block.input !== null && !responseObject(block.input)))) malformedStream();
         if (block?.type === "tool_use") { const call = { id: block.id, name: block.name, raw: "", initial: block.input ?? {} }; calls.set(index, call); await emitTool(index, call); }
         else if (block?.type === "text" && block.text) await emitText(block.text);
         else if (block?.type === "thinking" || block?.type === "redacted_thinking") { thinking.set(index, { ...block }); if (block.type === "thinking" && block.thinking) await emitThinking(block.thinking); }
@@ -167,29 +172,33 @@ export async function readProtocolBody(response: Response, protocol: Protocol, o
         if (!responseObject(value.delta) || typeof value.delta.type !== "string") malformedStream();
         const kind = value.delta.type;
         const field = kind === "text_delta" ? "text" : kind === "input_json_delta" ? "partial_json" : kind === "thinking_delta" ? "thinking" : kind === "signature_delta" ? "signature" : undefined;
-        if (field && typeof value.delta[field] !== "string") malformedStream();
+        if (field && value.delta[field] !== undefined && value.delta[field] !== null && typeof value.delta[field] !== "string") malformedStream();
         if (value.delta?.type === "text_delta") await emitText(value.delta.text ?? "");
         if (value.delta?.type === "input_json_delta") {
           const call = calls.get(index);
           if (!call) throw new ProjectError("MODEL_ERROR", "Tool arguments arrived before their tool block.", { reason: "response_parse_error" });
-          const fragment = value.delta.partial_json; call.raw += fragment; await emitTool(index, call, fragment);
+          const fragment = typeof value.delta.partial_json === "string" ? value.delta.partial_json : "";
+          call.raw += fragment; await emitTool(index, call, fragment);
         }
         const block = thinking.get(index);
-        if (block && value.delta?.type === "thinking_delta") { block.thinking = (block.thinking ?? "") + value.delta.thinking; await emitThinking(value.delta.thinking ?? ""); }
-        if (block && value.delta?.type === "signature_delta") block.signature = (block.signature ?? "") + value.delta.signature;
+        if (block && value.delta?.type === "thinking_delta") {
+          const fragment = typeof value.delta.thinking === "string" ? value.delta.thinking : "";
+          block.thinking = (block.thinking ?? "") + fragment; await emitThinking(fragment);
+        }
+        if (block && value.delta?.type === "signature_delta") block.signature = (block.signature ?? "") + (typeof value.delta.signature === "string" ? value.delta.signature : "");
       }
     } else {
       if (value.candidates?.[0]?.finishReason === "STOP") { ended = true; terminated = true; }
       assertCompletionStatus(protocol, value.candidates?.[0]?.finishReason, value.promptFeedback?.blockReason);
       if (value.usageMetadata) usage = { ...usage, ...value.usageMetadata };
-      if (value.candidates !== undefined && !Array.isArray(value.candidates)) malformedStream();
+      if (value.candidates !== undefined && value.candidates !== null && !Array.isArray(value.candidates)) malformedStream();
       const streamParts = value.candidates?.[0]?.content?.parts;
-      if (streamParts !== undefined && !Array.isArray(streamParts)) malformedStream();
-      for (const part of value.candidates?.[0]?.content?.parts ?? []) {
+      if (streamParts !== undefined && streamParts !== null && !Array.isArray(streamParts)) malformedStream();
+      for (const part of streamParts ?? []) {
         if (!responseObject(part)) malformedStream();
-        optionalString(part.text); optionalString(part.thoughtSignature);
-        if (part.thought !== undefined && typeof part.thought !== "boolean") malformedStream();
-        if (part.functionCall !== undefined && (!responseObject(part.functionCall) || typeof part.functionCall.name !== "string" || !part.functionCall.name || (part.functionCall.args !== undefined && !responseObject(part.functionCall.args)))) malformedStream();
+        optionalString(part.text, true); optionalString(part.thoughtSignature, true);
+        if (part.thought !== undefined && part.thought !== null && typeof part.thought !== "boolean") malformedStream();
+        if (part.functionCall !== undefined && (!responseObject(part.functionCall) || typeof part.functionCall.name !== "string" || !part.functionCall.name || (part.functionCall.args !== undefined && part.functionCall.args !== null && !responseObject(part.functionCall.args)))) malformedStream();
         optionalString(part.functionCall?.id);
         if (typeof part.text === "string" && part.thought) await emitThinking(part.text);
         if (typeof part.text === "string" && !part.thought) { await emitText(part.text); parts.push({ text: part.text }); }
@@ -271,9 +280,9 @@ export async function readProtocolBody(response: Response, protocol: Protocol, o
       catch (error) { throw new ProjectError("MODEL_ERROR", "The model returned invalid JSON or UTF-8.", { reason: "response_parse_error" }, { cause: error }); }
       if (!responseObject(body)) malformedStream();
       assertCompletionStatus(protocol, protocol === "openai" ? body.choices?.[0]?.finish_reason : protocol === "anthropic" ? body.stop_reason : body.candidates?.[0]?.finishReason, body.promptFeedback?.blockReason);
-      if (protocol === "anthropic" && body.content !== undefined && (!Array.isArray(body.content) || !body.content.every(responseObject))) malformedStream();
+      if (protocol === "anthropic" && body.content !== undefined && body.content !== null && (!Array.isArray(body.content) || !body.content.every(responseObject))) malformedStream();
       const jsonParts = body.candidates?.[0]?.content?.parts;
-      if (protocol === "gemini" && jsonParts !== undefined && (!Array.isArray(jsonParts) || !jsonParts.every(responseObject))) malformedStream();
+      if (protocol === "gemini" && jsonParts !== undefined && jsonParts !== null && (!Array.isArray(jsonParts) || !jsonParts.every(responseObject))) malformedStream();
       if (protocol === "openai") { const value = body.choices?.[0]?.message; if (typeof (value?.reasoning_content ?? value?.reasoning) === "string") await emitThinking(value.reasoning_content ?? value.reasoning); }
       if (protocol === "anthropic") for (const block of body.content ?? []) if (block.type === "thinking" && typeof block.thinking === "string") await emitThinking(block.thinking);
       if (protocol === "gemini") for (const part of body.candidates?.[0]?.content?.parts ?? []) if (part.thought && typeof part.text === "string") await emitThinking(part.text);

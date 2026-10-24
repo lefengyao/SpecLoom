@@ -81,6 +81,28 @@ test("lists hierarchical groups including empty nodes and intersects descendant 
   ]), items: [expect.objectContaining({ id: "forest_guard", groupId: "forest", groupPath: "基础实体 / 森林" })] });
 });
 
+test("edits the project material group registry through MaterialUpdate", async () => {
+  await mkdir(path.join(root, "specs"), { recursive: true });
+  await writeFile(path.join(root, "specs/project.md"), writeMaterial({ schemaVersion: 1, id: "project", title: "项目", description: "项目", materialGroups: {
+    entity: [{ id: "basic", name: "基础", order: 0 }],
+    setting: [{ id: "world", name: "世界", order: 0 }],
+  } }, "# 项目"));
+  const project = await execute("MaterialRead", { path: "specs/project.md" }) as FileReadResult;
+  const updated = await execute("MaterialUpdate", { path: "specs/project.md", expectedVersion: project.version, changes: { materialGroups: { entity: [
+    { id: "basic", name: "基础", order: 0 },
+    { name: "模板", order: 1 },
+    { name: "黄金裔", order: 2 },
+    { name: "敌人", order: 3 },
+    { name: "悬峰城", order: 4 },
+  ] } } }) as FileReadResult;
+  const registry = parseMaterial(updated.content)?.data.materialGroups as { entity: { id: string; name: string; order: number }[]; setting: { id: string }[] };
+  expect(registry.entity.map((group) => group.name)).toEqual(["基础", "模板", "黄金裔", "敌人", "悬峰城"]);
+  expect(registry.entity[1]!.id).toMatch(/^group_entity_[a-f0-9]{10}$/);
+  expect(registry.setting).toEqual([{ id: "world", name: "世界", order: 0 }]);
+  const hero = await create("entity", "hero");
+  await expect(execute("MaterialUpdate", { path: hero.path, expectedVersion: hero.version, changes: { materialGroups: { entity: [] } } })).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
+});
+
 test("validates group IDs for agent create and update and clears legacy text on assignment", async () => {
   await mkdir(path.join(root, "specs"), { recursive: true });
   await writeFile(path.join(root, "specs/project.md"), writeMaterial({ id: "project", title: "项目", materialGroups: {
@@ -134,6 +156,29 @@ test("imports, deduplicates, reuses and clears bounded project images", async ()
   await expect(execute("MaterialSetImage", { path: hero.path, expectedVersion: reused.version, sourcePath: "../outside.png" })).rejects.toMatchObject({ code: "PATH_ESCAPE" });
   const cleared = await execute("MaterialSetImage", { path: hero.path, expectedVersion: reused.version, remove: true }) as FileReadResult;
   expect(parseMaterial(cleared.content)?.data.image).toBeUndefined();
+});
+
+test("resolves inherited component fields when reading and binding, and rejects inheritance cycles", async () => {
+  const base = await create("component", "base", { fields: [{ key: "hp", label: "生命", type: "number", default: 100 }, { key: "speed", type: "number", default: 100 }] });
+  const derived = await create("component", "derived", { extends: base.path, fields: [{ key: "speed", type: "number", default: 260 }] });
+  const read = await execute("MaterialRead", { path: derived.path }) as FileReadResult & { fields: unknown };
+  expect(read.fields).toEqual([{ key: "hp", label: "生命", type: "number", default: 100 }, { key: "speed", type: "number", default: 260 }]);
+  await expect(execute("MaterialUpdate", { path: base.path, expectedVersion: base.version, changes: { extends: derived.path } })).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
+  await expect(execute("MaterialUpdate", { path: derived.path, expectedVersion: derived.version, changes: { extends: "missing_component" } })).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
+  const cleared = await execute("MaterialUpdate", { path: derived.path, expectedVersion: derived.version, changes: { extends: null } }) as FileReadResult;
+  expect(parseMaterial(cleared.content)?.data.extends).toBeUndefined();
+  const restored = await execute("MaterialUpdate", { path: derived.path, expectedVersion: cleared.version, changes: { extends: base.path } }) as FileReadResult;
+  const hero = await create();
+  const bound = await execute("MaterialBindComponent", { path: hero.path, expectedVersion: hero.version, componentPath: restored.path, values: { hp: 30 } }) as FileReadResult;
+  expect(parseMaterial(bound.content)?.data.components).toEqual([{ id: "derived", values: { hp: 30, speed: 260 } }]);
+});
+
+test("rejects crop rectangles outside the image and crop combined with removal", async () => {
+  await mkdir(path.join(root, "art")); await writeFile(path.join(root, "art/hero.png"), Buffer.from(png, "base64"));
+  const hero = await create();
+  await expect(execute("MaterialSetImage", { path: hero.path, expectedVersion: hero.version, sourcePath: "art/hero.png", crop: { x: 0.8, y: 0, width: 0.5, height: 1 } })).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
+  await expect(execute("MaterialSetImage", { path: hero.path, expectedVersion: hero.version, remove: true, crop: { x: 0, y: 0, width: 1, height: 1 } })).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
+  expect(await readFile(path.join(root, hero.path), "utf8")).toBe(hero.content);
 });
 
 test("generic file writes to materials share schema and relationship validation", async () => {

@@ -13,6 +13,7 @@ import { shell } from "electron";
 import { randomUUID } from "node:crypto";
 import type { ProjectMediaLease } from "../../src/shared/project-files";
 import type { PreparedChatAttachment } from "../../src/shared/chat-attachments";
+import type { PluginInventory } from "../../src/shared/plugins";
 
 vi.mock("electron", () => ({ shell: { showItemInFolder: vi.fn() }, clipboard: { availableFormats: vi.fn(() => []), readBuffer: vi.fn(() => Buffer.alloc(0)), readImage: vi.fn(() => ({ isEmpty: () => true, getSize: () => ({ width: 0, height: 0 }), toPNG: () => Buffer.alloc(0) })), readText: vi.fn(() => "Hub clipboard text") } }));
 
@@ -44,6 +45,14 @@ describe("Hub runtime", () => {
         if (!reply.ok) throw new Error(reply.error?.message); return reply.data as T;
       } };
   }
+
+  it("exposes the SpecLoom plugin backend to Hub windows", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "specloom-hub-plugins-")); roots.push(root);
+    const runtime = await windowRuntime(root);
+    const inventory = await runtime.call<PluginInventory>("specPluginsList");
+    expect(inventory.trusted).toBe(true);
+    expect(inventory.plugins).toContainEqual(expect.objectContaining({ id: "specloom-git", enabled: true }));
+  });
 
   it("shares a project's sessions and MCP until its last window closes, without changing other window selection", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "specloom-hub-windows-")); roots.push(root);
@@ -215,6 +224,16 @@ describe("Hub runtime", () => {
     await first.call("removeTask", { taskId: task.scope.id });
     expect(second.send).toHaveBeenCalledWith("specloom:state-changed", state.project!.path);
     expect((await second.call("state")).tasks).toHaveLength(0);
+  });
+
+  it("removes the bound task when its conversation is deleted", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "specloom-hub-task-session-")); roots.push(root);
+    const first = await windowRuntime(root);
+    const state = await first.call("createExample"); const projectPath = state.project!.path;
+    const task = await first.call<{ scope: { id: string } }>("createTask", { scope: { title: "Bound task", readPaths: ["*"], writePaths: ["specs/**"], allowDelete: false, mode: "manual" } });
+    const session = await first.call<ChatSession>("sessionsCreate", { projectPath, taskId: task.scope.id });
+    await first.call("sessionsRemove", { projectPath, sessionId: session.id });
+    expect((await first.call("state")).tasks).toHaveLength(0);
   });
 
   it("waits for retiring a project before a concurrent window reopens its history", async () => {

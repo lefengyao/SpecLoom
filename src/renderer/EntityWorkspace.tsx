@@ -1,4 +1,4 @@
-import { memo, useEffect, useState, type Dispatch, type SetStateAction } from "react";
+import { memo, useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import type { DesktopApi } from "../shared/desktop-api";
 import { DocumentsView, type DocumentCategory, type MaterialDraft } from "./DocumentsView";
 import { EntityWorkbench } from "./EntityWorkbench";
@@ -39,9 +39,17 @@ export const EntityWorkspace = memo(function EntityWorkspace(props: EntityWorksp
   // The detail editor is heavy (catalog + full form). Keep it unmounted until
   // the user actually opens 详情 / 源码; the workbench is the default view.
   const [detailVisited, setDetailVisited] = useState(false);
+  const [detailRequest, setDetailRequest] = useState<{ path: string; sequence: number }>();
+  const detailSequence = useRef(0);
   useEffect(() => {
     if (mode !== "workbench") setDetailVisited(true);
   }, [mode]);
+  const openDetail = useCallback((path: string) => {
+    setDetailVisited(true);
+    setMode("detail");
+    setDetailRequest({ path, sequence: ++detailSequence.current });
+  }, []);
+  const fileRequest = detailRequest ?? props.openFileRequest;
 
   return (
     <section className="entity-workspace" aria-label={tr("实体")}>
@@ -72,6 +80,7 @@ export const EntityWorkspace = memo(function EntityWorkspace(props: EntityWorksp
           api={props.api}
           projectPath={props.projectPath}
           onError={props.onError}
+          onOpenDetail={openDetail}
         />
       </div>
 
@@ -92,8 +101,11 @@ export const EntityWorkspace = memo(function EntityWorkspace(props: EntityWorksp
           {...(props.onSavingChange ? { onSavingChange: props.onSavingChange } : {})}
           {...(props.reloadRequest ? { reloadRequest: props.reloadRequest } : {})}
           {...(props.onReloadHandled ? { onReloadHandled: props.onReloadHandled } : {})}
-          {...(props.openFileRequest ? { openFileRequest: props.openFileRequest } : {})}
-          {...(props.onOpenFileHandled ? { onOpenFileHandled: props.onOpenFileHandled } : {})}
+          {...(fileRequest ? { openFileRequest: fileRequest } : {})}
+          onOpenFileHandled={(sequence) => {
+            if (detailRequest?.sequence === sequence) setDetailRequest(undefined);
+            props.onOpenFileHandled?.(sequence);
+          }}
         />
       </div>
       )}

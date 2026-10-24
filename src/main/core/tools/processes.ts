@@ -23,7 +23,7 @@ interface Job {
 }
 const existingInstance = /EADDRINUSE|address\s+already\s+in\s+use|port\s+\d+\s+(?:is\s+)?(?:already\s+)?in\s+use|(?:another|existing)\s+instance|instance\s+(?:is\s+)?already\s+running|已有.{0,20}实例|(?:另一个|其他)实例.{0,20}(?:运行|启动)|实例.{0,20}(?:已在运行|正在运行)/i;
 const conflictNotice = "启动输出提示已有实例或端口被占用。Monitor 仅能停止本会话拥有的作业；先 list 核对可操作的作业，再按原命令 restart。若占用来自外部实例，请立即告知用户阻塞原因和需要关闭的实例，不能按进程名或端口批量结束程序。";
-function shellCommand(command: string, shell?: string): { executable: string; args: string[] } {
+export function shellCommand(command: string, shell?: string): { executable: string; args: string[] } {
   if (shell === "cmd") return { executable: "cmd.exe", args: ["/d", "/s", "/c", `chcp 65001 >nul & ${command}`] };
   if (shell === "powershell" || (!shell && process.platform === "win32")) {
     // Parse the original script separately so leading using/param declarations stay valid.

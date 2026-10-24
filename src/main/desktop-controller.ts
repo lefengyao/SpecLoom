@@ -12,8 +12,12 @@ import { ProjectLayout } from "./core/project-layout";
 import { RecentProjects } from "./core/recent-projects";
 import { ProviderVault } from "./core/provider-vault";
 import { resolveModelSettings, temperatureFromPreference } from "./core/model-settings";
-import type { AgentMessage } from "./core/agent-runtime";
+import { AgentRuntime, type AgentMessage } from "./core/agent-runtime";
 import { chatMessage } from "./core/agent-chat";
+import { systemPrompt } from "./core/agent-prompts";
+import { readProjectContext } from "./core/project-context";
+import { WorkspaceTools, type WorkspaceToolOptions } from "./core/tools/workspace-tools";
+import type { WorkProgress } from "./core/tools/processes";
 import { DesktopSessions } from "./desktop-sessions";
 import { FileStore } from "./core/file-store";
 import { spawn } from "node:child_process";
@@ -79,7 +83,10 @@ export class DesktopController {
   private readonly preferences: PreferencesStore;
   private opening = false;
   private materialWrites = 0;
+  private mcpRevision = 0;
   mcp: McpConnection | undefined;
+  /** Host-provided restart hook for the per-project MCP loopback server. */
+  mcpRotator?: () => Promise<McpConnection>;
   plugins?: PluginManager;
 
   readonly providers: ProviderVault;
@@ -192,6 +199,11 @@ export class DesktopController {
     await this.preferences.update(patch);
     return this.state();
   }
+  async rotateMcp(): Promise<WorkspaceState> {
+    if (!this.mcpRotator) throw new ProjectError("MODEL_ERROR", "当前宿主不支持刷新 MCP 令牌");
+    this.mcp = await this.mcpRotator();
+    return this.state();
+  }
   async openGodot(): Promise<void> {
     const project = this.currentCore().metadata.path;
     const executable = (await this.preferences.get()).godotPath.trim();
@@ -223,7 +235,7 @@ export class DesktopController {
       await this.preferences.get();
       await this.skills.syncToProject(root);
       const previous = this.core;
-      const next = await ProjectCore.open(root, { bundledSkillsDirectory: this.skillsDirectory, resolveCredential: (profile) => profile.providerId ? this.providers.resolveCredential({ providerId: profile.providerId, model: profile.model }) : this.vault.resolveCredential(profile), customInstructions: () => this.preferences.snapshot.customInstructions, diagnostics: this.diagnosticsLog, godotMcpHosts: godotMcpHostRegistry });
+      const next = await ProjectCore.open(root, { bundledSkillsDirectory: this.skillsDirectory, resolveCredential: (profile) => profile.providerId ? this.providers.resolveCredential({ providerId: profile.providerId, model: profile.model }) : this.vault.resolveCredential(profile), customInstructions: () => this.preferences.snapshot.customInstructions, godotExecutable: () => this.preferences.snapshot.godotPath, diagnostics: this.diagnosticsLog, godotMcpHosts: godotMcpHostRegistry });
       this.core = next;
       await previous?.close();
       const { path: opened, name } = this.core.metadata;
@@ -315,6 +327,38 @@ export class DesktopController {
       return { summary: result.summary, toolCalls: result.toolCalls };
     } finally { this.chatRuns.delete(runId); finished(); }
   }
+  /** Delegate behind MCP's Agent/Task tools; mirrors the in-app child agent toolbox. */
+  mcpChildAgent(root: string): NonNullable<WorkspaceToolOptions["delegate"]> {
+    const run = async (prompt: string, signal?: AbortSignal, progress?: WorkProgress, depth = 0): Promise<unknown> => {
+      if (depth >= 8) throw new ProjectError("MODEL_ERROR", "子智能体嵌套过深，请拆分任务");
+      const core = this.currentCore();
+      const profile = await this.resolveWorkflowProfile("");
+      const id = `mcp-agent-${randomUUID()}`;
+      const child = new WorkspaceTools(root, id, {
+        offlineDocuments: this.offlineDocuments,
+        globalMcpConfigPath: path.join(this.userData, "mcp.json"),
+        workflowTools: createWorkflowToolRuntime({ service: this.workflowServiceFor(core) }),
+      });
+      child.setPermissions("full");
+      child.setDelegate((childPrompt, childSignal, childProgress) => run(childPrompt, childSignal, childProgress, depth + 1));
+      try {
+        await child.capabilities(signal);
+        await progress?.("子智能体准备就绪");
+        const workspace = await core.readWorkspacePrompt();
+        const context = await readProjectContext(root, false);
+        const instructions = systemPrompt((await this.preferences.get()).customInstructions, workspace.content, undefined, context);
+        const runtime = new AgentRuntime({
+          catalog: child.catalog,
+          resolveCredential: (runtimeProfile) => runtimeProfile.providerId ? this.providers.resolveCredential({ providerId: runtimeProfile.providerId, model: runtimeProfile.model }) : this.vault.resolveCredential(runtimeProfile),
+          executeTool: (call) => child.execute(call.name, call.input, call.signal, call.onProgress, call.redactText),
+        });
+        const result = await runtime.run({ taskId: id, profile, prompt, systemPrompt: instructions, ...(signal ? { signal } : {}) });
+        return { summary: result.summary, toolCalls: result.toolCalls, rounds: result.rounds };
+      } finally { await child.close(); }
+    };
+    return run;
+  }
+
   /**
    * Resolve the model a workflow run should use.
    *
@@ -498,9 +542,11 @@ export class DesktopController {
   removeProjectSkill(id: string, projectPath: string) { return this.skills.removeProject(id, projectPath); }
   setSkillEnabled(id: string, enabled: boolean) { return this.skills.setEnabled(id, enabled); }
   removeSkill(id: string) { return this.skills.remove(id); }
+  /** Bumped on every MCP config edit so long-lived toolboxes rediscover downstream servers. */
+  get mcpConfigRevision(): number { return this.mcpRevision; }
   listMcpConfig(projectPath?: string) { return this.mcpConfig.list(projectPath); }
-  saveMcpConfig(scope: McpConfigScope, projectPath: string | undefined, name: string, config: McpServerConfig) { return this.mcpConfig.save(scope, projectPath, name, config); }
-  setMcpEnabled(scope: McpConfigScope, projectPath: string | undefined, name: string, enabled: boolean) { return this.mcpConfig.setEnabled(scope, projectPath, name, enabled); }
-  removeMcpConfig(scope: McpConfigScope, projectPath: string | undefined, name: string) { return this.mcpConfig.remove(scope, projectPath, name); }
+  async saveMcpConfig(scope: McpConfigScope, projectPath: string | undefined, name: string, config: McpServerConfig) { const result = await this.mcpConfig.save(scope, projectPath, name, config); this.mcpRevision++; return result; }
+  async setMcpEnabled(scope: McpConfigScope, projectPath: string | undefined, name: string, enabled: boolean) { const result = await this.mcpConfig.setEnabled(scope, projectPath, name, enabled); this.mcpRevision++; return result; }
+  async removeMcpConfig(scope: McpConfigScope, projectPath: string | undefined, name: string) { const result = await this.mcpConfig.remove(scope, projectPath, name); this.mcpRevision++; return result; }
   testMcpConfig(config: McpServerConfig) { return this.mcpConfig.test(config); }
 }

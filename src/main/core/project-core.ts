@@ -6,10 +6,13 @@ import type { ChangeEntry, ChangeSetData, FileReadResult, FileVersion, ModelProf
 import type { ChangeReview, RecoveryIssue, TaskView } from "../../shared/desktop-api";
 import { AgentConversationSchema, AgentRuntime, boundConversation, type AgentMessage, type AgentRunResult, type AgentRuntimeOptions } from "./agent-runtime";
 import { chatMessage } from "./agent-chat";
-import { systemPrompt } from "./agent-prompts";
+import { mcpSystemPrompt, systemPrompt } from "./agent-prompts";
 import { readProjectContext } from "./project-context";
 import { readWorkspacePrompt, saveWorkspacePrompt } from "./workspace-prompt";
 import { StagedChangeSet } from "./change-set";
+import { executeProcess } from "./docker-process";
+import { diffProjectFiles, scanProjectFiles, type DirectFileOperation } from "./direct-files";
+import { shellCommand } from "./tools/processes";
 import { ProjectError, serializeError } from "./errors";
 import { FileStore } from "./file-store";
 import { ProjectDocuments } from "./project-documents";
@@ -24,6 +27,8 @@ import type { JournalRecord } from "./change-journal";
 import type { DiagnosticsLogStore } from "./diagnostics-log";
 import { getGodotMcpToolDefinition } from "./godot-mcp/tool-definitions";
 import { godotMcpHostRegistry, type GodotMcpHostRegistry } from "./godot-mcp/host-registry";
+
+const directFileLimit = 5000;
 
 interface CoreTask {
   scope: TaskScope;
@@ -40,6 +45,8 @@ interface CoreTask {
   messages: AgentMessage[];
   events: TaskView["events"];
   historical?: ChangeSetData;
+  /** Files written directly by MCP sessions; displayed for review even though they are already on disk. */
+  directFiles: Record<string, DirectFileOperation>;
 }
 export interface ProjectCoreOptions {
   bundledSkillsDirectory?: string;
@@ -50,6 +57,8 @@ export interface ProjectCoreOptions {
   validator?: Pick<Validator, "validateWithDependencies">;
   /** Operator instructions from the settings view, appended after the built-in prompt. */
   customInstructions?: () => string;
+  /** Locally installed Godot executable; validation prefers it over Docker. */
+  godotExecutable?: () => string;
   diagnostics?: DiagnosticsLogStore;
   godotMcpHosts?: GodotMcpHostRegistry;
 }
@@ -66,7 +75,7 @@ export class ProjectCore {
   private constructor(readonly metadata: ProjectMetadata, private readonly options: ProjectCoreOptions) {
     this.store = new FileStore(metadata.path);
     this.snapshot = options.snapshotRunner ?? new SnapshotRunner(this.store);
-    this.validator = options.validator ?? new Validator(this.store, this.snapshot);
+    this.validator = options.validator ?? new Validator(this.store, this.snapshot, options.godotExecutable ? { godotExecutable: options.godotExecutable } : {});
   }
 
   static async open(root: string, options: ProjectCoreOptions = {}): Promise<ProjectCore> {
@@ -92,7 +101,7 @@ export class ProjectCore {
     const active = [...this.tasks.values()].filter((task) => !task.historical && ["staged", "validated", "committing"].includes(task.changes.preview().status)).length;
     if (active >= 128 || this.tasks.has(spec.id)) throw new ProjectError("TASK_SCOPE_DENIED", "Task identity is already used or active task capacity was reached");
     const scope = new TaskScope(spec);
-    const task: CoreTask = { scope, changes: new StagedChangeSet(this.store, { taskId: spec.id }), receipts: new Map(), before: {}, internalDependencies: {}, pending: Promise.resolve(), running: false, summary: "", messages: [], events: [] };
+    const task: CoreTask = { scope, changes: new StagedChangeSet(this.store, { taskId: spec.id }), receipts: new Map(), before: {}, internalDependencies: {}, pending: Promise.resolve(), running: false, summary: "", messages: [], events: [], directFiles: {} };
     this.tasks.set(spec.id, task);
     this.trimHistory();
     await this.persist(task);
@@ -131,13 +140,19 @@ export class ProjectCore {
   async projectTree() { return this.store.listTree(); }
   readWorkspacePrompt() { return readWorkspacePrompt(this.store); }
   saveWorkspacePrompt(content: string, expectedVersion: VersionToken) { return saveWorkspacePrompt(this.store, content, expectedVersion); }
+  /** Project prompt layers exposed to MCP clients on initialize. */
+  async mcpInstructions(): Promise<string> {
+    const workspace = await this.readWorkspacePrompt();
+    const projectContext = await readProjectContext(this.store.root, false);
+    return mcpSystemPrompt(this.options.customInstructions?.() ?? "", workspace.content, projectContext);
+  }
   async readDocument(path: string, expectedVersion: VersionToken): Promise<FileReadResult> {
     const normalized = this.store.normalizePath(path);
     if (!normalized.startsWith("specs/") && !normalized.startsWith(".specloom/skills/")) throw new ProjectError("TASK_SCOPE_DENIED", "Document inspection is limited to project specifications and Skills");
     return this.store.read(normalized, expectedVersion);
   }
 
-  async executeTool(taskId: string, name: string, input: Record<string, unknown>, signal?: AbortSignal): Promise<unknown> {
+  async executeTool(taskId: string, name: string, input: Record<string, unknown>, signal?: AbortSignal, options: { direct?: boolean } = {}): Promise<unknown> {
     const definition = toolCatalog.getTool(name);
     const parsed = definition?.schema.safeParse(input);
     if (!definition || !parsed?.success) throw new ProjectError("VALIDATION_FAILED", "Unknown tool or invalid tool arguments");
@@ -149,7 +164,10 @@ export class ProjectCore {
           throw new ProjectError("TASK_SCOPE_DENIED", "This task is finished; create a new task for further changes");
         }
         if (signal?.aborted) throw new ProjectError("COMMAND_FAILED", "Task operation was cancelled");
-        const result = await this.dispatch(task, name, parsed.data as Record<string, unknown>, signal);
+        if (options.direct === true && ["files.write", "files.patch", "bash.exec"].includes(name) && task.changes.preview().entries.length > 0) {
+          throw new ProjectError("TASK_SCOPE_DENIED", "This task still has staged changes; commit or reject them before using direct MCP tools");
+        }
+        const result = await this.dispatch(task, name, parsed.data as Record<string, unknown>, signal, options.direct === true);
         this.event(task, name, true, "完成");
         await this.persist(task);
         return result;
@@ -224,7 +242,7 @@ export class ProjectCore {
     }, profile, prompt, this.options.customInstructions?.() ?? "", workspace.content, previousMessages, signal);
   }
 
-  private async dispatch(task: CoreTask, name: string, input: Record<string, unknown>, signal?: AbortSignal): Promise<unknown> {
+  private async dispatch(task: CoreTask, name: string, input: Record<string, unknown>, signal?: AbortSignal, direct = false): Promise<unknown> {
     const taskId = task.scope.describe().id;
     if (getGodotMcpToolDefinition(name)) {
       if (this.metadata.engine !== "godot") throw new ProjectError("INVALID_PROJECT", "Godot MCP tools require a Godot project");
@@ -249,17 +267,21 @@ export class ProjectCore {
         }
         return [...visible.values()].sort((a, b) => a.path.localeCompare(b.path));
       }
-      case "files.read": return this.read(task, input.path as string, input.expectedVersion as VersionToken);
-      case "files.write": return this.stageWrite(task, input.path as string, input.content as string, input.expectedVersion as VersionToken, name);
+      case "files.read": return this.read(task, input.path as string, input.expectedVersion as VersionToken, true);
+      case "files.write": return direct
+        ? this.writeDirect(task, input.path as string, input.content as string, input.expectedVersion as VersionToken)
+        : this.stageWrite(task, input.path as string, input.content as string, input.expectedVersion as VersionToken, name);
       case "files.patch": {
         const path = input.path as string;
         const version = input.expectedVersion as VersionToken;
-        this.requireReceipt(task, path, version);
-        const file = await this.read(task, path, version);
+        const normalized = task.scope.assertRead(path);
+        this.requireReceipt(task, normalized, version);
+        const file = direct ? await this.store.read(normalized, version) : await this.read(task, normalized, version);
         const patch = input.patch as { search: string; replace: string };
         const index = file.content.indexOf(patch.search);
         if (index < 0 || file.content.indexOf(patch.search, index + 1) >= 0) throw new ProjectError("INVALID_PATCH", "The patch must match exactly one occurrence", { path });
-        return this.stageWrite(task, path, file.content.slice(0, index) + patch.replace + file.content.slice(index + patch.search.length), version, name);
+        const content = file.content.slice(0, index) + patch.replace + file.content.slice(index + patch.search.length);
+        return direct ? this.writeDirect(task, path, content, version) : this.stageWrite(task, path, content, version, name);
       }
       case "skills.list": return this.registry(task).list(task.scope);
       case "skills.load": {
@@ -271,6 +293,7 @@ export class ProjectCore {
         return loaded;
       }
       case "bash.exec": {
+        if (direct) return this.executeDirectBash(task, input.command as string, input.timeoutMs as number | undefined, signal);
         const overlay = task.changes.preview().entries;
         const session = await this.snapshot.create(task.scope, { overlay });
         try {
@@ -334,7 +357,10 @@ export class ProjectCore {
       result = { path: staged.path, version: expected, content: staged.nextContent! };
     } else {
       result = await this.store.read(normalized, expected);
-      task.changes.addDependency(normalized, result.version);
+      // A plain read has no staged baseline to protect: the material page, editors and other
+      // writers save straight to disk, so the newest read supersedes the earlier one. Staged
+      // outputs stay pinned above, where a differing version is still a conflict.
+      task.changes.replaceDependency(normalized, result.version);
       this.invalidate(task);
     }
     if (issueReceipt) task.receipts.set(this.store.pathIdentity(normalized), expected);
@@ -342,6 +368,67 @@ export class ProjectCore {
   }
   private requireReceipt(task: CoreTask, path: string, expected: VersionToken): void {
     if (expected !== "absent" && task.receipts.get(this.store.pathIdentity(path)) !== expected) throw new ProjectError("READ_REQUIRED", "Read this file at its current version before changing it", { path });
+  }
+  private async executeDirectBash(task: CoreTask, command: string, timeoutMs: number | undefined, signal?: AbortSignal): Promise<unknown> {
+    const before = await scanProjectFiles(this.store.root).catch(() => undefined);
+    if (!before) this.event(task, "direct.review", false, "Bash 变更基线扫描失败，本次改动未列入审查");
+    let result: Awaited<ReturnType<typeof executeProcess>> | undefined;
+    let failure: unknown;
+    let touchedChanges: { path: string; operation: DirectFileOperation }[] = [];
+    try {
+      const { executable, args } = shellCommand(command, "bash");
+      result = await executeProcess(executable, args, {
+        timeoutMs: timeoutMs ?? 120_000,
+        maxOutputBytes: 1024 * 1024,
+        cwd: this.store.root,
+        ...(signal === undefined ? {} : { signal }),
+        label: "Bash",
+      });
+      if (result.exitCode !== 0) throw new ProjectError("COMMAND_FAILED", "The direct command failed", { ...result });
+    } catch (error) {
+      failure = error;
+    } finally {
+      if (before) {
+        const changes = await scanProjectFiles(this.store.root).catch(() => undefined);
+        if (changes) {
+          const touched = diffProjectFiles(before, changes);
+          const denied: string[] = [];
+          for (const [path, operation] of Object.entries(touched)) {
+            if (!(path in task.directFiles) && Object.keys(task.directFiles).length >= directFileLimit) break;
+            task.directFiles[path] = operation;
+            try { task.scope.assertWrite(path, operation); }
+            catch (error) { if (error instanceof ProjectError && error.code === "TASK_SCOPE_DENIED") denied.push(path); }
+          }
+          touchedChanges = Object.entries(touched).slice(0, directFileLimit).map(([path, operation]) => ({ path, operation }));
+          if (denied.length) this.event(task, "bash.scope", false, `Bash 修改了任务范围外的文件：${denied.slice(0, 5).join("、")}${denied.length > 5 ? " 等" : ""}`);
+          this.invalidate(task);
+        } else {
+          this.event(task, "direct.review", false, "Bash 变更扫描失败，审查列表可能不完整");
+        }
+      }
+    }
+    if (failure !== undefined) throw failure;
+    return { ...result, changes: touchedChanges };
+  }
+  private async writeDirect(task: CoreTask, path: string, content: string, expected: VersionToken): Promise<FileVersion> {
+    const normalized = task.scope.assertRead(path);
+    this.requireReceipt(task, normalized, expected);
+    const current = await this.store.listVersion(normalized);
+    this.store.assertVersion(normalized, current.version, expected);
+    task.scope.assertWrite(normalized, current.exists ? "update" : "create");
+    this.store.validateContent(content);
+    if (normalized.toLowerCase().startsWith("specs/") && normalized.toLowerCase().endsWith(".md")) {
+      await new ProjectDocuments(this.store).save(normalized, content, expected);
+    } else {
+      await this.store.write(normalized, content, expected);
+    }
+    task.receipts.delete(this.store.pathIdentity(normalized));
+    if (normalized in task.directFiles || Object.keys(task.directFiles).length < directFileLimit) task.directFiles[normalized] = current.exists ? "update" : "create";
+    else this.event(task, "direct.review", false, `直接修改文件超过 ${directFileLimit} 个，审查列表已截断`);
+    this.invalidate(task);
+    const written = await this.store.listVersion(normalized);
+    if (task.changes.preview().entries.length === 0) task.changes.replaceDependency(normalized, written.version);
+    return written;
   }
   private async stageWrite(task: CoreTask, path: string, content: string, expected: VersionToken, tool: string): Promise<FileVersion> {
     const normalized = task.scope.assertRead(path);
@@ -363,7 +450,8 @@ export class ProjectCore {
     if (smokeScene) task.scope.assertRead(smokeScene);
     const preview = task.historical ?? task.changes.preview();
     const mutable = ["staged", "validated"].includes(preview.status);
-    const validation = await this.validator.validateWithDependencies({ taskId: preview.taskId, scope: task.scope, overlay: mutable ? preview.entries : [], ...(smokeScene ? { smokeScene } : {}), ...(signal ? { signal } : {}) });
+    const overlay = mutable ? preview.entries : [];
+    const validation = await this.validator.validateWithDependencies({ taskId: preview.taskId, scope: task.scope, overlay, ...(overlay.length ? {} : { changedPaths: Object.keys(task.directFiles) }), ...(smokeScene ? { smokeScene } : {}), ...(signal ? { signal } : {}) });
     for (const [path, version] of Object.entries(validation.dependencies)) {
       if (!mutable) break;
       if (path.startsWith(".specloom/") && !path.startsWith(".specloom/skills/")) task.internalDependencies[path] = version;
@@ -380,6 +468,13 @@ export class ProjectCore {
   }
   private async commit(task: CoreTask, digest: string): Promise<ReturnType<StagedChangeSet["preview"]>> {
     if (task.historical) throw new ProjectError("APPROVAL_REQUIRED", "Historical changes cannot be committed again");
+    const preview = task.changes.preview();
+    // Direct-to-disk MCP sessions have nothing to apply; finalize them so the task cannot be reused.
+    if (!preview.entries.length) {
+      const finalized = task.changes.finalize();
+      await this.persist(task);
+      return finalized;
+    }
     const manual = task.scope.describe().mode === "manual";
     if (manual && task.approval !== digest) throw new ProjectError("APPROVAL_REQUIRED", "Approve this exact change digest in the desktop application");
     if (!manual && (task.validation?.digest !== digest || task.validation.result.status !== "pass")) throw new ProjectError("VALIDATION_FAILED", "Automatic commits require passing validation of the current changes");
@@ -400,7 +495,9 @@ export class ProjectCore {
   }
   private review(task: CoreTask): ChangeReview {
     const changeSet = task.historical ?? task.changes.preview();
+    const directFiles = Object.entries(task.directFiles).sort(([left], [right]) => left.localeCompare(right)).map(([path, operation]) => ({ path, operation }));
     return { changeSet, before: { ...task.before }, approved: task.approval === changeSet.digest,
+      ...(directFiles.length ? { directFiles } : {}),
       ...(task.validation?.digest === changeSet.digest ? { validation: structuredClone(task.validation.result) } : {}) };
   }
   private invalidate(task: CoreTask): void { delete task.approval; delete task.validation; delete task.inventory; }
@@ -435,7 +532,7 @@ export class ProjectCore {
   }
   private async persist(task: CoreTask): Promise<void> {
     const id = digestBytes(task.scope.describe().id).slice(7);
-    await this.writeState(`.specloom/history/tasks/${id}.json`, { scope: task.scope.describe(), changeSet: task.historical ?? task.changes.preview(), before: task.before, summary: task.summary, events: task.events, conversation: task.messages, ...(task.validation ? { validation: task.validation } : {}) });
+    await this.writeState(`.specloom/history/tasks/${id}.json`, { scope: task.scope.describe(), changeSet: task.historical ?? task.changes.preview(), before: task.before, summary: task.summary, events: task.events, conversation: task.messages, directFiles: task.directFiles, ...(task.validation ? { validation: task.validation } : {}) });
   }
   private trimHistory(): void {
     const finished = [...this.tasks.entries()].filter(([, task]) => !task.running && !["staged", "validated", "committing"].includes((task.historical ?? task.changes.preview()).status));
@@ -455,7 +552,7 @@ export class ProjectCore {
     for (const { target, stat } of candidates.sort((a, b) => a.stat.mtimeMs - b.stat.mtimeMs)) {
       if (!stat.isFile() || stat.size > 32 * 1024 * 1024) continue;
       try {
-        const data = z.object({ scope: TaskScopeSpecSchema, changeSet: ChangeSetDataSchema, before: z.record(z.string(), z.string()), summary: z.string().max(131072), events: z.array(z.object({ time: z.string(), tool: z.string(), ok: z.boolean(), message: z.string() })).max(200), conversation: AgentConversationSchema.optional(), validation: z.object({ digest: z.string(), result: ValidationResultSchema }).strict().optional() }).strict().parse(JSON.parse((await readFile(target)).toString("utf8")));
+        const data = z.object({ scope: TaskScopeSpecSchema, changeSet: ChangeSetDataSchema, before: z.record(z.string(), z.string()), summary: z.string().max(131072), events: z.array(z.object({ time: z.string(), tool: z.string(), ok: z.boolean(), message: z.string() })).max(200), conversation: AgentConversationSchema.optional(), validation: z.object({ digest: z.string(), result: ValidationResultSchema }).strict().optional(), directFiles: z.record(z.string(), z.enum(["create", "update", "delete"])).optional() }).strict().parse(JSON.parse((await readFile(target)).toString("utf8")));
         const journal = history.find((record) => record.id === data.changeSet.id && record.taskId === data.scope.id);
         if (journal) {
           data.changeSet = { ...data.changeSet, digest: journal.digest, status: journal.status, entries: journal.operations.map((operation) => operation.entry) };
@@ -465,7 +562,7 @@ export class ProjectCore {
         const changes = new StagedChangeSet(this.store, { taskId: data.scope.id, id: data.changeSet.id });
         for (const entry of data.changeSet.entries) { scope.assertWrite(entry.path, entry.operation); changes.stage(entry); }
         for (const [path, version] of Object.entries(data.changeSet.dependencies)) changes.addDependency(path, version);
-        this.tasks.set(data.scope.id, { scope, changes, receipts: new Map(), before: data.before, summary: data.summary, events: data.events, internalDependencies: {}, messages: data.conversation ?? [], running: false, pending: Promise.resolve(), ...(["staged", "validated"].includes(data.changeSet.status) ? {} : { historical: data.changeSet, ...(data.validation ? { validation: data.validation } : {}) }) });
+        this.tasks.set(data.scope.id, { scope, changes, receipts: new Map(), before: data.before, summary: data.summary, events: data.events, internalDependencies: {}, messages: data.conversation ?? [], running: false, pending: Promise.resolve(), directFiles: data.directFiles ?? {}, ...(["staged", "validated"].includes(data.changeSet.status) ? {} : { historical: data.changeSet, ...(data.validation ? { validation: data.validation } : {}) }) });
       } catch { /* Invalid drafts do not grant task permissions or prevent opening a project. */ }
     }
     this.trimHistory();

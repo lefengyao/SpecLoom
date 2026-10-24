@@ -1,5 +1,5 @@
 import { FileText, Folder, ShieldCheck } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { MAX_TASK_GOAL_LENGTH, type TaskScopeSpec } from "../shared/contracts";
 import type { DesktopApi, ProjectTreeEntry } from "../shared/desktop-api";
 import { Modal } from "./ui";
@@ -48,6 +48,44 @@ function patternsFor(selected: Set<string>, rows: TreeRow[], filePaths: string[]
   return patterns.join("\n");
 }
 
+/** Large projects can have thousands of rows; typing in other fields must not reconcile them. */
+const ScopeTree = memo(function ScopeTree({
+  label,
+  rows,
+  selected,
+  onToggle,
+}: {
+  label: string;
+  rows: TreeRow[];
+  selected: Set<string>;
+  onToggle: (row: TreeRow) => void;
+}) {
+  return (
+    <div className="scope-tree-list" role="group" aria-label={label}>
+      {rows.map((row) => {
+        const count = row.files.filter((path) => selected.has(path)).length;
+        const checked = row.files.length > 0 && count === row.files.length;
+        return (
+          <label
+            key={row.path}
+            className={`scope-tree-row${row.kind === "directory" ? " is-directory" : ""}`}
+            style={{ paddingLeft: 6 + row.depth * 14 }}
+          >
+            <input
+              type="checkbox"
+              checked={checked}
+              ref={(element) => { if (element) element.indeterminate = count > 0 && !checked; }}
+              onChange={() => onToggle(row)}
+            />
+            {row.kind === "directory" ? <Folder size={14} /> : <FileText size={14} />}
+            <span>{row.name}</span>
+          </label>
+        );
+      })}
+    </div>
+  );
+});
+
 export function ScopeForm({
   initial = defaultScope,
   api,
@@ -68,7 +106,6 @@ export function ScopeForm({
   const [goal, setGoal] = useState(initial.goal ?? "");
   const [read, setRead] = useState(initial.readPaths.join("\n"));
   const [write, setWrite] = useState(initial.writePaths.join("\n"));
-  const [mode, setMode] = useState(initial.mode);
   const [allowDelete, setDelete] = useState(initial.allowDelete);
   const [rows, setRows] = useState<TreeRow[]>([]);
   const [filePaths, setFilePaths] = useState<string[]>([]);
@@ -110,7 +147,7 @@ export function ScopeForm({
       || (row.kind === "directory" && row.files.some((path) => path.toLowerCase().includes(needle))));
   }, [rows, query]);
 
-  function toggle(row: TreeRow) {
+  const toggle = useCallback((row: TreeRow) => {
     const next = new Set(selected);
     const targets = row.files;
     const allOn = targets.every((path) => next.has(path));
@@ -119,7 +156,7 @@ export function ScopeForm({
       else next.add(path);
     }
     setWrite(patternsFor(next, rows, filePaths));
-  }
+  }, [selected, rows, filePaths]);
 
   return (
     <Modal title={editing ? tr("编辑任务范围") : tr("确认任务范围")} onClose={onClose}>
@@ -132,7 +169,7 @@ export function ScopeForm({
             ...(goal.trim() ? { goal: goal.trim() } : {}),
             readPaths: paths(read),
             writePaths: paths(write),
-            mode,
+            mode: initial.mode,
             allowDelete,
           });
         }}
@@ -178,28 +215,7 @@ export function ScopeForm({
               <button type="button" onClick={() => setWrite("")}>{tr("清空")}</button>
               <span className="subtle">{selected.size} / {filePaths.length}</span>
             </div>
-            <div className="scope-tree-list" role="group" aria-label={tr("可写文件")}>
-              {visibleRows.map((row) => {
-                const count = row.files.filter((path) => selected.has(path)).length;
-                const checked = row.files.length > 0 && count === row.files.length;
-                return (
-                  <label
-                    key={row.path}
-                    className={`scope-tree-row${row.kind === "directory" ? " is-directory" : ""}`}
-                    style={{ paddingLeft: 6 + row.depth * 14 }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      ref={(element) => { if (element) element.indeterminate = count > 0 && !checked; }}
-                      onChange={() => toggle(row)}
-                    />
-                    {row.kind === "directory" ? <Folder size={14} /> : <FileText size={14} />}
-                    <span>{row.name}</span>
-                  </label>
-                );
-              })}
-            </div>
+            <ScopeTree label={tr("可写文件")} rows={visibleRows} selected={selected} onToggle={toggle} />
           </>}
         </fieldset>
         <details className="scope-advanced">
@@ -224,29 +240,14 @@ export function ScopeForm({
             />
           </label>
         </details>
-        <div className="form-row">
-          <label>
-            {tr("提交模式")}
-            <select
-              aria-label={tr("提交模式")}
-              value={mode}
-              onChange={(event) =>
-                setMode(event.target.value as TaskScopeSpec["mode"])
-              }
-            >
-              <option value="manual">{tr("手动审查")}</option>
-              <option value="auto">{tr("自动提交")}</option>
-            </select>
-          </label>
-          <label className="checkbox-label">
-            <input
-              type="checkbox"
-              checked={allowDelete}
-              onChange={(event) => setDelete(event.target.checked)}
-            />
-            {tr("允许删除")}
-          </label>
-        </div>
+        <label className="checkbox-label">
+          <input
+            type="checkbox"
+            checked={allowDelete}
+            onChange={(event) => setDelete(event.target.checked)}
+          />
+          {tr("允许删除")}
+        </label>
         <footer className="form-actions">
           <button type="button" onClick={onClose}>
             {tr("取消")}

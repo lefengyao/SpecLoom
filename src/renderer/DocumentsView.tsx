@@ -12,6 +12,7 @@ import { useI18n } from "./i18n";
 import { ProjectMediaPreview, ProjectTextPreview } from "./ProjectMediaPreview";
 import { canonicalProjectPreferencePath, isImportFile, readHideImportPreference, writeHideImportPreference } from "./project-file-preferences";
 import { categoryForPath, categoryLabels, categoryRoots, materialTree, summarizeMaterial, type DocumentCategory, type MaterialNode } from "./materials-model";
+import { withInheritedComponentFields } from "../shared/component-inheritance";
 import { IconButton } from "./ui";
 import "./materials.css";
 
@@ -132,6 +133,7 @@ export function DocumentsView({ api, projectPath, onError, busy, revision, categ
   const [entries, setEntries] = useState<ProjectTreeEntry[]>([]);
   const [loadedProject, setLoadedProject] = useState<string>();
   const [catalogFiles, setCatalogFiles] = useState<FileReadResult[]>([]);
+  const [documentsLoading, setDocumentsLoading] = useState(true);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogError, setCatalogError] = useState(false);
   const [file, setFile] = useState<FileReadResult>();
@@ -187,26 +189,31 @@ export function DocumentsView({ api, projectPath, onError, busy, revision, categ
   const refresh = useCallback(async (changedPath?: string) => {
     if (changedPath) catalogReads.current.delete(changedPath);
     const request = ++refreshRequest.current;
-    // Keep the complete project tree available for the resource manager even
-    // while a semantic document category is selected.
-    const [nextDocuments, nextEntries] = await Promise.all([api.documents(), api.projectTree()]);
-    if (request !== refreshRequest.current) return;
-    const paths = new Set(nextDocuments.map(document => document.path));
-    for (const path of catalogReads.current.keys()) if (!paths.has(path)) catalogReads.current.delete(path);
-    setDocuments(nextDocuments); setEntries(nextEntries); setLoadedProject(projectPath);
-    const path = requestedPath.current;
-    const current = editorState.current;
-    if (!path || current.file?.version === "absent" || (current.file && current.file.content !== current.text)) return;
-    if (["image", "audio", "video"].includes(resourceKind(path) ?? "")) return;
-    const updated = nextDocuments.find((item) => item.path === path);
-    if (!updated || (current.file?.path === path && current.file.version === updated.version)) return;
-    const reading = ++readRequest.current;
-    setLoading(true);
+    setDocumentsLoading(true);
     try {
-      const result = await api.readDocument(updated.path, updated.version);
-      if (reading === readRequest.current && requestedPath.current === path) { setFile(result); setText(result.content); }
-    } finally { if (reading === readRequest.current) setLoading(false); }
-  }, [api, projectPath]);
+      const nextDocuments = await api.documents();
+      if (request !== refreshRequest.current) return;
+      const paths = new Set(nextDocuments.map(document => document.path));
+      for (const path of catalogReads.current.keys()) if (!paths.has(path)) catalogReads.current.delete(path);
+      setDocuments(nextDocuments); setLoadedProject(projectPath);
+      // The physical tree is only the fallback view; do not hold material content on it.
+      void api.projectTree().then((nextEntries) => { if (request === refreshRequest.current) setEntries(nextEntries); }).catch(onError);
+      const path = requestedPath.current;
+      const current = editorState.current;
+      if (!path || current.file?.version === "absent" || (current.file && current.file.content !== current.text)) return;
+      if (["image", "audio", "video"].includes(resourceKind(path) ?? "")) return;
+      const updated = nextDocuments.find((item) => item.path === path);
+      if (!updated || (current.file?.path === path && current.file.version === updated.version)) return;
+      const reading = ++readRequest.current;
+      setLoading(true);
+      try {
+        const result = await api.readDocument(updated.path, updated.version);
+        if (reading === readRequest.current && requestedPath.current === path) { setFile(result); setText(result.content); }
+      } finally { if (reading === readRequest.current) setLoading(false); }
+    } finally {
+      if (request === refreshRequest.current) setDocumentsLoading(false);
+    }
+  }, [api, projectPath, onError]);
   const queueRefresh = useCallback(function schedule() {
     if (!activePage.current || !pendingChanges.current.size || refreshing.current || refreshTimer.current !== undefined) return;
     refreshTimer.current = setTimeout(() => {
@@ -307,7 +314,7 @@ export function DocumentsView({ api, projectPath, onError, busy, revision, categ
     const source = new Map(savedCatalog.map((item) => [item.path, item]));
     for (const draft of drafts) source.set(draft.path, summarizeMaterial(draft, groupRegistry));
     if (file && selectedPath) source.set(file.path, summarizeMaterial({ ...file, content: text }, groupRegistry));
-    return [...source.values()];
+    return withInheritedComponentFields([...source.values()]);
   }, [savedCatalog, drafts, file, selectedPath, text, groupRegistry]);
   const projectCatalogFile = catalogFiles.find((item) => item.path.toLowerCase() === "specs/project.md");
   useEffect(() => {
@@ -322,6 +329,7 @@ export function DocumentsView({ api, projectPath, onError, busy, revision, categ
     void saveMaterialGroupRegistry(groupRegistry).catch(onError);
   }, [usesCatalog, catalogLoading, catalogError, groupRegistrySaving, busy, saving, projectCatalogFile, selectedPath, dirty, groupRegistry, onError]);
   const visibleMaterials = catalog.filter((item) => categoryForPath(item.path) === category);
+  const treeLoading = catalogLoading || documentsLoading;
   const semantic = usesCatalog ? materialTree(visibleMaterials) : [];
   const draftPaths = new Set(drafts.map((item) => item.path));
   const documentVersions = [...documents.filter((item) => !draftPaths.has(item.path)), ...drafts.map((item) => ({ path: item.path, version: item.version, size: item.content.length }))];
@@ -444,7 +452,7 @@ export function DocumentsView({ api, projectPath, onError, busy, revision, categ
   });
   const creationLabel = category === "all" ? "" : tr("新建") + tr(categoryLabels[category]);
   const editorTitle = structured ? selectedMeta?.title ?? file?.path ?? tr(categoryLabels[category]) : file?.path ?? selectedPath ?? tr(categoryLabels[category]);
-  const treeTitle = category === "entity" || category === "setting" ? tr(categoryLabels[category]) + " " + tr("关系树") : category === "component" ? tr("组件库") : tr("项目树");
+  const treeTitle = category === "entity" || category === "setting" ? tr("{label}关系树", { label: tr(categoryLabels[category]) }) : category === "component" ? tr("组件库") : tr("项目树");
   const hasDetail = Boolean(projectPreview || file || selectedPath);
   function closeDetail() {
     requestedPath.current = undefined;
@@ -475,8 +483,8 @@ export function DocumentsView({ api, projectPath, onError, busy, revision, categ
     <aside id="document-tree" className="document-sidebar" inert={!treeOpen}>
       <header className="section-heading"><h2>{treeTitle}</h2><div className="toolbar"><IconButton label={tr("刷新项目树")} onClick={() => { void refresh().catch(onError); }}><RefreshCw size={16} /></IconButton></div></header>
       {category === "all" && <label className="project-file-filter"><input type="checkbox" checked={hideImport} onChange={(event) => { setHideImport(event.target.checked); writeHideImportPreference(projectPath, event.target.checked); }} />{tr("隐藏 .import 文件")}</label>}
-      <ul className="project-tree" role="tree" aria-label={treeTitle}>{usesCatalog && (visibleMaterials.length || !catalogLoading) && semantic.length ? renderMaterialNodes(semantic) : renderPhysicalNodes(tree)}</ul>
-      {catalogLoading && <p className="subtle">{tr("读取资料…")}</p>}
+      <ul className="project-tree" role="tree" aria-label={treeTitle}>{usesCatalog && (visibleMaterials.length || !treeLoading) && semantic.length ? renderMaterialNodes(semantic) : renderPhysicalNodes(tree)}</ul>
+      {treeLoading && <p className="subtle">{tr("读取资料…")}</p>}
       {!catalogLoading && !(usesCatalog ? semantic.length : tree.length) && <p className="empty-state">{tr("暂无")}{tr(categoryLabels[category])}</p>}
       <ResourceExplorer entries={visibleEntries} selectedPath={selectedPath} onSelect={(path) => { void selectFile(path); }} />
     </aside>
@@ -496,7 +504,7 @@ export function DocumentsView({ api, projectPath, onError, busy, revision, categ
       {usesCatalog ? (
         <div className={"document-workspace" + (hasDetail ? " has-detail" : "")}>
           <div id="material-explorer" className="document-explorer-pane" hidden={hasDetail && !explorerOpen} inert={hasDetail && !explorerOpen}>
-            {usesCatalog && <MaterialExplorer key={category} api={api} projectPath={projectPath} category={category} materials={visibleMaterials} groups={groupRegistry[category] ?? []} groupsSaving={groupRegistrySaving} onGroupsChange={(groups) => saveMaterialGroupsForCategory(category, groups)} selectedPath={selectedPath} loading={catalogLoading} onSelect={(path) => { void selectFile(path); }} />}
+            {usesCatalog && <MaterialExplorer key={category} api={api} projectPath={projectPath} category={category} materials={visibleMaterials} groups={groupRegistry[category] ?? []} groupsSaving={groupRegistrySaving} onGroupsChange={(groups) => saveMaterialGroupsForCategory(category, groups)} selectedPath={selectedPath} loading={treeLoading} onSelect={(path) => { void selectFile(path); }} />}
           </div>
           {hasDetail && <div className="document-detail-pane">{detailContent}</div>}
         </div>

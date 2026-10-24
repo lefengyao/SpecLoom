@@ -189,7 +189,7 @@ const english: Record<string, string> = {
   "还没有组件": "No components yet",
   "该组件没有字段。": "This component has no fields.",
   "组件定义不存在，无法编辑字段。请检查项目资料中的组件文件。": "The component definition is missing, so its fields cannot be edited. Check the component file in project materials.",
-  "继承组件的字段只读；覆盖后会为当前实体追加自有绑定，字段沿用当前值并可以继续编辑。": "Inherited fields are read-only. Overriding adds an own binding to this entity and keeps the current values editable.",
+  "继承组件的字段可直接编辑；首次修改会自动覆盖为当前实体的自有绑定。": "Inherited fields are editable; the first change creates an explicit override on this entity.",
 
   // Settings and common actions
   "外观": "Appearance",

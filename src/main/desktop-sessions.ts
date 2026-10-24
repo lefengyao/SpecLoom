@@ -154,11 +154,14 @@ export class DesktopSessions {
     try {
       const runs = await this.workspace(projectPath);
       if (runs.isRunning(id)) throw new ProjectError("MODEL_ERROR", "先停止运行再删除会话");
+      const session = runs.store.get(id);
       await this.stopCapabilities(projectPath, id);
       await runs.store.remove(id);
       const key = `${projectPath}\0${id}`;
       const cached = this.toolboxes.get(key); this.toolboxes.delete(key);
       await (await cached)?.close();
+      // A task owns exactly one conversation; deleting that conversation deletes the task too.
+      if (session.taskId) await this.core()?.removeTask(session.taskId).catch(() => undefined);
     } finally { release(); }
   }
   async export(projectPath: string, id: string) { return (await this.workspace(projectPath)).store.export(id); }

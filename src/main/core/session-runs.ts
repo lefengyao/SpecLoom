@@ -138,11 +138,11 @@ export class SessionRuns {
       if (this.options.snapshotStreaming !== false || streamEvents.length !== events.length) this.publish(SessionStore.view(updated));
     };
 
-    const checkpoint = async (): Promise<void> => {
+    const checkpoint = async (publish = true): Promise<void> => {
       try {
         const updated = await this.store.checkpoint(sessionId);
         appliedSinceCheckpoint = 0;
-        if (!run.controller.signal.aborted) this.publish(SessionStore.view(updated));
+        if (publish && !run.controller.signal.aborted) this.publish(SessionStore.view(updated));
       } catch (error) {
         streamWriteError ??= error;
         throw error;
@@ -217,7 +217,8 @@ export class SessionRuns {
         onUsage: async usage => {
           if (this.live.get(sessionId) !== run || run.controller.signal.aborted) return;
           await flushStreams();
-          await checkpoint();
+          // Persist pending conversation without re-publishing the previous usage snapshot.
+          await checkpoint(false);
           const updated = await this.store.update(sessionId, record => {
             if (this.live.get(sessionId) !== run || run.controller.signal.aborted) return;
             record.lastRequestUsage = { ...usage, source: "actual" };

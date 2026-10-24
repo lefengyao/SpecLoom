@@ -6,12 +6,42 @@ import { registerIpc } from "./ipc";
 import { ModelVault } from "./core/model-vault";
 import { ProviderVault } from "./core/provider-vault";
 import { startMcpServer, type LocalMcpServer } from "./mcp-server";
+import { McpCredentialStore } from "./core/mcp-credentials";
+import { WorkspaceTools } from "./core/tools/workspace-tools";
+import { createWorkflowToolRuntime } from "./core/workflow-tool-runtime";
 import { godotMcpHostRegistry } from "./core/godot-mcp/host-registry";
 import { PluginManager } from "./core/plugins/plugin-manager";
 
 let activeWindow: BrowserWindow | undefined;
 let controller: DesktopController;
 let mcp: LocalMcpServer | undefined;
+let mcpCredentials: McpCredentialStore | undefined;
+const mcpCredentialKey = "standalone";
+
+async function startMcp(rotate = false): Promise<LocalMcpServer> {
+  if (!mcpCredentials) throw new Error("MCP credentials are not initialized");
+  const stored = rotate ? await mcpCredentials.rotate(mcpCredentialKey) : await mcpCredentials.get(mcpCredentialKey);
+  const server = await startMcpServer(() => controller.currentCore(), {
+    ...(stored?.token ? { token: stored.token } : {}),
+    ...(stored?.port ? { port: stored.port } : {}),
+    offlineDocuments: controller.offlineDocuments,
+    configRevision: () => controller.mcpConfigRevision,
+    externalTools: (root) => {
+      const core = controller.currentCore();
+      const tools = new WorkspaceTools(root, "mcp", {
+        offlineDocuments: controller.offlineDocuments,
+        globalMcpConfigPath: path.join(app.getPath("userData"), "mcp.json"),
+        workflowTools: createWorkflowToolRuntime({ service: controller.workflowServiceFor(core) }),
+      });
+      tools.setPermissions("full");
+      tools.setDelegate(controller.mcpChildAgent(root));
+      return tools;
+    },
+  });
+  await mcpCredentials.remember(mcpCredentialKey, { token: server.token, port: Number(new URL(server.url).port) }).catch(() => undefined);
+  controller.mcp = { url: server.url, token: server.token };
+  return server;
+}
 let plugins: PluginManager | undefined;
 let unsubscribeSessionEvents: (() => void) | undefined;
 let shutdownStarted = false;
@@ -116,8 +146,14 @@ void app.whenReady().then(async () => {
     logDirectory: path.join(app.getPath("userData"), "plugin-logs"),
   });
   controller.plugins = plugins;
-  mcp = await startMcpServer(() => controller.currentCore());
-  controller.mcp = { url: mcp.url, token: mcp.token };
+  mcpCredentials = new McpCredentialStore(app.getPath("userData"));
+  mcp = await startMcp();
+  controller.mcpRotator = async () => {
+    const previous = mcp;
+    await previous?.close();
+    mcp = await startMcp(true);
+    return { url: mcp.url, token: mcp.token };
+  };
   createWindow();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
