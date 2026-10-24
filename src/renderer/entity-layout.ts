@@ -186,14 +186,12 @@ export function packMountPositions(cards: PackedCard[], entitySize: EntitySize =
     if (bucket) bucket.push(card.id); else buckets.set(key, [card.id]);
   }
   const placedY = new Map<string, number>();
+  // Cards are vertically centred on the entity, and each child group is centred on
+  // its parent, so the tree reads as aligned rows instead of a stack from y=0.
+  const entityCenterY = entitySize.height / 2;
+  const cardHeight = rowHeight - gap;
+  const columns = new Map<string, string[]>();
   for (const [key, ids] of buckets) {
-    const [facingText, depthText] = key.split(":");
-    const facing = Number(facingText) as 1 | -1;
-    const depth = Number(depthText);
-    const x = facing === 1
-      ? entitySize.width + gap + depth * columnWidth
-      : -(gap + columnWidth * (depth + 1));
-    // Children sort by their parent's row so subtrees stay together.
     const sorted = [...ids].sort((left, right) => {
       const leftParent = byId.get(left)?.parent;
       const rightParent = byId.get(right)?.parent;
@@ -201,11 +199,50 @@ export function packMountPositions(cards: PackedCard[], entitySize: EntitySize =
       const rightY = rightParent ? placedY.get(rightParent) ?? 0 : 0;
       return (leftY - rightY) || ((order.get(left) ?? 0) - (order.get(right) ?? 0));
     });
-    sorted.forEach((id, index) => {
-      const y = index * rowHeight;
-      positions[id] = { x: Math.round(x), y: Math.round(y) };
-      placedY.set(id, y);
-    });
+    columns.set(key, sorted);
+  }
+  // Place depth by depth so a column can centre itself on already placed parents.
+  const depthsInOrder = [...new Set([...columns.keys()].map((key) => Number(key.split(":")[1])))].sort((left, right) => left - right);
+  for (const depth of depthsInOrder) {
+    for (const [key, ids] of columns) {
+      if (Number(key.split(":")[1]) !== depth) continue;
+      const facing = Number(key.split(":")[0]) as 1 | -1;
+      const x = facing === 1
+        ? entitySize.width + gap + depth * columnWidth
+        : -(gap + columnWidth * (depth + 1));
+      if (depth === 0) {
+        // Direct mounts: centre the whole column on the entity in one pass.
+        const span = (ids.length - 1) * rowHeight + cardHeight;
+        const start = entityCenterY - span / 2;
+        ids.forEach((id, index) => {
+          const y = Math.round(start + index * rowHeight);
+          positions[id] = { x: Math.round(x), y };
+          placedY.set(id, y);
+        });
+        continue;
+      }
+      let cursor = -Infinity;
+      // One contiguous block per parent keeps siblings together.
+      let index = 0;
+      while (index < ids.length) {
+        const parent = byId.get(ids[index]!)?.parent;
+        let end = index + 1;
+        while (end < ids.length && byId.get(ids[end]!)?.parent === parent) end += 1;
+        const group = ids.slice(index, end);
+        const blockHeight = (group.length - 1) * rowHeight;
+        // Align the group on the parent card's centre, not its top edge.
+        const center = parent ? (placedY.get(parent) ?? entityCenterY - cardHeight / 2) + cardHeight / 2 : entityCenterY;
+        // Centre the block's outer span (first card top to last card bottom), not just its rows.
+        const start = Math.max(cursor + (cursor === -Infinity ? 0 : rowHeight), center - (blockHeight + cardHeight) / 2);
+        group.forEach((id, offset) => {
+          const y = Math.round(start + offset * rowHeight);
+          positions[id] = { x: Math.round(x), y };
+          placedY.set(id, y);
+        });
+        cursor = start + blockHeight;
+        index = end;
+      }
+    }
   }
   return positions;
 }

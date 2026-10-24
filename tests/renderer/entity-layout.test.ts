@@ -121,6 +121,13 @@ describe("packMountPositions", () => {
     }
   });
 
+  test("centres columns on the entity and each child group on its parent", () => {
+    const positions = packMountPositions([card("root"), card("child", "root")]);
+    const entityCenter = ENTITY_CARD_SIZE.height / 2;
+    expect(positions.root!.y + COMPONENT_CARD_SIZE.height / 2).toBeCloseTo(entityCenter, 0);
+    expect(positions.child!.y + COMPONENT_CARD_SIZE.height / 2).toBeCloseTo(positions.root!.y + COMPONENT_CARD_SIZE.height / 2, 0);
+  });
+
   test("never overlaps cards across depths", () => {
     const cards = [card("a"), card("b", "a"), card("c", "b"), card("d")];
     const positions = packMountPositions(cards);

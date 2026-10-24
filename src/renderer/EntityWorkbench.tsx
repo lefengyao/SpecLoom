@@ -638,6 +638,8 @@ function EntityCanvas({
           onEdgesChange={onEdgesChange}
           minZoom={0.4}
           maxZoom={1.6}
+          snapToGrid
+          snapGrid={[16, 16]}
           nodesConnectable
           edgesFocusable={false}
           onConnect={connect}
