@@ -107,8 +107,9 @@ describe("SystemWorkbench", () => {
     const region = await screen.findByRole("region", { name: "系统工作台" });
     fireEvent.click(within(region).getByText("音频"));
     fireEvent.click(await screen.findByRole("button", { name: "添加挂载" }));
-    const dialog = await screen.findByRole("dialog", { name: "添加挂载" });
+    const dialog = await screen.findByRole("dialog", { name: "添加组件" });
     fireEvent.click(within(dialog).getByRole("button", { name: /决策树/ }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "添加" }));
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
     await waitFor(() => expect(api.saveDocument).toHaveBeenCalledTimes(1));
     const mounts = frontMatter(api.saveDocument.mock.calls[0]![2]).mounts as { id: string; key: string }[];

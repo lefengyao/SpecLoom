@@ -1,4 +1,4 @@
-import { Plus, RefreshCw, Save, Trash2, X } from "lucide-react";
+import { Plus, RefreshCw, Save, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "@xyflow/react/dist/style.css";
 import { Background, Controls, MiniMap, ReactFlow, type Edge, type Node } from "@xyflow/react";
@@ -10,6 +10,7 @@ import { summarizeMaterial, type MaterialSummary } from "../shared/material-cata
 import { categoryForPath } from "./materials-model";
 import { COMPONENT_CARD_SIZE, type EntityPoint } from "./entity-layout";
 import { SYSTEM_NODE_ID, autoSystemPositions, loadSystemLayout, saveSystemLayout } from "./system-layout";
+import { ComponentBrowserDialog, type BrowserEntry } from "./ComponentBrowserDialog";
 import { useI18n } from "./i18n";
 import "./system-workbench.css";
 
@@ -42,7 +43,6 @@ export function SystemWorkbench({ api, projectPath, onError, onOpenDetail }: Sys
   const [selectedMount, setSelectedMount] = useState<string>();
   const [layout, setLayout] = useState<Record<string, Record<string, EntityPoint>>>(() => loadSystemLayout(projectPath));
   const [browserOpen, setBrowserOpen] = useState(false);
-  const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ kind: "error" | "saved"; text: string }>();
@@ -153,7 +153,6 @@ export function SystemWorkbench({ api, projectPath, onError, onOpenDetail }: Sys
     writeMounts([...mounts, next]);
     setSelectedMount(bindingKey(next));
     setBrowserOpen(false);
-    setQuery("");
   };
 
   const selected = mounts.find((binding) => bindingKey(binding) === selectedMount);
@@ -236,7 +235,23 @@ export function SystemWorkbench({ api, projectPath, onError, onOpenDetail }: Sys
     }));
   };
 
-  const filteredComponents = components.filter((component) => `${component.title} ${component.id}`.toLowerCase().includes(query.trim().toLowerCase()));
+  const browserEntries = useMemo<BrowserEntry[]>(() => components.map((component) => {
+    const parsedComponent = parseMaterial(component.content);
+    const notes = Array.isArray(parsedComponent?.data.notes) ? parsedComponent!.data.notes.filter((note): note is string => typeof note === "string") : [];
+    return {
+      path: component.path,
+      id: component.id,
+      title: component.title,
+      ...(component.description ? { description: component.description } : {}),
+      ...(parsedComponent?.body ? { body: parsedComponent.body } : {}),
+      ...(notes.length ? { notes } : {}),
+      ...(component.extends ? { extendsRef: component.extends } : {}),
+      ...(component.scope ? { scope: component.scope } : {}),
+      fields: component.fields,
+      ...(component.groupPath ? { groupLabel: component.groupPath } : component.group ? { groupLabel: component.group } : {}),
+      status: mounts.some((binding) => binding.id === component.id) ? "added" : "available",
+    } as BrowserEntry;
+  }), [components, mounts]);
 
   return <section className="swb" aria-label={tr("系统工作台")}>
     <aside className="swb-systems" aria-label={tr("系统列表")}>
@@ -305,15 +320,19 @@ export function SystemWorkbench({ api, projectPath, onError, onOpenDetail }: Sys
         {selected.mount && <p className="subtle">{tr("挂载于 {parent} · {anchor}", { parent: selected.mount.parent, anchor: selected.mount.anchor })}</p>}
       </>}
     </aside>
-    {browserOpen && <div className="swb-browser" role="dialog" aria-label={tr("添加挂载")}>
-      <header><h2>{tr("添加挂载")}</h2><button type="button" aria-label={tr("关闭")} onClick={() => setBrowserOpen(false)}><X size={15} /></button></header>
-      <input aria-label={tr("搜索组件")} placeholder={tr("搜索组件")} value={query} onChange={(event) => setQuery(event.target.value)} autoFocus />
-      {filteredComponents.length ? <ul>{filteredComponents.map((component) => <li key={component.id}>
-        <button type="button" onClick={() => addMount(component)}>
-          <strong>{component.title}</strong><code>{component.id}</code>
-          <span className="subtle">{component.fields.length ? tr("{count} 个字段", { count: component.fields.length }) : tr("无字段")}</span>
-        </button>
-      </li>)}</ul> : <p className="subtle">{tr("没有匹配的组件。")}</p>}
-    </div>}
+    {browserOpen && <ComponentBrowserDialog
+      title="添加组件"
+      pickLabel="添加"
+      entries={browserEntries}
+      projectPath={projectPath}
+      recentPrefix="specloom.system-workbench.recent-components."
+      favoritePrefix="specloom.system-workbench.favorite-components."
+      onPick={(entry) => {
+        const component = components.find((item) => item.id === entry.id);
+        if (component) addMount(component);
+      }}
+      onClose={() => setBrowserOpen(false)}
+      emptyHint={tr("还没有组件，请先在组件页新建。")}
+    />}
   </section>;
 }
