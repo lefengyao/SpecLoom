@@ -4,8 +4,12 @@ import { type ComponentBinding, type ComponentField, type MaterialDocument } fro
 import { type StateMachine } from "../shared/state-machine";
 import { materialGroupPath, resolveLegacyGroup, type MaterialGroup } from "../shared/material-groups";
 import { categoryForPath, componentScope, componentScopeLabels, materialScope, referenceId, resolveMaterial, wouldCycle, type MaterialSummary } from "./materials-model";
-import { AUDIO_SYSTEM_ID, audioBusUsage, isBuiltinBus, readAudioBuses, readAudioEvents, type AudioBus, type AudioEvent } from "../shared/audio-system";
+import { AUDIO_SYSTEM_ID } from "../shared/audio-system";
 import { StateMachineEditor } from "./StateMachineEditor";
+import { AudioSection } from "./material-details/AudioSection";
+import { MountsSection } from "./material-details/MountsSection";
+import { SignalsSection } from "./material-details/SignalsSection";
+import { SpecLinkSection } from "./material-details/SpecLinkSection";
 import { useI18n } from "./i18n";
 
 type FieldValue = ComponentField["default"];
@@ -62,6 +66,8 @@ export function MaterialDetails({ material, catalog, groups = [], onChange, disa
   const isSystem = category === "system";
   const isFeature = category === "feature";
   const isDecision = category === "decision";
+  const specKind = isSystem ? "system" : isFeature ? "feature" : isDecision ? "decision" : undefined;
+  const isAudioSystem = isSystem && data.id === AUDIO_SYSTEM_ID;
   const rawBindings: unknown[] = Array.isArray(data.components) ? data.components : [];
   // Keep partially edited keys/defaults in place until the form is submitted.
   // The catalog reader filters invalid definitions, which would remove an input
@@ -220,69 +226,6 @@ export function MaterialDetails({ material, catalog, groups = [], onChange, disa
     if (key && fields.some((field, position) => position !== index && field.key === key)) return tr("字段名称重复：{key}", { key });
     return "";
   };
-  const referenceItems = (target: "component" | "entity" | "system" | "decision") =>
-    catalog.filter((item) => !item.invalid && categoryForPath(item.path) === target);
-  const decisionTrees = catalog.filter((item) => !item.invalid && categoryForPath(item.path) === "decision_tree");
-  const mountList = Array.isArray(data.mounts)
-    ? data.mounts.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item))
-    : [];
-  const updateMount = (index: number, change: Record<string, unknown>) =>
-    patch({ mounts: mountList.map((mount, position) => position === index ? { ...mount, ...change } : mount) });
-  const signalNames = Array.isArray(data.signals) ? data.signals.filter((item): item is string => typeof item === "string") : [];
-  const isAudioSystem = isSystem && data.id === AUDIO_SYSTEM_ID;
-  const audioBuses: AudioBus[] = isAudioSystem ? readAudioBuses(data) : [];
-  const audioEvents: AudioEvent[] = isAudioSystem ? readAudioEvents(data) : [];
-  const audioUsage = audioBusUsage(audioEvents);
-  /** Built-in buses, buses with events and buses with children keep their name; rename is refused. */
-  const busLocked = (bus: AudioBus) => isBuiltinBus(bus.name) || (audioUsage.get(bus.name)?.length ?? 0) > 0 || audioBuses.some((item) => item.parent === bus.name);
-  const writeAudio = (buses: AudioBus[], events: AudioEvent[]) => emit({ ...data, buses, events });
-  const normalizeBus = (bus: AudioBus): AudioBus => ({
-    name: bus.name,
-    ...(bus.parent ? { parent: bus.parent } : {}),
-    ...(bus.volume !== undefined ? { volume: bus.volume } : {}),
-    ...(bus.muted !== undefined ? { muted: bus.muted } : {}),
-    ...(bus.description ? { description: bus.description } : {}),
-  });
-  const normalizeEvent = (event: AudioEvent): AudioEvent => ({
-    id: event.id,
-    bus: event.bus,
-    ...(event.streams?.length ? { streams: event.streams } : {}),
-    ...(event.volume_db !== undefined ? { volume_db: event.volume_db } : {}),
-    ...(event.pitch !== undefined ? { pitch: event.pitch } : {}),
-    ...(event.max_concurrent !== undefined ? { max_concurrent: event.max_concurrent } : {}),
-    ...(event.cooldown !== undefined ? { cooldown: event.cooldown } : {}),
-    ...(event.priority !== undefined ? { priority: event.priority } : {}),
-    ...(event.loop !== undefined ? { loop: event.loop } : {}),
-    ...(event.positional !== undefined ? { positional: event.positional } : {}),
-  });
-  const updateBus = (index: number, change: Partial<Omit<AudioBus, "parent">> & { parent?: string | null }) => writeAudio(audioBuses.map((bus, position) => {
-    if (position !== index) return bus;
-    const merged: AudioBus = { ...bus, ...change } as AudioBus;
-    if (change.parent === null) delete merged.parent;
-    return normalizeBus(merged);
-  }), audioEvents);
-  const removeBus = (index: number) => writeAudio(audioBuses.filter((_, position) => position !== index), audioEvents);
-  const addBus = () => {
-    const used = new Set(audioBuses.map((bus) => bus.name));
-    let index = audioBuses.length + 1;
-    let name = `bus_${index}`;
-    while (used.has(name)) { index++; name = `bus_${index}`; }
-    writeAudio([...audioBuses, { name, parent: "master", volume: 1, muted: false }], audioEvents);
-  };
-  const updateEvent = (index: number, change: Partial<AudioEvent>) => writeAudio(audioBuses, audioEvents.map((event, position) => position === index ? normalizeEvent({ ...event, ...change }) : event));
-  const removeEvent = (index: number) => writeAudio(audioBuses, audioEvents.filter((_, position) => position !== index));
-  const addEvent = () => {
-    const used = new Set(audioEvents.map((event) => event.id));
-    let index = audioEvents.length + 1;
-    let id = `event_${index}`;
-    while (used.has(id)) { index++; id = `event_${index}`; }
-    writeAudio(audioBuses, [...audioEvents, { id, bus: audioBuses[2]?.name ?? "sfx", volume_db: 0, pitch: 0, max_concurrent: 3, cooldown: 0, priority: 0, loop: false, positional: false }]);
-  };
-  const updateSignals = (next: string[]) => {
-    const updated = { ...data };
-    if (next.length) updated.signals = next; else delete updated.signals;
-    emit(updated);
-  };
   const bindingKeyOf = (entry: unknown): string => entry && typeof entry === "object" && !Array.isArray(entry) && typeof (entry as Record<string, unknown>).key === "string" ? String((entry as Record<string, unknown>).key) : "";
   const updateBindingKey = (index: number, id: string, value: string) => patch({ components: rawBindings.map((entry, position) => {
     if (position !== index) return entry;
@@ -290,28 +233,6 @@ export function MaterialDetails({ material, catalog, groups = [], onChange, disa
     if (value.trim()) original.key = value.trim(); else delete original.key;
     return original;
   }) });
-  const referenceIds = (key: string): string[] => (Array.isArray(data[key]) ? (data[key] as unknown[]).filter((item): item is string => typeof item === "string") : []);
-  const referenceSection = (label: string, key: string, target: "component" | "entity" | "system" | "decision") => {
-    const items = referenceItems(target).filter((item) => item.id !== data.id);
-    return <section key={key} className="material-relationship" aria-label={label}>
-      <h3>{label}</h3>
-      {items.length ? <ul className="material-reference-list">{items.map((item) => <li key={item.id}>
-        <label>
-          <input type="checkbox" aria-label={`${label} ${item.title}`} checked={referenceIds(key).includes(item.id)} onChange={(event) => {
-            const current = referenceIds(key);
-            patch({ [key]: event.target.checked ? [...current, item.id] : current.filter((id) => id !== item.id) });
-          }} />
-          <span>{item.title}</span><code>{item.id}</code>
-        </label>
-      </li>)}</ul> : <p className="subtle">{tr("暂无可选项。")}</p>}
-    </section>;
-  };
-  const statusSection = (label: string, options: string[]) => <section className="material-relationship" aria-label={`${label}设置`}>
-    <h3>{tr("状态")}</h3>
-    <label>{tr("状态")}<select aria-label={label} value={String(data.status ?? options[0])} onChange={(event) => patch({ status: event.target.value })}>
-      {options.map((option) => <option key={option} value={option}>{option}</option>)}
-    </select></label>
-  </section>;
   return <fieldset className="material-details form-stack" disabled={disabled}>
     <div className="form-row">
       <label>{tr("名称")}<span className="material-name-row"><input required maxLength={200} value={String(data.title ?? "")} onChange={(event) => {
@@ -369,52 +290,8 @@ export function MaterialDetails({ material, catalog, groups = [], onChange, disa
         <p id={`${relationshipId}-group`} className="material-relationship-hint">{tr("分组用于归档和筛选，与资料层级独立。")}</p>
       </section>
     </div>
-    {(isSystem || isFeature || isDecision) && <div className="material-relationships">
-      {isSystem && <>
-        {referenceSection(tr("引用的组件"), "components", "component")}
-        {referenceSection(tr("引用的实体"), "entities", "entity")}
-        {referenceSection(tr("依赖的系统"), "dependsOn", "system")}
-      </>}
-      {isFeature && <>
-        {statusSection(tr("功能状态"), ["planned", "active", "done"])}
-        {referenceSection(tr("关联系统"), "systems", "system")}
-      </>}
-      {isDecision && <>
-        {statusSection(tr("决策状态"), ["proposed", "accepted", "superseded"])}
-        {referenceSection(tr("影响的系统"), "affectedSystems", "system")}
-        <section className="material-relationship" aria-label={tr("取代设置")}>
-          <h3>{tr("取代的决策")}</h3>
-          <label>{tr("取代")}<select aria-label={tr("取代的决策")} value={String(data.supersedes ?? "")} onChange={(event) => {
-            const next = { ...data };
-            if (event.target.value) next.supersedes = event.target.value; else delete next.supersedes;
-            emit(next);
-          }}>
-            <option value="">{tr("不取代")}</option>
-            {referenceItems("decision").filter((item) => item.id !== data.id).map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
-          </select></label>
-        </section>
-      </>}
-    </div>}
-    {isSystem && <section className="material-section" aria-label={tr("系统挂载")}>
-      <header><h3>{tr("挂载实例")}</h3><span className="subtle">{tr("把决策树等组件实例挂到系统上；同一组件可挂多个，用 key 区分。")}</span>
-        <button type="button" disabled={disabled || !decisionTrees.length} onClick={() => {
-          const used = new Set(mountList.map((mount) => String(mount.key ?? "")));
-          let index = mountList.length + 1;
-          let key = `tree_${index}`;
-          while (used.has(key)) { index++; key = `tree_${index}`; }
-          patch({ mounts: [...mountList, { id: "decision_tree", key, values: { tree: decisionTrees[0]?.id ?? "" } }] });
-        }}><Plus size={16} />{tr("挂载决策树")}</button>
-      </header>
-      {mountList.length ? <ul className="material-mount-list">{mountList.map((mount, index) => <li key={index}>
-        <label>{tr("实例 key")}<input aria-label={tr("挂载 key {index}", { index: index + 1 })} maxLength={64} value={String(mount.key ?? "")} disabled={disabled} onChange={(event) => updateMount(index, { key: event.target.value })} /></label>
-        <label>{tr("决策树")}<select aria-label={tr("挂载决策树 {index}", { index: index + 1 })} value={String((mount.values as Record<string, unknown> | undefined)?.tree ?? "")} disabled={disabled} onChange={(event) => updateMount(index, { values: { ...((mount.values as Record<string, unknown> | undefined) ?? {}), tree: event.target.value } })}>
-          <option value="">{tr("选择决策树")}</option>
-          {decisionTrees.map((tree) => <option key={tree.id} value={tree.id}>{tree.title}</option>)}
-        </select></label>
-        <button type="button" aria-label={tr("移除挂载 {index}", { index: index + 1 })} disabled={disabled} onClick={() => patch({ mounts: mountList.filter((_, position) => position !== index) })}><Trash2 size={15} /></button>
-      </li>)}</ul> : <p className="subtle">{tr("还没有挂载实例。")}</p>}
-      {!decisionTrees.length && <p className="subtle">{tr("先在「决策树」页创建一棵树。")}</p>}
-    </section>}
+    {specKind && <SpecLinkSection kind={specKind} data={data} catalog={catalog} patch={patch} onChange={emit} />}
+    {isSystem && <MountsSection data={data} catalog={catalog} patch={patch} disabled={disabled} />}
     {reverseReferences.length > 0 && <section className="material-section" aria-label={tr("被引用")}>
       <header><h3>{tr("被引用")}</h3><span className="subtle">{tr("反查其他资料对这里的引用，改名前可先确认影响范围。")}</span></header>
       {reverseReferences.map((group) => <div key={group.label} className="material-consumers">
@@ -422,54 +299,8 @@ export function MaterialDetails({ material, catalog, groups = [], onChange, disa
         <ul>{group.items.map((item) => <li key={item.path}><span>{item.title}</span><code>{item.id}</code></li>)}</ul>
       </div>)}
     </section>}
-    {isAudioSystem && <section className="material-section" aria-label={tr("音频")}>
-      <header><div><h3>{tr("音频总线")}</h3><span className="subtle">{tr("master、music、sfx 为内置总线；内置、被事件引用或有子总线的总线不能改名或删除。")}</span></div>
-        <button type="button" disabled={disabled} onClick={addBus}><Plus size={16} />{tr("添加总线")}</button></header>
-      <ul className="audio-bus-list">{audioBuses.map((bus, index) => {
-        const usage = audioUsage.get(bus.name) ?? [];
-        const children = audioBuses.filter((item) => item.parent === bus.name);
-        return <li key={`${bus.name}:${index}`}>
-          <input aria-label={tr("总线名称 {index}", { index: index + 1 })} maxLength={64} value={bus.name} disabled={disabled || busLocked(bus)} onChange={(event) => updateBus(index, { name: event.target.value.trim().toLowerCase() })} />
-          <select aria-label={tr("父总线 {index}", { index: index + 1 })} value={bus.parent ?? ""} disabled={disabled || bus.name === "master"} onChange={(event) => updateBus(index, { parent: event.target.value || null })}>
-            <option value="">{tr("汇入 master")}</option>
-            {audioBuses.filter((item) => item.name !== bus.name).map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}
-          </select>
-          <input aria-label={tr("音量 {index}", { index: index + 1 })} type="number" min={0} max={1} step={0.05} value={bus.volume ?? 1} disabled={disabled} onChange={(event) => updateBus(index, { volume: Math.min(1, Math.max(0, Number(event.target.value))) })} />
-          <label className="audio-bus-muted"><input aria-label={tr("静音 {index}", { index: index + 1 })} type="checkbox" checked={bus.muted ?? false} disabled={disabled} onChange={(event) => updateBus(index, { muted: event.target.checked })} />{tr("静音")}</label>
-          <button type="button" aria-label={tr("删除总线 {index}", { index: index + 1 })} disabled={disabled || busLocked(bus)} title={busLocked(bus) ? tr("内置总线、仍被事件引用或有子总线的总线不能删除") : undefined} onClick={() => removeBus(index)}><Trash2 size={15} /></button>
-          <small>{isBuiltinBus(bus.name) ? tr("内置") : tr("自定义")}{usage.length ? ` · ${tr("被 {count} 个事件使用", { count: usage.length })}` : ""}{children.length ? ` · ${tr("{count} 条子总线", { count: children.length })}` : ""}</small>
-        </li>;
-      })}</ul>
-      <header><div><h3>{tr("音频事件")}</h3><span className="subtle">{tr("事件通过 bus 引用总线；标识在项目内唯一。")}</span></div>
-        <button type="button" disabled={disabled} onClick={addEvent}><Plus size={16} />{tr("添加事件")}</button></header>
-      {audioEvents.length ? <ul className="audio-event-list">{audioEvents.map((event, index) => <li key={`${event.id}:${index}`}>
-        <input aria-label={tr("事件标识 {index}", { index: index + 1 })} maxLength={64} value={event.id} disabled={disabled} onChange={(e) => updateEvent(index, { id: e.target.value.trim().toLowerCase() })} />
-        <select aria-label={tr("事件总线 {index}", { index: index + 1 })} value={event.bus} disabled={disabled} onChange={(e) => updateEvent(index, { bus: e.target.value })}>
-          <option value="">{tr("选择总线")}</option>
-          {audioBuses.map((bus) => <option key={bus.name} value={bus.name}>{bus.name}</option>)}
-        </select>
-        <input aria-label={tr("事件音量 {index}", { index: index + 1 })} type="number" step={0.5} value={event.volume_db ?? 0} disabled={disabled} onChange={(e) => updateEvent(index, { volume_db: Number(e.target.value) })} />
-        <input aria-label={tr("事件音高 {index}", { index: index + 1 })} type="number" min={0} step={0.05} value={event.pitch ?? 0} disabled={disabled} onChange={(e) => updateEvent(index, { pitch: Number(e.target.value) })} />
-        <input aria-label={tr("事件并发 {index}", { index: index + 1 })} type="number" min={1} max={64} step={1} value={event.max_concurrent ?? 3} disabled={disabled} onChange={(e) => updateEvent(index, { max_concurrent: Math.max(1, Math.round(Number(e.target.value))) })} />
-        <input aria-label={tr("事件冷却 {index}", { index: index + 1 })} type="number" min={0} step={0.05} value={event.cooldown ?? 0} disabled={disabled} onChange={(e) => updateEvent(index, { cooldown: Math.max(0, Number(e.target.value)) })} />
-        <label className="audio-event-flag"><input aria-label={tr("循环 {index}", { index: index + 1 })} type="checkbox" checked={event.loop ?? false} disabled={disabled} onChange={(e) => updateEvent(index, { loop: e.target.checked })} />{tr("循环")}</label>
-        <label className="audio-event-flag"><input aria-label={tr("定位 {index}", { index: index + 1 })} type="checkbox" checked={event.positional ?? false} disabled={disabled} onChange={(e) => updateEvent(index, { positional: e.target.checked })} />{tr("定位")}</label>
-        <button type="button" aria-label={tr("删除事件 {index}", { index: index + 1 })} disabled={disabled} onClick={() => removeEvent(index)}><Trash2 size={15} /></button>
-        <input className="audio-event-streams" aria-label={tr("采样路径 {index}", { index: index + 1 })} placeholder="res://audio/ui_click.ogg, res://audio/ui_click_2.ogg" value={(event.streams ?? []).join(", ")} disabled={disabled} onChange={(e) => updateEvent(index, { streams: e.target.value.split(",").map((item) => item.trim()).filter(Boolean) })} />
-      </li>)}</ul> : <p className="subtle">{tr("还没有音频事件。")}</p>}
-    </section>}
-    {(entity || isSystem) && <section className="material-section" aria-label={tr("信号")}>
-      <header><div><h3>{tr("信号")}</h3><span className="subtle">{tr("声明这里会发出的信号；决策树可以等待这些信号。")}</span></div>
-        <button type="button" disabled={disabled || signalNames.length >= 64} onClick={() => updateSignals([...signalNames, "signal_raised"])}><Plus size={16} />{tr("添加信号")}</button></header>
-      {signalNames.length ? <ul className="material-signal-list">{signalNames.map((name, index) => <li key={index}>
-        <input aria-label={tr("信号 {index}", { index: index + 1 })} maxLength={80} value={name} disabled={disabled} onChange={(event) => {
-          const next = [...signalNames];
-          next[index] = event.target.value;
-          updateSignals(next);
-        }} />
-        <button type="button" aria-label={tr("移除信号 {index}", { index: index + 1 })} disabled={disabled} onClick={() => updateSignals(signalNames.filter((_, position) => position !== index))}><Trash2 size={15} /></button>
-      </li>)}</ul> : <p className="subtle">{tr("还没有声明信号。")}</p>}
-    </section>}
+    {isAudioSystem && <AudioSection data={data} onChange={emit} disabled={disabled} />}
+    {(entity || isSystem) && <SignalsSection data={data} onChange={emit} disabled={disabled} />}
     {entity && !stateMachine && <section className="material-section state-machine-section" aria-label={tr("实体状态机")}>
       <header><div><h3>{tr("状态机")}</h3><span className="subtle">{tr("为实体添加状态和转换配置")}</span></div><button type="button" onClick={enableStateMachine}><Plus size={16} />{tr("添加状态机")}</button></header>
     </section>}
