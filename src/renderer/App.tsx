@@ -35,6 +35,7 @@ import { mergeSession } from "./chat/useChatSessions";
 import type { ChatSession } from "../shared/chat";
 import { applyAppearance, watchSystemTheme } from "./appearance";
 import { DocumentsView, type DocumentCategory, type MaterialDraft } from "./DocumentsView";
+import { SystemWorkspace } from "./SystemWorkspace";
 import { EntityWorkspace } from "./EntityWorkspace";
 import { ProvidersView } from "./ProvidersView";
 import { ScopeForm } from "./ScopeForm";
@@ -540,7 +541,7 @@ export default function App() {
               )}
             </NavigationPage>
             <NavigationPage active={tab === "documents"}>
-            {api && (documentCategory === "entity" ? (
+            {api && documentCategory === "entity" ? (
               <EntityWorkspace
                 key={state.project.path}
                 api={api}
@@ -556,7 +557,23 @@ export default function App() {
                 onOpenFileHandled={onOpenFileHandled}
                 onReloadHandled={onMaterialReloadHandled}
               />
-            ) : (
+            ) : api && documentCategory === "system" ? (
+              <SystemWorkspace
+                key={state.project.path}
+                api={api}
+                projectPath={state.project.path}
+                onError={workspace.reportError}
+                busy={workspace.busy}
+                revision={revision}
+                drafts={materialDrafts}
+                onDraftsChange={setMaterialDrafts}
+                onSavingChange={setMaterialSaving}
+                {...(materialReload ? { reloadRequest: materialReload } : {})}
+                {...(projectFileSelection ? { openFileRequest: projectFileSelection } : {})}
+                onOpenFileHandled={onOpenFileHandled}
+                onReloadHandled={onMaterialReloadHandled}
+              />
+            ) : api ? (
               <DocumentsView
                 active={tab === "documents"}
                 key={state.project.path}
@@ -574,7 +591,7 @@ export default function App() {
                 onOpenFileHandled={onOpenFileHandled}
                 onReloadHandled={onMaterialReloadHandled}
               />
-            ))}
+            ) : null}
             </NavigationPage>
             <NavigationPage active={tab === "skills"}>
             {api && (
