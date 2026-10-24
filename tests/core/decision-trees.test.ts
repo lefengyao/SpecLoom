@@ -183,6 +183,19 @@ describe("decision tree specs and mounts", () => {
       .toContainEqual(expect.objectContaining({ path: "specs/entities/keeper.md", code: "SPEC_FIELD_INVALID" }));
   });
 
+  it("rejects duplicate signals and malformed mounts", async () => {
+    const { root, validator } = await project();
+    await put(root, "specs/entities/keeper.md", md({
+      schemaVersion: 1, id: "keeper", title: "守灯人", type: "entity", description: "", signals: ["hp_low", "hp_low"],
+    }));
+    await put(root, "specs/systems/broken.md", md({
+      schemaVersion: 1, id: "broken", title: "坏系统", type: "system", description: "", mounts: [{ id: "decision_tree", values: "nope" }],
+    }));
+    const result = await validator.validate({ runGodot: false });
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({ path: "specs/entities/keeper.md", code: "SPEC_FIELD_INVALID" }));
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({ path: "specs/systems/broken.md", code: "SPEC_FIELD_INVALID" }));
+  });
+
   it("checks the entity a condition reads its component from", async () => {
     const owned = (owner: string) => md({
       schemaVersion: 1, id: "owned", title: "owned", type: "decision_tree", description: "",

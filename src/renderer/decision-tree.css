@@ -31,6 +31,19 @@
   flex: 1;
 }
 
+.dtree-meta {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: 10px;
+}
+
+.dtree-meta label {
+  display: grid;
+  gap: 3px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
 .dtree-canvas {
   min-width: 0;
   min-height: 420px;

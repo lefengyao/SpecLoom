@@ -83,6 +83,14 @@ describe("decision tree model", () => {
       .toContainEqual(expect.objectContaining({ code: "TREE_CONDITION_INVALID" }));
   });
 
+  it("rejects condition fields on non-condition nodes", () => {
+    const issues = validateDecisionTree({ id: "root", kind: "selector", children: [
+      { id: "a", kind: "action", action: "move", comparator: "vitality.current < 1" },
+      { id: "b", kind: "sequence", children: [{ id: "c", kind: "action", action: "fire" }], signal: { from: "x", name: "y" } },
+    ] });
+    expect(issues.filter((issue) => issue.code === "TREE_NODE_INVALID")).toHaveLength(2);
+  });
+
   it("validates decorator parameters and action names", () => {
     expect(validateDecisionTree({ id: "root", kind: "selector", children: [{ id: "c", kind: "cooldown", seconds: 0, child: { id: "a", kind: "action", action: "x" } }] }))
       .toContainEqual(expect.objectContaining({ code: "TREE_NODE_INVALID" }));

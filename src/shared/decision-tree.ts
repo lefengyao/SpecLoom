@@ -138,6 +138,9 @@ export function validateDecisionTree(root: unknown): DecisionTreeIssue[] {
     if (value.title !== undefined && typeof value.title !== "string") {
       issues.push({ path: at, code: "TREE_NODE_INVALID", message: "Decision node title must be text" });
     }
+    if (kind !== "condition" && ["comparator", "event", "signal", "owner"].some((key) => value[key] !== undefined)) {
+      issues.push({ path: at, code: "TREE_NODE_INVALID", message: `Node '${String(value.id)}' is a ${kind} but carries condition fields` });
+    }
     if (isComposite(kind)) {
       if (!Array.isArray(value.children) || value.children.length === 0) {
         issues.push({ path: at, code: "TREE_CHILDREN_INVALID", message: `Composite '${kind}' needs at least one child` });

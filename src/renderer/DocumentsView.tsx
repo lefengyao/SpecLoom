@@ -156,6 +156,8 @@ export function DocumentsView({ api, projectPath, onError, busy, revision, categ
   const tr = useI18n();
   const [treeOpen, setTreeOpen] = useState(readTreePreference);
   const [explorerOpen, setExplorerOpen] = useState(true);
+  // The tree canvas needs the full editor width; reopen the list from the toolbar when needed.
+  useEffect(() => { if (category === "decision_tree") setExplorerOpen(false); }, [category]);
   const preferenceProject = canonicalProjectPreferencePath(projectPath);
   const [hideImport, setHideImport] = useState(() => readHideImportPreference(projectPath));
   useEffect(() => { setHideImport(readHideImportPreference(projectPath)); }, [preferenceProject]);
@@ -474,6 +476,14 @@ export function DocumentsView({ api, projectPath, onError, busy, revision, categ
           treePath={file.path}
           root={material.data.root}
           catalog={selectable}
+          meta={{ ...(typeof material.data.title === "string" ? { title: material.data.title } : {}), ...(typeof material.data.description === "string" ? { description: material.data.description } : {}) }}
+          onMetaChange={(change) => {
+            const data = { ...material.data, ...change };
+            const body = change.title !== undefined
+              ? (/^#\s+.+$/m.test(material.body) ? material.body.replace(/^#\s+.+$/m, `# ${change.title}`) : material.body)
+              : material.body;
+            updateText(writeMaterial(data, body));
+          }}
           disabled={busy || saving || loading}
           onChange={(root) => updateText(writeMaterial({ ...material.data, root }, material.body))}
         /> : <>

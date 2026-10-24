@@ -55,10 +55,12 @@ function nodeLabel(node: DecisionNode): string {
 }
 
 /** Node graph editor for one decision tree spec; every edit rewrites `root`. */
-export function DecisionTreeEditor({ root, treePath, catalog = [], onChange, disabled = false }: {
+export function DecisionTreeEditor({ root, treePath, catalog = [], meta, onMetaChange, onChange, disabled = false }: {
   root: unknown;
   treePath: string;
   catalog?: MaterialSummary[];
+  meta?: { title?: string; description?: string };
+  onMetaChange?: (change: { title?: string; description?: string }) => void;
   onChange: (root: DecisionNode) => void;
   disabled?: boolean;
 }) {
@@ -107,9 +109,15 @@ export function DecisionTreeEditor({ root, treePath, catalog = [], onChange, dis
     });
   }, [nodes]);
 
-  useEffect(() => { if (loadedFor.current === treePath) savePositions(treePath, positions); }, [positions, treePath]);
+  useEffect(() => {
+    if (loadedFor.current !== treePath) return;
+    const timer = setTimeout(() => savePositions(treePath, positions), 250);
+    return () => clearTimeout(timer);
+  }, [positions, treePath]);
 
   const selected = tree && selectedId ? findDecisionNode(tree, selectedId) : undefined;
+  /** Only composites and empty decorators can take a child. */
+  const canAddChild = selected ? isComposite(selected.kind) || (isDecorator(selected.kind) && !selected.child) : false;
   const patch = (change: Partial<DecisionNode>) => {
     if (!tree || !selected) return;
     onChange(updateDecisionNode(tree, selected.id, change));
@@ -158,7 +166,7 @@ export function DecisionTreeEditor({ root, treePath, catalog = [], onChange, dis
       <strong>{tr("决策树")}</strong>
       <span className="subtle">{tr("{count} 个节点", { count: flattenDecisionTree(tree).length })}</span>
       <button type="button" disabled={disabled} onClick={() => setPositions(autoPositions(tree))}>{tr("自动整理")}</button>
-      <button type="button" disabled={disabled || !selected} onClick={addChild}><Plus size={15} />{tr("添加子节点")}</button>
+      <button type="button" disabled={disabled || !canAddChild} title={canAddChild ? undefined : tr("只有组合节点或空的修饰节点可以添加子节点")} onClick={addChild}><Plus size={15} />{tr("添加子节点")}</button>
       <button type="button" disabled={disabled || !selected || selected.id === tree.id} onClick={() => {
         if (!selected || !tree) return;
         onChange(removeDecisionNode(tree, selected.id));
@@ -167,6 +175,10 @@ export function DecisionTreeEditor({ root, treePath, catalog = [], onChange, dis
       <button type="button" aria-label={tr("上移节点")} disabled={disabled || !selected} onClick={() => { if (selected && tree) onChange(reorderDecisionNode(tree, selected.id, -1)); }}><ChevronUp size={15} /></button>
       <button type="button" aria-label={tr("下移节点")} disabled={disabled || !selected} onClick={() => { if (selected && tree) onChange(reorderDecisionNode(tree, selected.id, 1)); }}><ChevronDown size={15} /></button>
     </header>
+    {onMetaChange && <div className="dtree-meta">
+      <label>{tr("名称")}<input aria-label={tr("决策树名称")} maxLength={200} disabled={disabled} value={meta?.title ?? ""} onChange={(event) => onMetaChange({ title: event.target.value })} /></label>
+      <label>{tr("说明")}<input aria-label={tr("决策树说明")} maxLength={2000} disabled={disabled} value={meta?.description ?? ""} onChange={(event) => onMetaChange({ description: event.target.value })} /></label>
+    </div>}
     <div className="dtree-body">
       <div className="dtree-canvas">
         <ReactFlow
