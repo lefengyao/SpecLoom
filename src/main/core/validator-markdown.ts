@@ -113,6 +113,10 @@ export function validateFields(spec: ParsedSpec, diagnostics: ValidationDiagnost
       field("title", nonempty(data.title));
       field("description", typeof data.description === "string");
     }
+    if (data.scene !== undefined) {
+      const scene = typeof data.scene === "string" ? data.scene.trim().replaceAll("\\", "/") : "";
+      field("scene", nonempty(scene) && !scene.startsWith("/") && !scene.split("/").includes("..") && /\.tscn$/i.test(scene));
+    }
     if (data.type !== "entity" || data.status !== undefined) field("status", nonempty(data.status));
     if (data.type !== "entity" || data.version !== undefined) field("version", nonempty(data.version) || (typeof data.version === "number" && Number.isSafeInteger(data.version) && data.version > 0));
     if (data.type !== "entity" || data.relations !== undefined) field("relations", Array.isArray(data.relations) && data.relations.every((value) => validReference(value)));

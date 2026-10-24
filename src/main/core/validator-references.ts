@@ -1,6 +1,7 @@
 import type { ValidationDiagnostic } from "../../shared/contracts";
 import { VersionTokenSchema } from "../../shared/contracts";
 import { resolveComponentAnchors, resolveComponentFields, type ComponentDefinition } from "../../shared/component-inheritance";
+import { sceneNodePaths } from "../../shared/godot-scene";
 import { readAnchors, readFields } from "../../shared/project-materials";
 import { componentValueMatches, diagnostic, nonempty, record, validReference, validationPathIdentity, type ParsedSpec } from "./validator-markdown";
 import { ValidationSource } from "./validator-source";
@@ -155,9 +156,9 @@ export async function validateReferences(specs: ParsedSpec[], source: Validation
       const target = await semanticReference(spec.data.extends, spec, "ENTITY_INHERIT", (target) => materialKind(target) === "entity");
       if (target && nonempty(target.data.id)) inheritance.set(ownerId, [target.data.id]);
     }
+    const bound = new Map<string, ParsedSpec>();
     if (spec.data.components !== undefined) {
       const attached = new Set<string>();
-      const bound = new Map<string, ParsedSpec>();
       const mounts: { parent: string; anchor: string }[] = [];
       for (const value of Array.isArray(spec.data.components) ? spec.data.components : []) {
         const target = await semanticReference(value, spec, "ENTITY_COMPONENT", (target) => materialKind(target) === "component" && target.data.type === "component", true);
@@ -183,6 +184,39 @@ export async function validateReferences(specs: ParsedSpec[], source: Validation
         }
       }
       validateMounts(spec, bound, mounts, effectiveAnchors, diagnostics);
+    }
+    // Anchor node paths are checked even when the entity attaches no components.
+    await validateSceneAnchors(spec, bound, effectiveAnchors, diagnostics);
+  }
+
+  /**
+   * Anchor node paths are contracts on the entity's scene, so check them against the
+   * `.tscn` the spec names. Specs without `scene` stay silent instead of guessing.
+   */
+  async function validateSceneAnchors(spec: ParsedSpec, bound: Map<string, ParsedSpec>, anchors: Map<string, ReturnType<typeof readAnchors>>, diagnostics: ValidationDiagnostic[]): Promise<void> {
+    const declared = typeof spec.data.scene === "string" ? spec.data.scene.trim().replaceAll("\\", "/") : "";
+    if (!declared) return;
+    let text: string | undefined;
+    try { text = await source.read(declared); } catch { text = undefined; }
+    if (text === undefined) {
+      diagnostics.push(diagnostic(spec.path, "SCENE_NOT_FOUND", `Scene '${declared}' does not exist`));
+      return;
+    }
+    const nodes = sceneNodePaths(text);
+    if (!nodes.size) {
+      diagnostics.push(diagnostic(spec.path, "SCENE_INVALID", `Scene '${declared}' has no node sections`));
+      return;
+    }
+    const candidates: { owner: string; anchor: { name: string; node?: string } }[] = readAnchors(spec.data).map((anchor) => ({ owner: spec.path, anchor }));
+    for (const component of bound.values()) {
+      const list = anchors.get(validationPathIdentity(component.path)) ?? readAnchors(component.data);
+      for (const anchor of list) candidates.push({ owner: component.path, anchor });
+    }
+    for (const { owner, anchor } of candidates) {
+      if (anchor.node === undefined) continue;
+      const node = anchor.node.trim().replaceAll("\\", "/").replace(/^\/+/, "").replace(/\/+$/, "");
+      if (nodes.has(node)) continue;
+      diagnostics.push(diagnostic(owner, "ANCHOR_NODE_MISSING", `Anchor '${anchor.name}' points at '${node}', which ${declared} does not define`));
     }
   }
 

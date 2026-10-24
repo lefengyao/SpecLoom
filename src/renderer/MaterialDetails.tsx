@@ -53,6 +53,10 @@ export function MaterialDetails({ material, catalog, groups = [], onChange, disa
   const type = String(data.type);
   const entity = type === "entity" || (owner && categoryForPath(owner.path) === "entity");
   const isComponent = type === "component";
+  const category = owner ? categoryForPath(owner.path) : undefined;
+  const isSystem = category === "system";
+  const isFeature = category === "feature";
+  const isDecision = category === "decision";
   const rawBindings: unknown[] = Array.isArray(data.components) ? data.components : [];
   // Keep partially edited keys/defaults in place until the form is submitted.
   // The catalog reader filters invalid definitions, which would remove an input
@@ -177,6 +181,30 @@ export function MaterialDetails({ material, catalog, groups = [], onChange, disa
     if (key && fields.some((field, position) => position !== index && field.key === key)) return tr("字段名称重复：{key}", { key });
     return "";
   };
+  const referenceItems = (target: "component" | "entity" | "system" | "decision") =>
+    catalog.filter((item) => !item.invalid && categoryForPath(item.path) === target);
+  const referenceIds = (key: string): string[] => (Array.isArray(data[key]) ? (data[key] as unknown[]).filter((item): item is string => typeof item === "string") : []);
+  const referenceSection = (label: string, key: string, target: "component" | "entity" | "system" | "decision") => {
+    const items = referenceItems(target).filter((item) => item.id !== data.id);
+    return <section key={key} className="material-relationship" aria-label={label}>
+      <h3>{label}</h3>
+      {items.length ? <ul className="material-reference-list">{items.map((item) => <li key={item.id}>
+        <label>
+          <input type="checkbox" aria-label={`${label} ${item.title}`} checked={referenceIds(key).includes(item.id)} onChange={(event) => {
+            const current = referenceIds(key);
+            patch({ [key]: event.target.checked ? [...current, item.id] : current.filter((id) => id !== item.id) });
+          }} />
+          <span>{item.title}</span><code>{item.id}</code>
+        </label>
+      </li>)}</ul> : <p className="subtle">{tr("暂无可选项。")}</p>}
+    </section>;
+  };
+  const statusSection = (label: string, options: string[]) => <section className="material-relationship" aria-label={`${label}设置`}>
+    <h3>{tr("状态")}</h3>
+    <label>{tr("状态")}<select aria-label={label} value={String(data.status ?? options[0])} onChange={(event) => patch({ status: event.target.value })}>
+      {options.map((option) => <option key={option} value={option}>{option}</option>)}
+    </select></label>
+  </section>;
   return <fieldset className="material-details form-stack" disabled={disabled}>
     <div className="form-row">
       <label>{tr("名称")}<input required maxLength={200} value={String(data.title ?? "")} onChange={(event) => {
@@ -188,6 +216,12 @@ export function MaterialDetails({ material, catalog, groups = [], onChange, disa
       </select></label>}
     </div>
     <label>{tr("说明")}<textarea rows={2} value={String(data.description ?? "")} onChange={(event) => patch({ description: event.target.value })} /></label>
+    {entity && <label>{tr("场景文件")}<input aria-label={tr("场景文件")} placeholder="entities/combat_entity/combat_entity.tscn" value={String(data.scene ?? "")} onChange={(event) => {
+      const scene = event.target.value.trim();
+      const next = { ...data };
+      if (scene) next.scene = scene; else delete next.scene;
+      emit(next);
+    }} /></label>}
     {isComponent && <section className="material-section component-notes-section" aria-label={tr("说明条目")}>
       <header><div><h3>{tr("说明条目")}</h3><span className="subtle">{tr("用于补充字段无法表达的内容，可添加多条。")}</span></div><button type="button" disabled={componentNotes.length >= 32} onClick={() => updateComponentNotes([...componentNotes, ""])}><Plus size={16} />{tr("添加说明")}</button></header>
       {componentNotes.length ? <ul className="component-note-list">
@@ -228,6 +262,32 @@ export function MaterialDetails({ material, catalog, groups = [], onChange, disa
         <p id={`${relationshipId}-group`} className="material-relationship-hint">{tr("分组用于归档和筛选，与资料层级独立。")}</p>
       </section>
     </div>
+    {(isSystem || isFeature || isDecision) && <div className="material-relationships">
+      {isSystem && <>
+        {referenceSection(tr("引用的组件"), "components", "component")}
+        {referenceSection(tr("引用的实体"), "entities", "entity")}
+        {referenceSection(tr("依赖的系统"), "dependsOn", "system")}
+      </>}
+      {isFeature && <>
+        {statusSection(tr("功能状态"), ["planned", "active", "done"])}
+        {referenceSection(tr("关联系统"), "systems", "system")}
+      </>}
+      {isDecision && <>
+        {statusSection(tr("决策状态"), ["proposed", "accepted", "superseded"])}
+        {referenceSection(tr("影响的系统"), "affectedSystems", "system")}
+        <section className="material-relationship" aria-label={tr("取代设置")}>
+          <h3>{tr("取代的决策")}</h3>
+          <label>{tr("取代")}<select aria-label={tr("取代的决策")} value={String(data.supersedes ?? "")} onChange={(event) => {
+            const next = { ...data };
+            if (event.target.value) next.supersedes = event.target.value; else delete next.supersedes;
+            emit(next);
+          }}>
+            <option value="">{tr("不取代")}</option>
+            {referenceItems("decision").filter((item) => item.id !== data.id).map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
+          </select></label>
+        </section>
+      </>}
+    </div>}
     {entity && !stateMachine && <section className="material-section state-machine-section" aria-label={tr("实体状态机")}>
       <header><div><h3>{tr("状态机")}</h3><span className="subtle">{tr("为实体添加状态和转换配置")}</span></div><button type="button" onClick={enableStateMachine}><Plus size={16} />{tr("添加状态机")}</button></header>
     </section>}
