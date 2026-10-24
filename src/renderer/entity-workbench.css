@@ -718,10 +718,6 @@
   border-color: var(--accent-strong);
 }
 
-.ewb-canvas-arrange {
-  top: 56px;
-}
-
 .ewb-canvas-frame {
   position: relative;
   flex: 1 1 auto;

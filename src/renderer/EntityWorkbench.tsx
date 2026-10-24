@@ -1687,6 +1687,15 @@ export function EntityWorkbench({ api, projectPath, onError, onOpenDetail }: Ent
         <div className="ewb-toolbar">
           {savedNotice && !dirty && <span className="ewb-saved">{tr("已保存")}</span>}
           {dirty && <span className="ewb-dirty">{tr("未保存")}</span>}
+          <button
+            type="button"
+            disabled={!entity}
+            aria-label={tr("自动整理组件")}
+            title={tr("按挂载层级重新摆放组件")}
+            onClick={arrangeComponents}
+          >
+            <LayoutGrid size={15} />{tr("自动整理")}
+          </button>
           <div className="ewb-image-controls" role="group" aria-label={tr("配图显示")}>
             <button
               type="button"
@@ -1820,26 +1829,15 @@ export function EntityWorkbench({ api, projectPath, onError, onOpenDetail }: Ent
 
         <section className="ewb-canvas" aria-label={tr("实体画布")}>
           {entity && (
-            <>
-              <button
-                type="button"
-                className="ewb-canvas-add ewb-canvas-arrange"
-                aria-label={tr("自动整理组件")}
-                title={tr("自动整理组件")}
-                onClick={arrangeComponents}
-              >
-                <LayoutGrid size={18} />
-              </button>
-              <button
-                type="button"
-                className="ewb-canvas-add"
-                aria-label={tr("添加组件")}
-                title={tr("添加组件")}
-                onClick={openComponentBrowser}
-              >
-                <Plus size={18} />
-              </button>
-            </>
+            <button
+              type="button"
+              className="ewb-canvas-add"
+              aria-label={tr("添加组件")}
+              title={tr("添加组件")}
+              onClick={openComponentBrowser}
+            >
+              <Plus size={18} />
+            </button>
           )}
           {entity ? (
             <EntityComponentBoard
