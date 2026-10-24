@@ -1,7 +1,7 @@
 import { parseMaterial, readAnchors, readBindings, readFields, type ComponentAnchor, type ComponentBinding, type ComponentField } from "./project-materials";
 import { materialGroupPath, normalizeMaterialGroups, resolveLegacyGroup, type MaterialGroupRegistry } from "./material-groups";
 
-export type DocumentCategory = "all" | "entity" | "component" | "setting" | "map" | "ui" | "system" | "feature" | "decision" | "spec";
+export type DocumentCategory = "all" | "entity" | "component" | "setting" | "map" | "ui" | "system" | "feature" | "decision" | "decision_tree" | "spec";
 export interface MaterialSummary {
   id: string; title: string; type: string; path: string; version: string; content: string;
   description?: string; group?: string; groupId?: string; groupPath?: string; scope?: ComponentScope; image?: string; parent?: string; extends?: string;
@@ -11,7 +11,7 @@ export type ComponentScope = "system" | "user";
 export const componentScopeLabels: Record<ComponentScope, string> = { system: "官方组件", user: "自定义组件" };
 
 /** Built-in identity is independent of editable front matter and display groups. */
-const builtinComponents = [{ id: "state_machine", path: "specs/components/state_machine.md" }] as const;
+const builtinComponents = [{ id: "state_machine", path: "specs/components/state_machine.md" }, { id: "decision_tree", path: "specs/components/decision_tree.md" }] as const;
 
 /**
  * Classify component definitions for the component library UI.
@@ -26,12 +26,12 @@ export function componentScope(item: Pick<MaterialSummary, "id" | "type" | "path
 }
 export const categoryLabels: Record<DocumentCategory, string> = {
   all: "项目文件", entity: "实体", component: "组件", setting: "设定", map: "地图", ui: "UI",
-  system: "系统", feature: "功能", decision: "架构决策", spec: "规范",
+  system: "系统", feature: "功能", decision: "架构决策", decision_tree: "决策树", spec: "规范",
 };
 export const categoryRoots: Record<Exclude<DocumentCategory, "all">, string[]> = {
   entity: ["specs/entities"], component: ["specs/components"], setting: ["specs/settings"],
   map: ["specs/maps", "specs/entities/maps"], ui: ["specs/ui"],
-  system: ["specs/systems"], feature: ["specs/features"], decision: ["specs/decisions"],
+  system: ["specs/systems"], feature: ["specs/features"], decision: ["specs/decisions"], decision_tree: ["specs/decision_trees"],
   spec: ["specs"],
 };
 export function categoryForPath(path: string): Exclude<DocumentCategory, "all"> | undefined {
@@ -44,6 +44,7 @@ export function categoryForPath(path: string): Exclude<DocumentCategory, "all"> 
   if (identity.startsWith("specs/systems/")) return "system";
   if (identity.startsWith("specs/features/")) return "feature";
   if (identity.startsWith("specs/decisions/")) return "decision";
+  if (identity.startsWith("specs/decision_trees/")) return "decision_tree";
   if (identity.startsWith("specs/")) return "spec";
   return undefined;
 }

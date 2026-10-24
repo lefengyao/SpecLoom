@@ -1,0 +1,184 @@
+import { ChevronDown, ChevronUp, Plus, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import "@xyflow/react/dist/style.css";
+import "./decision-tree.css";
+import { Background, Controls, MiniMap, ReactFlow, applyNodeChanges, type Edge, type Node, type OnNodesChange } from "@xyflow/react";
+import {
+  NODE_KIND_LABELS, NODE_KINDS, findDecisionNode, flattenDecisionTree, insertDecisionNode, isComposite, isDecorator,
+  isNodeKind, removeDecisionNode, reorderDecisionNode, updateDecisionNode,
+  type DecisionNode, type DecisionNodeKind,
+} from "../shared/decision-tree";
+import { useI18n } from "./i18n";
+
+interface Point { x: number; y: number }
+
+const COLUMN_WIDTH = 240;
+const ROW_HEIGHT = 104;
+const STORAGE_PREFIX = "specloom.decision-tree.";
+
+function isRoot(value: unknown): value is DecisionNode {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value) && isNodeKind((value as { kind?: unknown }).kind);
+}
+
+function loadPositions(treePath: string): Record<string, Point> {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(`${STORAGE_PREFIX}${treePath}`) ?? "{}") as { nodes?: Record<string, Point> };
+    const nodes = parsed?.nodes;
+    if (!nodes || typeof nodes !== "object") return {};
+    return Object.fromEntries(Object.entries(nodes).filter(([, value]) => value && Number.isFinite(value.x) && Number.isFinite(value.y)));
+  } catch { return {}; }
+}
+
+function savePositions(treePath: string, nodes: Record<string, Point>): void {
+  try { window.localStorage.setItem(`${STORAGE_PREFIX}${treePath}`, JSON.stringify({ version: 1, nodes })); } catch { /* best effort */ }
+}
+
+/** Depth-first column layout; siblings stay in document order. */
+function autoPositions(root: DecisionNode): Record<string, Point> {
+  const positions: Record<string, Point> = {};
+  const rows = new Map<number, number>();
+  for (const { node, depth } of flattenDecisionTree(root)) {
+    const row = rows.get(depth) ?? 0;
+    rows.set(depth, row + 1);
+    positions[node.id] = { x: depth * COLUMN_WIDTH, y: row * ROW_HEIGHT };
+  }
+  return positions;
+}
+
+function nodeLabel(node: DecisionNode): string {
+  const detail = node.kind === "condition" ? (node.comparator ?? node.event ?? "") : node.kind === "action" ? (node.action ?? "") : "";
+  const title = node.title?.trim() ? node.title : node.id;
+  return detail ? `${title}\n${detail}` : title;
+}
+
+/** Node graph editor for one decision tree spec; every edit rewrites `root`. */
+export function DecisionTreeEditor({ root, treePath, onChange, disabled = false }: {
+  root: unknown;
+  treePath: string;
+  onChange: (root: DecisionNode) => void;
+  disabled?: boolean;
+}) {
+  const tr = useI18n();
+  const tree = isRoot(root) ? root : undefined;
+  const [selectedId, setSelectedId] = useState<string>();
+  const [positions, setPositions] = useState<Record<string, Point>>({});
+  const loadedFor = useRef<string | undefined>(undefined);
+
+  useEffect(() => {
+    if (!tree) { setPositions({}); return; }
+    if (loadedFor.current === treePath) return;
+    loadedFor.current = treePath;
+    setPositions({ ...autoPositions(tree), ...loadPositions(treePath) });
+  }, [tree, treePath]);
+
+  const positioned = useMemo(() => {
+    if (!tree) return {};
+    const fallback = autoPositions(tree);
+    return Object.fromEntries(flattenDecisionTree(tree).map(({ node }) => [node.id, positions[node.id] ?? fallback[node.id] ?? { x: 0, y: 0 }]));
+  }, [tree, positions]);
+
+  const nodes = useMemo<Node[]>(() => {
+    if (!tree) return [];
+    return flattenDecisionTree(tree).map(({ node }) => ({
+      id: node.id,
+      position: positioned[node.id] ?? { x: 0, y: 0 },
+      data: { label: nodeLabel(node) },
+      className: `dtree-node dtree-${node.kind}${selectedId === node.id ? " is-selected" : ""}`,
+    }));
+  }, [tree, positioned, selectedId]);
+
+  const edges = useMemo<Edge[]>(() => {
+    if (!tree) return [];
+    return flattenDecisionTree(tree).flatMap(({ node, parent }) => parent
+      ? [{ id: `${parent}->${node.id}`, source: parent, target: node.id } as Edge]
+      : []);
+  }, [tree]);
+
+  const onNodesChange: OnNodesChange = useCallback((changes) => {
+    const moved = applyNodeChanges(changes, nodes);
+    setPositions((current) => {
+      const next = { ...current };
+      for (const node of moved) next[node.id] = { x: Math.round(node.position.x), y: Math.round(node.position.y) };
+      return next;
+    });
+  }, [nodes]);
+
+  useEffect(() => { if (loadedFor.current === treePath) savePositions(treePath, positions); }, [positions, treePath]);
+
+  const selected = tree && selectedId ? findDecisionNode(tree, selectedId) : undefined;
+  const patch = (change: Partial<DecisionNode>) => {
+    if (!tree || !selected) return;
+    onChange(updateDecisionNode(tree, selected.id, change));
+  };
+  const addChild = () => {
+    if (!tree || !selected) return;
+    const used = new Set(flattenDecisionTree(tree).map(({ node }) => node.id));
+    let index = used.size + 1;
+    let id = `node_${index}`;
+    while (used.has(id)) { index++; id = `node_${index}`; }
+    onChange(insertDecisionNode(tree, selected.id, { id, kind: "action", action: "do_something" }));
+    setSelectedId(id);
+  };
+
+  if (!tree) {
+    return <section className="dtree-editor" aria-label={tr("决策树工作区")}>
+      <header className="dtree-toolbar">
+        <strong>{tr("决策树")}</strong><span className="subtle">{tr("当前文件还没有 root 节点。")}</span>
+        <button type="button" disabled={disabled} onClick={() => onChange({ id: "root", kind: "selector", title: tr("根节点"), children: [] })}><Plus size={15} />{tr("创建根节点")}</button>
+      </header>
+    </section>;
+  }
+
+  return <section className="dtree-editor" aria-label={tr("决策树工作区")}>
+    <header className="dtree-toolbar">
+      <strong>{tr("决策树")}</strong>
+      <span className="subtle">{tr("{count} 个节点", { count: flattenDecisionTree(tree).length })}</span>
+      <button type="button" disabled={disabled} onClick={() => setPositions(autoPositions(tree))}>{tr("自动整理")}</button>
+      <button type="button" disabled={disabled || !selected} onClick={addChild}><Plus size={15} />{tr("添加子节点")}</button>
+      <button type="button" disabled={disabled || !selected || selected.id === tree.id} onClick={() => {
+        if (!selected || !tree) return;
+        onChange(removeDecisionNode(tree, selected.id));
+        setSelectedId(undefined);
+      }}><Trash2 size={15} />{tr("删除节点")}</button>
+      <button type="button" aria-label={tr("上移节点")} disabled={disabled || !selected} onClick={() => { if (selected && tree) onChange(reorderDecisionNode(tree, selected.id, -1)); }}><ChevronUp size={15} /></button>
+      <button type="button" aria-label={tr("下移节点")} disabled={disabled || !selected} onClick={() => { if (selected && tree) onChange(reorderDecisionNode(tree, selected.id, 1)); }}><ChevronDown size={15} /></button>
+    </header>
+    <div className="dtree-body">
+      <div className="dtree-canvas">
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          onNodeClick={(_event, node) => setSelectedId(node.id)}
+          onPaneClick={() => setSelectedId(undefined)}
+          fitView
+          minZoom={0.3}
+          maxZoom={1.6}
+          nodesConnectable={false}
+          edgesFocusable={false}
+        >
+          <Background />
+          <MiniMap pannable zoomable />
+          <Controls showInteractive={false} />
+        </ReactFlow>
+      </div>
+      <aside className="dtree-inspector" aria-label={tr("决策节点检查器")}>
+        {!selected ? <p className="ewb-empty">{tr("选择画布中的节点编辑条件与动作")}</p> : <>
+          <h3>{tr("节点")}<code>{selected.id}</code></h3>
+          <label>{tr("类型")}<select aria-label={tr("节点类型")} disabled={disabled} value={selected.kind} onChange={(event) => patch({ kind: event.target.value as DecisionNodeKind })}>
+            {NODE_KINDS.map((kind) => <option key={kind} value={kind}>{tr(NODE_KIND_LABELS[kind])}</option>)}
+          </select></label>
+          <label>{tr("标题")}<input aria-label={tr("节点标题")} disabled={disabled} value={selected.title ?? ""} maxLength={100} onChange={(event) => patch({ title: event.target.value })} /></label>
+          {selected.kind === "condition" && <>
+            <label>{tr("字段比较")}<input aria-label={tr("字段比较")} disabled={disabled} placeholder="vitality.current <= 30" value={selected.comparator ?? ""} onChange={(event) => patch({ comparator: event.target.value })} /></label>
+            <label>{tr("事件名")}<input aria-label={tr("事件名")} disabled={disabled} placeholder="enemy_in_range" value={selected.event ?? ""} onChange={(event) => patch({ event: event.target.value })} /></label>
+          </>}
+          {selected.kind === "action" && <label>{tr("动作")}<input aria-label={tr("动作名")} disabled={disabled} placeholder="move_away" value={selected.action ?? ""} onChange={(event) => patch({ action: event.target.value })} /></label>}
+          {selected.kind === "cooldown" && <label>{tr("冷却秒数")}<input aria-label={tr("冷却秒数")} type="number" min={0} step={0.1} disabled={disabled} value={selected.seconds ?? 1} onChange={(event) => patch({ seconds: Number(event.target.value) })} /></label>}
+          {selected.kind === "retry" && <label>{tr("重试次数")}<input aria-label={tr("重试次数")} type="number" min={1} step={1} disabled={disabled} value={selected.count ?? 1} onChange={(event) => patch({ count: Math.max(1, Math.round(Number(event.target.value))) })} /></label>}
+          {(isComposite(selected.kind) || isDecorator(selected.kind)) && <p className="subtle">{tr("选中后点「添加子节点」追加子节点。")}</p>}
+        </>}
+      </aside>
+    </div>
+  </section>;
+}

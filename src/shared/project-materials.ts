@@ -23,9 +23,24 @@ export interface ComponentMount {
 }
 export interface ComponentBinding {
   id: string;
+  /** Optional instance alias, so one component can be mounted several times. */
+  key?: string;
   values: Record<string, ComponentValue>;
   notes?: string[];
   mount?: ComponentMount;
+}
+
+const BINDING_KEY = /^[a-z][a-z0-9_]*$/;
+
+/** Stable identity of one mounted instance: `id` when unaliased, `id#key` otherwise. */
+export function bindingIdentity(id: string, key?: string): string {
+  return key ? `${id}#${key}` : id;
+}
+
+export function readBindingKey(value: unknown): string | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const key = (value as Record<string, unknown>).key;
+  return typeof key === "string" && BINDING_KEY.test(key.trim()) ? key.trim() : undefined;
 }
 export interface MaterialDocument { data: Record<string, unknown>; body: string }
 
@@ -106,7 +121,10 @@ export function readBindings(data: Record<string, unknown>): ComponentBinding[] 
   const seen = new Set<string>();
   for (const value of data.components) {
     const id = typeof value === "string" ? value.trim() : record(value) && typeof value.id === "string" ? value.id.trim() : "";
-    if (!id || seen.has(id)) continue;
+    if (!id) continue;
+    const key = readBindingKey(value);
+    const identity = bindingIdentity(id, key);
+    if (seen.has(identity)) continue;
     const values = record(value) && record(value.values)
       ? Object.fromEntries(Object.entries(value.values).filter((entry): entry is [string, ComponentValue] => componentValue(entry[1])))
       : {};
@@ -114,8 +132,8 @@ export function readBindings(data: Record<string, unknown>): ComponentBinding[] 
       ? value.notes.filter((note): note is string => typeof note === "string").map((note) => note.trim()).slice(0, 32)
       : [];
     const mount = record(value) ? readMount(value.mount) : undefined;
-    bindings.push({ id, values, ...(notes.length ? { notes } : {}), ...(mount ? { mount } : {}) });
-    seen.add(id);
+    bindings.push({ id, ...(key ? { key } : {}), values, ...(notes.length ? { notes } : {}), ...(mount ? { mount } : {}) });
+    seen.add(identity);
   }
   return bindings;
 }

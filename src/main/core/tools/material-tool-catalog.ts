@@ -6,7 +6,7 @@ import type { WorkTool } from "./catalog";
 
 const path = z.string().min(1).max(2048);
 const text = z.string().max(65536);
-const category = z.enum(["entity", "component", "map", "setting", "ui", "spec"]);
+const category = z.enum(["entity", "component", "map", "setting", "ui", "system", "feature", "decision", "decision_tree", "spec"]);
 const value = z.union([z.number().finite(), z.string().max(65536), z.boolean()]);
 const values = z.record(z.string().regex(/^[a-zA-Z_][a-zA-Z0-9_]*$/).refine(key => !["__proto__", "prototype", "constructor"].includes(key)), value);
 const field = z.object({ key: z.string().min(1).max(100), label: z.string().max(200).optional(), type: z.enum(["number", "string", "boolean"]), default: value }).strict();
@@ -16,7 +16,7 @@ const changes = z.object({
   title: z.string().trim().min(1).max(200).optional(), description: text.optional(),
   group: z.string().trim().max(100).nullable().optional(), groupId: z.string().trim().min(1).max(200).nullable().optional(), parent: path.nullable().optional(), extends: path.nullable().optional(),
   scope: z.enum(["system", "user"]).optional(),
-  type: z.enum(["entity", "character", "enemy", "map", "system", "item", "event", "component", "setting", "ui", "spec", "feature", "decision"]).optional(),
+  type: z.enum(["entity", "character", "enemy", "map", "system", "item", "event", "component", "setting", "ui", "spec", "feature", "decision", "decision_tree"]).optional(),
   status: z.string().trim().min(1).max(100).optional(), version: z.union([z.number().int().positive(), z.string().min(1).max(100)]).optional(),
   source: z.string().min(1).max(200).optional(), relations: z.array(path).max(256).optional(),
   fields: z.array(field).max(256).optional(), entities: z.array(path).max(256).optional(),

@@ -209,7 +209,7 @@ export function NewSpec({
   onClose,
   onSave,
 }: {
-  kind?: "spec" | "setting" | "ui" | "system" | "feature" | "decision";
+  kind?: "spec" | "setting" | "ui" | "system" | "feature" | "decision" | "decision_tree";
   busy: boolean;
   onClose: () => void;
   onSave: (
@@ -223,8 +223,8 @@ export function NewSpec({
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [parent, setParent] = useState("");
-  const formTitle = kind === "setting" ? tr("新建设定") : kind === "ui" ? tr("新建 UI") : kind === "system" ? tr("新建系统") : kind === "feature" ? tr("新建功能") : kind === "decision" ? tr("新建架构决策") : tr("新建规范");
-  const submitLabel = kind === "setting" ? tr("创建设定") : kind === "ui" ? tr("创建 UI") : kind === "system" ? tr("创建系统") : kind === "feature" ? tr("创建功能") : kind === "decision" ? tr("创建架构决策") : tr("创建规范");
+  const formTitle = kind === "setting" ? tr("新建设定") : kind === "ui" ? tr("新建 UI") : kind === "system" ? tr("新建系统") : kind === "feature" ? tr("新建功能") : kind === "decision" ? tr("新建架构决策") : kind === "decision_tree" ? tr("新建决策树") : tr("新建规范");
+  const submitLabel = kind === "setting" ? tr("创建设定") : kind === "ui" ? tr("创建 UI") : kind === "system" ? tr("创建系统") : kind === "feature" ? tr("创建功能") : kind === "decision" ? tr("创建架构决策") : kind === "decision_tree" ? tr("创建决策树") : tr("创建规范");
   const directory = kind === "spec" || kind === undefined ? "specs" : kind === "setting" ? "specs/settings" : kind === "ui" ? "specs/ui" : `specs/${kind}s`;
   return (
     <Modal title={formTitle} onClose={onClose}>

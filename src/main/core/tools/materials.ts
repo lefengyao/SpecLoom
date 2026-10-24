@@ -14,7 +14,7 @@ import { StateMachineSchema } from "../../../shared/state-machine";
 const mimeTypes: Record<string, string> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp", gif: "image/gif" };
 const folders: Record<Exclude<DocumentCategory, "all">, string> = {
   entity: "entities/", component: "components/", map: "maps/", setting: "settings/", ui: "ui/",
-  system: "systems/", feature: "features/", decision: "decisions/", spec: "",
+  system: "systems/", feature: "features/", decision: "decisions/", decision_tree: "decision_trees/", spec: "",
 };
 interface MaterialGroupTreeNode extends MaterialGroup { category: MaterialGroupCategory; path: string; children: MaterialGroupTreeNode[] }
 const stableGroupId = (category: string, name: string): string => `group_${category}_${createHash("sha256").update(`${category}\u0000${name.trim()}`).digest("hex").slice(0, 10)}`;

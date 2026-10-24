@@ -65,6 +65,7 @@ export class Validator {
         identity.startsWith("specs/entities/") || identity.startsWith("specs/components/") || identity.startsWith("specs/tasks/")
         || identity.startsWith("specs/settings/") || identity.startsWith("specs/maps/") || identity.startsWith("specs/ui/")
         || identity.startsWith("specs/systems/") || identity.startsWith("specs/features/") || identity.startsWith("specs/decisions/")
+        || identity.startsWith("specs/decision_trees/")
         || /^specs\/[^/]+\.md$/i.test(identity)
       );
     });

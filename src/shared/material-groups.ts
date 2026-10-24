@@ -13,7 +13,7 @@ export interface MaterialGroup {
 
 export type MaterialGroupRegistry = Partial<Record<MaterialGroupCategory, MaterialGroup[]>>;
 
-export const materialGroupCategories: MaterialGroupCategory[] = ["entity", "component", "setting", "map", "ui", "system", "feature", "decision", "spec"];
+export const materialGroupCategories: MaterialGroupCategory[] = ["entity", "component", "setting", "map", "ui", "system", "feature", "decision", "decision_tree", "spec"];
 const categories = materialGroupCategories;
 
 function stableLegacyId(category: MaterialGroupCategory, name: string): string {

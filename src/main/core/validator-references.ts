@@ -2,7 +2,8 @@ import type { ValidationDiagnostic } from "../../shared/contracts";
 import { VersionTokenSchema } from "../../shared/contracts";
 import { resolveComponentAnchors, resolveComponentFields, type ComponentDefinition } from "../../shared/component-inheritance";
 import { sceneNodePaths } from "../../shared/godot-scene";
-import { readAnchors, readFields } from "../../shared/project-materials";
+import { flattenDecisionTree, parseComparator } from "../../shared/decision-tree";
+import { bindingIdentity, readAnchors, readBindingKey, readFields } from "../../shared/project-materials";
 import { componentValueMatches, diagnostic, nonempty, record, validReference, validationPathIdentity, type ParsedSpec } from "./validator-markdown";
 import { ValidationSource } from "./validator-source";
 import { normalizeProjectPath } from "./path-policy";
@@ -18,6 +19,7 @@ export async function validateReferences(specs: ParsedSpec[], source: Validation
     if (relative.startsWith("specs/systems/")) return "system";
     if (relative.startsWith("specs/features/")) return "feature";
     if (relative.startsWith("specs/decisions/")) return "decision";
+    if (relative.startsWith("specs/decision_trees/")) return "decision_tree";
     if (/^specs\/[^/]+\.md$/i.test(relative)) return "spec";
     return undefined;
   }
@@ -36,6 +38,9 @@ export async function validateReferences(specs: ParsedSpec[], source: Validation
   const effectiveFields = new Map<string, ReturnType<typeof readFields>>(componentDefinitions.map((definition) => [validationPathIdentity(definition.path), resolveComponentFields(componentDefinitions, definition).fields]));
   // Mounts may target anchors a component inherits from its base definition.
   const effectiveAnchors = new Map<string, ReturnType<typeof readAnchors>>(componentDefinitions.map((definition) => [validationPathIdentity(definition.path), resolveComponentAnchors(componentDefinitions, definition).anchors]));
+  const decisionTrees = new Map<string, ParsedSpec>(specs
+    .filter((spec) => materialKind(spec) === "decision_tree" && nonempty(spec.data.id))
+    .map((spec) => [String(spec.data.id), spec]));
 
   async function resolveReference(value: unknown, owner: string, missingCode: string, invalidCode = "REFERENCE_INVALID", componentBinding = false): Promise<{ spec?: ParsedSpec; path: string } | undefined> {
     const target = typeof value === "string" ? value : record(value) ? value.path ?? value.id : undefined;
@@ -115,6 +120,27 @@ export async function validateReferences(specs: ParsedSpec[], source: Validation
         diagnostics.push(diagnostic(spec.path, "ANCHOR_NODE_INVALID", `Anchor '${anchor.name}' needs a project-relative scene node path`));
       }
     }
+    if (kind === "decision_tree") {
+      for (const { node } of flattenDecisionTree(spec.data.root)) {
+        if (node.kind !== "condition" || typeof node.comparator !== "string") continue;
+        const parsed = parseComparator(node.comparator);
+        if (!parsed) continue; // the structural validator already reports the syntax
+        const component = componentDefinitions.find((definition) => definition.id === parsed.component);
+        if (!component) {
+          diagnostics.push(diagnostic(spec.path, "TREE_COMPARATOR_UNKNOWN_COMPONENT", `Condition '${node.id}' references unknown component '${parsed.component}'`));
+          continue;
+        }
+        const declared = effectiveFields.get(validationPathIdentity(component.path)) ?? [];
+        const field = declared.find((item) => item.key === parsed.field);
+        if (!field) {
+          diagnostics.push(diagnostic(spec.path, "TREE_COMPARATOR_UNKNOWN_FIELD", `Component '${parsed.component}' has no field '${parsed.field}'`));
+          continue;
+        }
+        if (!comparatorLiteralMatches(field.type, parsed.literal)) {
+          diagnostics.push(diagnostic(spec.path, "TREE_COMPARATOR_TYPE_MISMATCH", `Condition '${node.id}' compares ${parsed.component}.${parsed.field} (${field.type}) with '${parsed.literal}'`));
+        }
+      }
+    }
     if (kind && spec.data.parent !== undefined) {
       const code = kind === "entity" ? "ENTITY_PARENT" : "MATERIAL_PARENT";
       const parent = await semanticReference(spec.data.parent, spec, code, (target) => materialKind(target) === kind);
@@ -151,6 +177,38 @@ export async function validateReferences(specs: ParsedSpec[], source: Validation
         await semanticReference(spec.data.supersedes, spec, "DECISION_SUPERSEDES", (target) => materialKind(target) === "decision");
       }
     }
+    if (kind === "system" && Array.isArray(spec.data.mounts)) {
+      const attached = new Set<string>();
+      const keys = new Set<string>();
+      const counts = new Map<string, number>();
+      for (const value of spec.data.mounts) {
+        const target = await semanticReference(value, spec, "SYSTEM_MOUNT", (candidate) => materialKind(candidate) === "component" && candidate.data.type === "component", true);
+        if (!target) continue;
+        const componentId = nonempty(target.data.id) ? String(target.data.id) : validationPathIdentity(target.path);
+        const key = readBindingKey(value);
+        const identity = bindingIdentity(componentId, key);
+        if (attached.has(identity)) diagnostics.push(diagnostic(spec.path, "SYSTEM_MOUNT_DUPLICATE", `Mount '${identity}' is declared twice`));
+        attached.add(identity);
+        if (key) {
+          if (keys.has(key)) diagnostics.push(diagnostic(spec.path, "BINDING_KEY_DUPLICATE", `Mount key '${key}' is used twice`));
+          keys.add(key);
+        }
+        const count = (counts.get(componentId) ?? 0) + 1;
+        counts.set(componentId, count);
+        if (count > 1 && !key) diagnostics.push(diagnostic(spec.path, "BINDING_KEY_REQUIRED", `Component '${componentId}' is mounted twice; give each instance a key`));
+        const values = record(value) && record(value.values) ? value.values : {};
+        if (componentId === "decision_tree") {
+          const tree = typeof values.tree === "string" ? values.tree.trim() : "";
+          if (!tree || !decisionTrees.has(tree)) diagnostics.push(diagnostic(spec.path, "DECISION_TREE_MISSING", `Decision tree '${tree || "(empty)"}' does not exist`));
+        }
+        const fields = new Map((effectiveFields.get(validationPathIdentity(target.path)) ?? []).map((field) => [field.key, field] as const));
+        for (const [fieldKey, override] of Object.entries(values)) {
+          const field = fields.get(fieldKey);
+          if (!field) diagnostics.push(diagnostic(spec.path, "SYSTEM_MOUNT_FIELD_UNKNOWN", `Component '${componentId}' has no field '${fieldKey}'`));
+          else if (!componentValueMatches(field.type, override)) diagnostics.push(diagnostic(spec.path, "SYSTEM_MOUNT_VALUE_INVALID", `Component '${componentId}' field '${fieldKey}' requires a ${String(field.type)} value`));
+        }
+      }
+    }
     if (!isEntitySpec(spec)) continue;
     if (spec.data.extends !== undefined) {
       const target = await semanticReference(spec.data.extends, spec, "ENTITY_INHERIT", (target) => materialKind(target) === "entity");
@@ -159,14 +217,31 @@ export async function validateReferences(specs: ParsedSpec[], source: Validation
     const bound = new Map<string, ParsedSpec>();
     if (spec.data.components !== undefined) {
       const attached = new Set<string>();
+      const keys = new Set<string>();
+      const counts = new Map<string, number>();
       const mounts: { parent: string; anchor: string }[] = [];
       for (const value of Array.isArray(spec.data.components) ? spec.data.components : []) {
         const target = await semanticReference(value, spec, "ENTITY_COMPONENT", (target) => materialKind(target) === "component" && target.data.type === "component", true);
         if (!target) continue;
         const targetIdentity = validationPathIdentity(target.path);
-        if (attached.has(targetIdentity)) diagnostics.push(diagnostic(spec.path, "ENTITY_COMPONENT_DUPLICATE", `Component '${String(target.data.id)}' is already attached`));
-        attached.add(targetIdentity);
+        const componentId = nonempty(target.data.id) ? String(target.data.id) : targetIdentity;
+        const key = readBindingKey(value);
+        const identity = bindingIdentity(componentId, key);
+        if (attached.has(identity)) diagnostics.push(diagnostic(spec.path, "ENTITY_COMPONENT_DUPLICATE", `Component '${identity}' is already attached`));
+        attached.add(identity);
+        if (key) {
+          if (keys.has(key)) diagnostics.push(diagnostic(spec.path, "BINDING_KEY_DUPLICATE", `Binding key '${key}' is used twice`));
+          keys.add(key);
+        }
+        const count = (counts.get(componentId) ?? 0) + 1;
+        counts.set(componentId, count);
+        if (count > 1 && !key) diagnostics.push(diagnostic(spec.path, "BINDING_KEY_REQUIRED", `Component '${componentId}' is attached twice; give each instance a key`));
         if (nonempty(target.data.id)) bound.set(String(target.data.id), target);
+        if (componentId === "decision_tree") {
+          const values = record(value) && record(value.values) ? value.values : {};
+          const tree = typeof values.tree === "string" ? values.tree.trim() : "";
+          if (!tree || !decisionTrees.has(tree)) diagnostics.push(diagnostic(spec.path, "DECISION_TREE_MISSING", `Decision tree '${tree || "(empty)"}' does not exist`));
+        }
         // A mount names its parent component and one of that parent's declared anchors.
         if (record(value) && record(value.mount)) {
           const parent = nonempty(value.mount.parent) ? String(value.mount.parent).trim() : "";
@@ -296,4 +371,11 @@ function validateMounts(spec: ParsedSpec, bound: Map<string, ParsedSpec>, mounts
     occupied.set(key, used);
     if (used > capacity) diagnostics.push(diagnostic(spec.path, "MOUNT_ANCHOR_OCCUPIED", `Anchor '${mount.anchor}' on '${mount.parent}' already holds ${String(capacity)} component(s)`));
   }
+}
+
+/** Comparators are typed loosely in YAML, so check the literal against the field type. */
+function comparatorLiteralMatches(type: string, literal: string): boolean {
+  if (type === "number") return literal.trim() !== "" && Number.isFinite(Number(literal));
+  if (type === "boolean") return literal === "true" || literal === "false";
+  return true;
 }

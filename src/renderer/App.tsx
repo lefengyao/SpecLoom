@@ -90,6 +90,7 @@ const tabs = [
   { id: "documents", category: "system", label: "系统", icon: Waypoints },
   { id: "documents", category: "feature", label: "功能", icon: Layers3 },
   { id: "documents", category: "decision", label: "架构决策", icon: GitBranch },
+  { id: "documents", category: "decision_tree", label: "决策树", icon: Workflow },
   { id: "documents", category: "spec", label: "规范", icon: FileText },
   { id: "skills", label: "Skills", icon: BookOpen },
   { id: "usage", label: "用量", icon: BarChart3 },

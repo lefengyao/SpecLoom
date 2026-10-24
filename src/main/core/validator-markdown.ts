@@ -1,6 +1,7 @@
 import { parseDocument } from "yaml";
 import { TaskScopeSpecSchema, type ValidationDiagnostic } from "../../shared/contracts";
 import { StateMachineSchema } from "../../shared/state-machine";
+import { validateDecisionTree } from "../../shared/decision-tree";
 import { TaskScope } from "./task-scope";
 
 export type SpecData = Record<string, unknown>;
@@ -20,10 +21,11 @@ export const record = (value: unknown): value is SpecData => value !== null && t
 export function validReference(value: unknown, componentBinding = false): boolean {
   if (nonempty(value)) return true;
   if (!record(value)) return false;
-  const keys = ["id", "path", "type", "version", ...(componentBinding ? ["values", "notes", "mount"] : [])];
+  const keys = ["id", "path", "type", "version", ...(componentBinding ? ["key", "values", "notes", "mount"] : [])];
   return Object.keys(value).every((key) => keys.includes(key))
     && ((nonempty(value.id) && value.path === undefined) || (nonempty(value.path) && value.id === undefined))
     && (value.type === undefined || nonempty(value.type))
+    && (!componentBinding || value.key === undefined || (nonempty(value.key) && /^[a-z][a-z0-9_]*$/.test(value.key.trim())))
     && (!componentBinding || value.values === undefined || record(value.values))
     && (!componentBinding || value.mount === undefined || (record(value.mount) && nonempty(value.mount.parent) && nonempty(value.mount.anchor) && Object.keys(value.mount).every((key) => key === "parent" || key === "anchor")))
     && (!componentBinding || value.notes === undefined || (Array.isArray(value.notes) && value.notes.length <= 32 && value.notes.every((note) => nonempty(note) && note.trim().length <= 2000)));
@@ -147,6 +149,17 @@ export function validateFields(spec: ParsedSpec, diagnostics: ValidationDiagnost
         keys.add(value.key);
       }
     }
+  } else if (identity.startsWith("specs/decision_trees/")) {
+    if (data.type !== "decision_tree") diagnostics.push(diagnostic(path, "SPEC_TYPE_INVALID", "Specification type must be decision_tree"));
+    const segments = identity.split("/");
+    const filename = segments[segments.length - 1]!.slice(0, -3);
+    if (segments.length !== 3 || !nonempty(data.id) || filename !== validationPathIdentity(data.id)) {
+      diagnostics.push(diagnostic(path, "SPEC_LAYOUT_INVALID", "Decision trees must use specs/decision_trees/<id>.md"));
+    }
+    field("schemaVersion", data.schemaVersion === 1);
+    field("title", nonempty(data.title));
+    field("description", typeof data.description === "string");
+    for (const issue of validateDecisionTree(data.root)) diagnostics.push(diagnostic(path, issue.code, `${issue.message} (${issue.path})`));
   } else if (identity.startsWith("specs/systems/") || identity.startsWith("specs/features/") || identity.startsWith("specs/decisions/")) {
     const kind = identity.startsWith("specs/systems/") ? "system" : identity.startsWith("specs/features/") ? "feature" : "decision";
     if (data.type !== kind) diagnostics.push(diagnostic(path, "SPEC_TYPE_INVALID", `Specification type must be ${kind}`));

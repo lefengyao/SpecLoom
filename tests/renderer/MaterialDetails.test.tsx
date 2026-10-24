@@ -62,4 +62,18 @@ describe("structured editors for system, feature and decision specs", () => {
     fireEvent.change(screen.getByLabelText("场景文件"), { target: { value: "" } });
     expect(cleared.mock.calls.at(-1)![0]).not.toHaveProperty("scene");
   });
+
+  it("mounts a decision tree instance on a system", () => {
+    const systemCatalog = [...catalog, summary("combat_tree", "战斗决策", "decision_tree", "decision_trees")];
+    const onChange = renderDetails({ schemaVersion: 1, id: "combat", title: "战斗系统", type: "system", description: "" }, systemCatalog);
+    fireEvent.click(screen.getByRole("button", { name: "挂载决策树" }));
+    expect(onChange.mock.calls.at(-1)![0]).toMatchObject({ mounts: [{ id: "decision_tree", key: "tree_1", values: { tree: "combat_tree" } }] });
+  });
+
+  it("names a component instance with a key", () => {
+    const entityCatalog = [...catalog, summary("health", "生命", "component", "components")];
+    const onChange = renderDetails({ schemaVersion: 1, id: "keeper", title: "守灯人", type: "entity", description: "", components: [{ id: "health", values: {} }] }, entityCatalog);
+    fireEvent.change(screen.getByLabelText("生命 的实例 key"), { target: { value: "tank" } });
+    expect(onChange.mock.calls.at(-1)![0]).toMatchObject({ components: [{ id: "health", values: {}, key: "tank" }] });
+  });
 });

@@ -168,6 +168,7 @@ export function MaterialDetails({ material, catalog, groups = [], onChange, disa
     return <section key={`${binding.id}:${index ?? "inherited"}`} className="material-card" aria-label={tr("组件 {title}", { title })}>
       <header><strong><Puzzle size={16} />{title}</strong>{source ? <button type="button" onClick={() => patch({ components: [...rawBindings, { id: binding.id, values: { ...binding.values }, ...(binding.mount ? { mount: binding.mount } : {}) }] })}>{tr("覆盖继承组件 {title}", { title })}</button> : <button type="button" aria-label={tr("移除组件 {title}", { title })} onClick={() => patch({ components: rawBindings.filter((_, position) => position !== index) })}><Trash2 size={15} />{tr("移除")}</button>}</header>
       {source && <p className="subtle">{tr("继承自 {source}", { source })}</p>}
+      {!source && index !== undefined && entity && <label className="material-binding-key">{tr("实例 key")}<input aria-label={tr("{title} 的实例 key", { title })} maxLength={64} value={bindingKeyOf(rawBindings[index])} disabled={disabled} onChange={(event) => updateBindingKey(index, binding.id, event.target.value)} /></label>}
       {!definition && <p role="alert">{tr("组件定义不存在，请移除或重新添加。")}</p>}
       {definition && !definition.fields.length && <p className="subtle">{tr("这个组件还没有字段，可在组件页完善定义。")}</p>}
       <div className="material-values">{definition?.fields.map((field) => <label key={field.key}>{field.label || field.key}<ValueInput label={`${title} · ${field.label || field.key}`} type={field.type} value={binding.values[field.key] ?? inherited.get(binding.id)?.binding.values[field.key] ?? field.default} disabled={Boolean(source)} onChange={(value) => { if (index !== undefined) updateBinding(index, binding.id, field.key, value); }} /></label>)}</div>
@@ -183,6 +184,19 @@ export function MaterialDetails({ material, catalog, groups = [], onChange, disa
   };
   const referenceItems = (target: "component" | "entity" | "system" | "decision") =>
     catalog.filter((item) => !item.invalid && categoryForPath(item.path) === target);
+  const decisionTrees = catalog.filter((item) => !item.invalid && categoryForPath(item.path) === "decision_tree");
+  const mountList = Array.isArray(data.mounts)
+    ? data.mounts.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item))
+    : [];
+  const updateMount = (index: number, change: Record<string, unknown>) =>
+    patch({ mounts: mountList.map((mount, position) => position === index ? { ...mount, ...change } : mount) });
+  const bindingKeyOf = (entry: unknown): string => entry && typeof entry === "object" && !Array.isArray(entry) && typeof (entry as Record<string, unknown>).key === "string" ? String((entry as Record<string, unknown>).key) : "";
+  const updateBindingKey = (index: number, id: string, value: string) => patch({ components: rawBindings.map((entry, position) => {
+    if (position !== index) return entry;
+    const original: Record<string, unknown> = entry && typeof entry === "object" && !Array.isArray(entry) ? { ...(entry as Record<string, unknown>) } : { id };
+    if (value.trim()) original.key = value.trim(); else delete original.key;
+    return original;
+  }) });
   const referenceIds = (key: string): string[] => (Array.isArray(data[key]) ? (data[key] as unknown[]).filter((item): item is string => typeof item === "string") : []);
   const referenceSection = (label: string, key: string, target: "component" | "entity" | "system" | "decision") => {
     const items = referenceItems(target).filter((item) => item.id !== data.id);
@@ -288,6 +302,26 @@ export function MaterialDetails({ material, catalog, groups = [], onChange, disa
         </section>
       </>}
     </div>}
+    {isSystem && <section className="material-section" aria-label={tr("系统挂载")}>
+      <header><h3>{tr("挂载实例")}</h3><span className="subtle">{tr("把决策树等组件实例挂到系统上；同一组件可挂多个，用 key 区分。")}</span>
+        <button type="button" disabled={disabled || !decisionTrees.length} onClick={() => {
+          const used = new Set(mountList.map((mount) => String(mount.key ?? "")));
+          let index = mountList.length + 1;
+          let key = `tree_${index}`;
+          while (used.has(key)) { index++; key = `tree_${index}`; }
+          patch({ mounts: [...mountList, { id: "decision_tree", key, values: { tree: decisionTrees[0]?.id ?? "" } }] });
+        }}><Plus size={16} />{tr("挂载决策树")}</button>
+      </header>
+      {mountList.length ? <ul className="material-mount-list">{mountList.map((mount, index) => <li key={index}>
+        <label>{tr("实例 key")}<input aria-label={tr("挂载 key {index}", { index: index + 1 })} maxLength={64} value={String(mount.key ?? "")} disabled={disabled} onChange={(event) => updateMount(index, { key: event.target.value })} /></label>
+        <label>{tr("决策树")}<select aria-label={tr("挂载决策树 {index}", { index: index + 1 })} value={String((mount.values as Record<string, unknown> | undefined)?.tree ?? "")} disabled={disabled} onChange={(event) => updateMount(index, { values: { ...((mount.values as Record<string, unknown> | undefined) ?? {}), tree: event.target.value } })}>
+          <option value="">{tr("选择决策树")}</option>
+          {decisionTrees.map((tree) => <option key={tree.id} value={tree.id}>{tree.title}</option>)}
+        </select></label>
+        <button type="button" aria-label={tr("移除挂载 {index}", { index: index + 1 })} disabled={disabled} onClick={() => patch({ mounts: mountList.filter((_, position) => position !== index) })}><Trash2 size={15} /></button>
+      </li>)}</ul> : <p className="subtle">{tr("还没有挂载实例。")}</p>}
+      {!decisionTrees.length && <p className="subtle">{tr("先在「决策树」页创建一棵树。")}</p>}
+    </section>}
     {entity && !stateMachine && <section className="material-section state-machine-section" aria-label={tr("实体状态机")}>
       <header><div><h3>{tr("状态机")}</h3><span className="subtle">{tr("为实体添加状态和转换配置")}</span></div><button type="button" onClick={enableStateMachine}><Plus size={16} />{tr("添加状态机")}</button></header>
     </section>}

@@ -86,7 +86,7 @@ root:
 - 右侧：节点检查器（kind、标题、条件/动作/参数、修饰参数）
 - 工具栏：保存、自动整理、校验结果摘要
 
-布局持久化复用现有实体布局 IPC，payload 升到 `version: 3`，增加 `trees` 区域；读取旧版本时 `trees` 视为空，实体布局行为不变。
+布局持久化与实体布局一致，使用 `localStorage`，但按树文件单独建 key（`specloom.decision-tree.<tree path>`）；首次打开按层级自动布局，拖动位置覆盖自动值。实体布局的 payload 不变。
 
 ## 5. 校验
 

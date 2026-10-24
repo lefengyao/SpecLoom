@@ -5,6 +5,7 @@ import type { FileReadResult } from "../shared/contracts";
 import { parseMaterial, readFields, writeMaterial } from "../shared/project-materials";
 import { importMissingLegacyGroups, normalizeMaterialGroups, validateMaterialGroupRegistry, type MaterialGroup, type MaterialGroupCategory, type MaterialGroupRegistry } from "../shared/material-groups";
 import { NewComponent, NewEntity, NewSpec } from "./AuthoringForms";
+import { DecisionTreeEditor } from "./DecisionTreeEditor";
 import { MaterialDetails } from "./MaterialDetails";
 import { MaterialExplorer } from "./MaterialExplorer";
 import { MaterialImageEditor } from "./MaterialImage";
@@ -468,12 +469,20 @@ export function DocumentsView({ api, projectPath, onError, busy, revision, categ
     <>
       {catalogError && usesCatalog && <p role="alert" className="field-hint">{tr("部分资料读取失败，详情编辑暂不可用。可切换源码编辑或刷新项目树重试。")}</p>}
       {projectPreview ? ["image", "audio", "video"].includes(resourceKind(projectPreview) ?? "") ? <ProjectMediaPreview api={api} projectPath={projectPath} path={projectPreview} active={active} /> : <ProjectTextPreview api={api} projectPath={projectPath} path={projectPreview} active={active} /> : file ? structured && !sourceMode ? <form id="material-edit-form" onSubmit={(event) => { event.preventDefault(); void saveDocument(); }}>
+        {category === "decision_tree" ? <DecisionTreeEditor
+          key={file.path}
+          treePath={file.path}
+          root={material.data.root}
+          disabled={busy || saving || loading}
+          onChange={(root) => updateText(writeMaterial({ ...material.data, root }, material.body))}
+        /> : <>
         <MaterialImageEditor key={`image:${file.path}`} api={api} projectPath={projectPath} title={selectedMeta?.title ?? tr("资料")} path={typeof material.data.image === "string" ? material.data.image : undefined} disabled={busy || saving || loading} onError={onError} onChange={(image) => {
           const data = { ...material.data };
           if (image) data.image = image; else delete data.image;
           updateText(writeMaterial(data, material.body));
         }} />
         <MaterialDetails key={file.path} material={material} catalog={selectable} groups={groupRegistry[category] ?? []} originalFields={readFields(parseMaterial(file.content)?.data ?? {}).map((field) => field.key)} disabled={busy || saving || loading || (usesCatalog && (catalogLoading || catalogError || groupRegistrySaving))} onChange={(data, body = material.body) => updateText(writeMaterial(data, body))} />
+        </>}
       </form> : <textarea aria-label={tr("文档内容")} className="markdown-editor" spellCheck={false} value={text} onChange={(event) => updateText(event.target.value)} disabled={busy || loading || saving} />
       : <div className="empty-state">{loading ? tr("读取中…") : selectedPath ? <><FileText size={24} /><span className="subtle">{tr("该文件不在可编辑的项目资料目录中")}</span></> : <span>{category === "component" ? tr("创建可复用组件，或选择组件编辑字段") : tr("选择资料或新建资料")}</span>}</div>}
     </>
@@ -513,6 +522,6 @@ export function DocumentsView({ api, projectPath, onError, busy, revision, categ
     {createForm && category === "entity" && <NewEntity busy={busy || saving} onClose={() => setCreateForm(false)} onSave={createDocument} {...(initialParent ? { initialParent } : {})} />}
     {createForm && category === "component" && <NewComponent busy={busy || saving} onClose={() => setCreateForm(false)} onSave={createDocument} />}
     {createForm && category === "map" && <NewEntity kind="map" busy={busy || saving} onClose={() => setCreateForm(false)} onSave={createDocument} />}
-    {createForm && (category === "setting" || category === "ui" || category === "spec" || category === "system" || category === "feature" || category === "decision") && <NewSpec kind={category} busy={busy || saving} onClose={() => setCreateForm(false)} onSave={createDocument} />}
+    {createForm && (category === "setting" || category === "ui" || category === "spec" || category === "system" || category === "feature" || category === "decision" || category === "decision_tree") && <NewSpec kind={category} busy={busy || saving} onClose={() => setCreateForm(false)} onSave={createDocument} />}
   </div>;
 }

@@ -12,7 +12,7 @@ export interface ProjectLayoutOptions {
 export const EDITABLE_PROJECT_DIRECTORIES = [
   "specs/entities/characters", "specs/entities/enemies", "specs/entities/maps", "specs/entities/systems",
   "specs/entities/items", "specs/entities/events", "specs/components", "specs/settings", "specs/maps", "specs/ui",
-  "specs/systems", "specs/features", "specs/tasks", "specs/decisions", "specs/prompts",
+  "specs/systems", "specs/features", "specs/decision_trees", "specs/tasks", "specs/decisions", "specs/prompts",
   ".specloom/skills",
 ] as const;
 
@@ -159,6 +159,19 @@ export class ProjectLayout {
         { key: "current_state", label: "当前状态", type: "string", default: "idle" },
       ],
     }, "# 状态机基类\n\n## 行为契约\n\n- `on_enter(state)`：进入状态时调用。\n- `on_update(state, delta)`：状态持续期间每帧更新。\n- `on_exit(state)`：离开状态时调用。"));
+    await writeInitialFile(root, "specs/components/decision_tree.md", markdown({
+      schemaVersion: SCHEMA_VERSION,
+      id: "decision_tree",
+      title: "决策树",
+      type: "component",
+      scope: "system",
+      group: "基础组件",
+      description: "引用一棵决策树规范，用行为决策驱动实体或系统；同一所有者可挂多棵，用 key 区分。",
+      fields: [
+        { key: "enabled", label: "启用", type: "boolean", default: true },
+        { key: "tree", label: "决策树", type: "string", default: "" },
+      ],
+    }, "# 决策树\n\n## 行为契约\n\n- `tree` 指向 `specs/decision_trees/<id>.md`，由实现按树结构执行。\n- 同一实体或系统可挂多个决策树实例，用 `key` 区分。\n- 决策树只描述选择逻辑，具体条件与动作由实现解释。"));
     await writeInitialFile(root, ".specloom/project.yaml", stringify({ schemaVersion: SCHEMA_VERSION, project: { name: metadata.name, description: metadata.description }, godot: metadata.godot, defaultTaskMode: "manual" }));
     await writeInitialFile(root, ".specloom/generated-manifest.json", `${JSON.stringify({ schemaVersion: SCHEMA_VERSION, files: {} }, null, 2)}\n`);
     if (this.options.bundledSkillsDirectory !== undefined) await this.copyBundledSkills(root, this.options.bundledSkillsDirectory);
