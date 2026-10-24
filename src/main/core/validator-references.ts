@@ -32,6 +32,17 @@ export async function validateReferences(specs: ParsedSpec[], source: Validation
     if (existing) diagnostics.push(diagnostic(spec.path, "SPEC_ID_DUPLICATE", `ID '${spec.data.id}' is already defined in ${existing.path}`));
     else ids.set(spec.data.id, spec);
   }
+  // Decision files carry a four-digit number; two files may not share it.
+  const decisionNumbers = new Map<string, ParsedSpec>();
+  for (const spec of specs) {
+    if (materialKind(spec) !== "decision") continue;
+    const filename = validationPathIdentity(spec.path).split("/").pop() ?? "";
+    const number = /^(\d{4})-/.exec(filename)?.[1];
+    if (!number) continue;
+    const existing = decisionNumbers.get(number);
+    if (existing) diagnostics.push(diagnostic(spec.path, "DECISION_NUMBER_DUPLICATE", `Decision number ${number} is already used by ${existing.path}`));
+    else decisionNumbers.set(number, spec);
+  }
   const componentDefinitions: ComponentDefinition[] = specs
     .filter((spec) => materialKind(spec) === "component" && spec.data.type === "component" && nonempty(spec.data.id))
     .map((spec) => ({ path: spec.path, id: String(spec.data.id), data: spec.data }));

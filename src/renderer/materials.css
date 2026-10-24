@@ -10,6 +10,11 @@
 .material-mount-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
 .material-mount-list li { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto; gap: 8px; align-items: end; }
 .material-binding-key { display: grid; gap: 3px; max-width: 240px; font-size: 11px; }
+.material-consumers { display: grid; gap: 4px; }
+.material-consumers strong { font-size: 12px; color: var(--text-muted); }
+.material-consumers ul { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.material-consumers li { display: flex; align-items: baseline; gap: 6px; padding: 3px 8px; border: 1px solid var(--border); border-radius: 999px; font-size: 12px; }
+.material-consumers code { color: var(--text-subtle); font-size: 10px; }
 .material-section { display: flex; flex-direction: column; gap: 12px; padding: 18px 0; border-top: 1px solid var(--border); }
 .material-section > header, .material-card > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .material-section h3 { font-size: 14px; margin: 0; }

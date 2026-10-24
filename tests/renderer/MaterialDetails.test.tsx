@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MaterialDetails } from "../../src/renderer/MaterialDetails";
 import type { MaterialSummary } from "../../src/shared/material-catalog";
@@ -75,5 +75,29 @@ describe("structured editors for system, feature and decision specs", () => {
     const onChange = renderDetails({ schemaVersion: 1, id: "keeper", title: "守灯人", type: "entity", description: "", components: [{ id: "health", values: {} }] }, entityCatalog);
     fireEvent.change(screen.getByLabelText("生命 的实例 key"), { target: { value: "tank" } });
     expect(onChange.mock.calls.at(-1)![0]).toMatchObject({ components: [{ id: "health", values: {}, key: "tank" }] });
+  });
+
+  it("lists the systems and decision trees that reference a component", () => {
+    const componentCatalog = [
+      summary("vitality", "生命", "component", "components"),
+      { ...summary("combat", "战斗系统", "system", "systems"), uses: ["vitality"] } as unknown as MaterialSummary,
+      { ...summary("combat_tree", "战斗决策", "decision_tree", "decision_trees"), treeComponents: ["vitality"] } as unknown as MaterialSummary,
+    ];
+    render(<MaterialDetails material={doc({ schemaVersion: 1, id: "vitality", title: "生命", type: "component", description: "", fields: [] })} catalog={componentCatalog} onChange={vi.fn()} disabled={false} />);
+    const section = screen.getByRole("region", { name: "被引用" });
+    expect(within(section).getByText("战斗系统")).toBeInTheDocument();
+    expect(within(section).getByText("战斗决策")).toBeInTheDocument();
+  });
+
+  it("lists the entities and systems a decision tree is mounted on", () => {
+    const treeCatalog = [
+      summary("combat_tree", "战斗决策", "decision_tree", "decision_trees"),
+      { ...summary("keeper", "守灯人", "entity", "entities"), components: [{ id: "decision_tree", key: "ai", values: { tree: "combat_tree" }, notes: [] }] } as unknown as MaterialSummary,
+      { ...summary("ai_system", "AI 系统", "system", "systems"), mounts: [{ id: "decision_tree", key: "ai", values: { tree: "combat_tree" }, notes: [] }] } as unknown as MaterialSummary,
+    ];
+    render(<MaterialDetails material={doc({ schemaVersion: 1, id: "combat_tree", title: "战斗决策", type: "decision_tree", description: "" })} catalog={treeCatalog} onChange={vi.fn()} disabled={false} />);
+    const section = screen.getByRole("region", { name: "被引用" });
+    expect(within(section).getByText("守灯人")).toBeInTheDocument();
+    expect(within(section).getByText("AI 系统")).toBeInTheDocument();
   });
 });

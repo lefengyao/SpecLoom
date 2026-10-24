@@ -95,6 +95,14 @@ describe("system, feature and decision specs", () => {
       .toContainEqual(expect.objectContaining({ path: "specs/decisions/0002-unknown-status.md", code: "SPEC_FIELD_INVALID" }));
   });
 
+  it("rejects two decisions that share a number", async () => {
+    const { root, validator } = await fixture();
+    await put(root, "specs/decisions/0002-first.md", doc("first", "decision", { status: "accepted" }));
+    await put(root, "specs/decisions/0002-second.md", doc("second", "decision", { status: "accepted" }));
+    expect((await validator.validate({ runGodot: false })).diagnostics)
+      .toContainEqual(expect.objectContaining({ code: "DECISION_NUMBER_DUPLICATE" }));
+  });
+
   it("creates feature and decision documents with their default status", async () => {
     const { root, validator } = await fixture();
     const store = new FileStore(root);

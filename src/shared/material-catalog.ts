@@ -6,6 +6,12 @@ export interface MaterialSummary {
   id: string; title: string; type: string; path: string; version: string; content: string;
   description?: string; group?: string; groupId?: string; groupPath?: string; scope?: ComponentScope; image?: string; parent?: string; extends?: string;
   fields: ComponentField[]; components: ComponentBinding[]; anchors?: ComponentAnchor[]; invalid?: boolean;
+  /** Instance bindings on a system, plus the reference lists used for reverse lookups. */
+  mounts?: ComponentBinding[];
+  uses?: string[];
+  systems?: string[];
+  affectedSystems?: string[];
+  treeComponents?: string[];
 }
 export type ComponentScope = "system" | "user";
 export const componentScopeLabels: Record<ComponentScope, string> = { system: "官方组件", user: "自定义组件" };
@@ -57,6 +63,27 @@ export function referenceId(value: unknown): string | undefined {
   }
   return undefined;
 }
+
+function stringList(value: unknown[]): string[] {
+  return value.map((item) => referenceId(item)).filter((item): item is string => Boolean(item));
+}
+
+/** Component ids a decision tree compares against, so components can list the trees using them. */
+function treeComponentReferences(root: unknown): string[] {
+  const ids = new Set<string>();
+  const visit = (node: unknown): void => {
+    if (!node || typeof node !== "object" || Array.isArray(node)) return;
+    const record = node as Record<string, unknown>;
+    if (typeof record.comparator === "string") {
+      const match = /^([a-z][a-z0-9_]*)\./.exec(record.comparator.trim());
+      if (match) ids.add(match[1]!);
+    }
+    if (Array.isArray(record.children)) for (const child of record.children) visit(child);
+    visit(record.child);
+  };
+  visit(root);
+  return [...ids];
+}
 export function summarizeMaterial(file: { path: string; version: string; content: string }, registry?: MaterialGroupRegistry): MaterialSummary {
   const parsed = parseMaterial(file.content); const data = parsed?.data;
   const valid = typeof data?.id === "string" && data.id.trim();
@@ -85,6 +112,12 @@ export function summarizeMaterial(file: { path: string; version: string; content
     fields: readFields(data ?? {}), anchors: readAnchors(data ?? {}), components: readBindings({ components: Array.isArray(data?.components) ? data.components.map((item) => {
       const id = referenceId(item);
       return item && typeof item === "object" && !Array.isArray(item) ? { ...item, id } : item;
-    }) : [] }), ...(!valid ? { invalid: true } : {}),
+    }) : [] }),
+    ...(category === "system" ? { mounts: readBindings({ components: Array.isArray(data?.mounts) ? data.mounts : [] }) } : {}),
+    ...(category === "system" && Array.isArray(data?.components) ? { uses: stringList(data.components) } : {}),
+    ...(category === "feature" && Array.isArray(data?.systems) ? { systems: stringList(data.systems) } : {}),
+    ...(category === "decision" && Array.isArray(data?.affectedSystems) ? { affectedSystems: stringList(data.affectedSystems) } : {}),
+    ...(category === "decision_tree" ? { treeComponents: treeComponentReferences(data?.root) } : {}),
+    ...(!valid ? { invalid: true } : {}),
   };
 }

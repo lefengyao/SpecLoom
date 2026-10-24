@@ -83,6 +83,33 @@ export function MaterialDetails({ material, catalog, groups = [], onChange, disa
   })).filter((section) => section.items.length > 0);
   const consumers = isComponent ? catalog.filter((item) => ["entity", "map"].includes(categoryForPath(item.path) ?? "") && item.components.some((binding) => resolveMaterial(components, binding.id)?.id === data.id)) : [];
   const componentConsumers = isComponent ? catalog.filter((item) => categoryForPath(item.path) === "component" && item.type === "component" && resolveMaterial(components, item.extends)?.id === data.id) : [];
+  /** Reverse references: who points at this material from the other categories. */
+  const reverseReferences = (() => {
+    const id = String(data.id ?? "");
+    if (!id) return [] as { label: string; items: MaterialSummary[] }[];
+    const usable = catalog.filter((item) => !item.invalid && item.id !== id);
+    const bindsTree = (bindings: ComponentBinding[] | undefined) => (bindings ?? []).some((binding) => binding.id === "decision_tree" && String((binding.values as Record<string, unknown>).tree ?? "") === id);
+    if (category === "component") {
+      return [
+        { label: tr("被这些实体使用"), items: consumers },
+        { label: tr("被这些系统引用"), items: usable.filter((item) => categoryForPath(item.path) === "system" && (item.uses ?? []).includes(id)) },
+        { label: tr("被这些决策树使用"), items: usable.filter((item) => categoryForPath(item.path) === "decision_tree" && (item.treeComponents ?? []).includes(id)) },
+      ].filter((section) => section.items.length > 0);
+    }
+    if (category === "system") {
+      return [
+        { label: tr("被这些功能引用"), items: usable.filter((item) => categoryForPath(item.path) === "feature" && (item.systems ?? []).includes(id)) },
+        { label: tr("被这些架构决策影响"), items: usable.filter((item) => categoryForPath(item.path) === "decision" && (item.affectedSystems ?? []).includes(id)) },
+      ].filter((section) => section.items.length > 0);
+    }
+    if (category === "decision_tree") {
+      return [
+        { label: tr("挂载在实体上"), items: usable.filter((item) => ["entity", "map"].includes(categoryForPath(item.path) ?? "") && bindsTree(item.components)) },
+        { label: tr("挂载在系统上"), items: usable.filter((item) => categoryForPath(item.path) === "system" && bindsTree(item.mounts)) },
+      ].filter((section) => section.items.length > 0);
+    }
+    return [] as { label: string; items: MaterialSummary[] }[];
+  })();
   const ownFieldKeys = new Set(fields.map((field) => field.key));
   const inheritedFields = isComponent && componentBase ? componentBase.fields.filter((field) => !ownFieldKeys.has(field.key)) : [];
   const emit = (value: Record<string, unknown>, nextBody?: string) => {
@@ -321,6 +348,13 @@ export function MaterialDetails({ material, catalog, groups = [], onChange, disa
         <button type="button" aria-label={tr("移除挂载 {index}", { index: index + 1 })} disabled={disabled} onClick={() => patch({ mounts: mountList.filter((_, position) => position !== index) })}><Trash2 size={15} /></button>
       </li>)}</ul> : <p className="subtle">{tr("还没有挂载实例。")}</p>}
       {!decisionTrees.length && <p className="subtle">{tr("先在「决策树」页创建一棵树。")}</p>}
+    </section>}
+    {reverseReferences.length > 0 && <section className="material-section" aria-label={tr("被引用")}>
+      <header><h3>{tr("被引用")}</h3><span className="subtle">{tr("反查其他资料对这里的引用，改名前可先确认影响范围。")}</span></header>
+      {reverseReferences.map((group) => <div key={group.label} className="material-consumers">
+        <strong>{group.label}</strong>
+        <ul>{group.items.map((item) => <li key={item.path}><span>{item.title}</span><code>{item.id}</code></li>)}</ul>
+      </div>)}
     </section>}
     {entity && !stateMachine && <section className="material-section state-machine-section" aria-label={tr("实体状态机")}>
       <header><div><h3>{tr("状态机")}</h3><span className="subtle">{tr("为实体添加状态和转换配置")}</span></div><button type="button" onClick={enableStateMachine}><Plus size={16} />{tr("添加状态机")}</button></header>
