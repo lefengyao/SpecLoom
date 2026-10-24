@@ -46,6 +46,8 @@ import {
   ENTITY_ORIGIN,
   defaultEntityPositions,
   createLayoutSaver,
+  facingSides,
+  mountParentId,
   layoutSize,
   loadEntityLayout,
   nearestFreePosition,
@@ -374,6 +376,11 @@ function ComponentCard({ data }: NodeProps) {
       <Handle type="target" position={Position.Bottom} id="target-bottom" className="ewb-handle" />
       <Handle type="target" position={Position.Left} id="target-left" className="ewb-handle" />
       <Handle type="target" position={Position.Right} id="target-right" className="ewb-handle" />
+      {/* Components can host mounted children, so they expose source sides too. */}
+      <Handle type="source" position={Position.Top} id="source-top" className="ewb-handle" />
+      <Handle type="source" position={Position.Bottom} id="source-bottom" className="ewb-handle" />
+      <Handle type="source" position={Position.Left} id="source-left" className="ewb-handle" />
+      <Handle type="source" position={Position.Right} id="source-right" className="ewb-handle" />
       {(card.anchors ?? []).map((anchor) => (
         <Handle
           key={anchor.id}
@@ -462,7 +469,7 @@ function EntityCanvas({
       },
     ];
     const entityRect = rects[ENTITY_NODE_ID]!;
-    const entityCenter = { x: entityRect.x + entityRect.width / 2, y: entityRect.y + entityRect.height / 2 };
+    const boundIds = new Set(bindings.map((binding) => binding.id));
     const edges: Edge[] = [];
     for (const binding of bindings) {
       const title = binding.component?.title ?? binding.id;
@@ -471,14 +478,14 @@ function EntityCanvas({
       const position = positions.get(binding.id)!;
       const rect = rects[binding.id]!;
       const anchors = stored?.anchors ?? [];
-      const dx = rect.x + rect.width / 2 - entityCenter.x;
-      const dy = rect.y + rect.height / 2 - entityCenter.y;
-      const horizontal = Math.abs(dx) > Math.abs(dy);
-      const autoSource: EntityAnchorSide = horizontal ? (dx > 0 ? "right" : "left") : (dy > 0 ? "bottom" : "top");
-      const autoTarget: EntityAnchorSide = horizontal ? (dx > 0 ? "left" : "right") : (dy > 0 ? "top" : "bottom");
-      const sourceAnchor = isAnchorSide(stored?.sourceAnchor) ? stored.sourceAnchor : autoSource;
+      // A mount on another component draws parent → child; the entity is only the
+      // fallback when the mount names the entity or a component that is not bound.
+      const parentId = mountParentId(binding.id, binding.mount?.parent, boundIds);
+      const sourceRect = parentId ? rects[parentId]! : entityRect;
+      const sides = facingSides(sourceRect, rect);
+      const sourceAnchor = parentId ? sides.source : isAnchorSide(stored?.sourceAnchor) ? stored.sourceAnchor : sides.source;
       const chosenTarget = stored?.targetAnchor;
-      const targetAnchor = isAnchorSide(chosenTarget) || anchors.some((anchor) => anchor.id === chosenTarget) ? chosenTarget! : autoTarget;
+      const targetAnchor = isAnchorSide(chosenTarget) || anchors.some((anchor) => anchor.id === chosenTarget) ? chosenTarget! : sides.target;
       nodes.push({
         id: componentNodeId(binding.id),
         type: "component",
@@ -503,12 +510,17 @@ function EntityCanvas({
         ...(overlapping.has(binding.id) ? { className: "ewb-overlap" } : {}),
       });
       edges.push({
-        id: `entity-edge:${binding.id}`,
-        source: ENTITY_NODE_ID,
+        id: parentId ? `mount-edge:${binding.id}` : `entity-edge:${binding.id}`,
+        source: parentId ? componentNodeId(parentId) : ENTITY_NODE_ID,
         sourceHandle: `source-${sourceAnchor}`,
         target: componentNodeId(binding.id),
         targetHandle: `target-${targetAnchor}`,
         type: "default",
+        ...(parentId && binding.mount ? {
+          label: binding.mount.anchor,
+          labelStyle: { fill: "var(--text-subtle)", fontSize: 10 },
+          labelBgStyle: { fill: "var(--bg-surface)", fillOpacity: 0.9 },
+        } : {}),
         style: binding.own
           ? { stroke: "var(--accent)" }
           : { stroke: "var(--text-faint)", strokeDasharray: "5 4" },
@@ -518,7 +530,9 @@ function EntityCanvas({
           height: 14,
           color: binding.own ? "var(--accent)" : "var(--text-faint)",
         },
-        ariaLabel: tr("{source} 到 {target}", { source: entity.title, target: title }),
+        ariaLabel: parentId
+          ? tr("{parent} 的 {anchor} 挂载 {child}", { parent: parentId, anchor: binding.mount?.anchor ?? "", child: title })
+          : tr("{source} 到 {target}", { source: entity.title, target: title }),
       });
     }
     return { nodes, edges, rects };

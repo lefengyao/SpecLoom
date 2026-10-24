@@ -7,7 +7,7 @@
  * layout so overlap can be detected without reading card internals.
  */
 
-import { validateEntityLayout, type EntityComponentLayout, type EntityLayout, type EntityPoint, type EntitySize } from "../shared/entity-layout";
+import { validateEntityLayout, type EntityAnchorSide, type EntityComponentLayout, type EntityLayout, type EntityPoint, type EntitySize } from "../shared/entity-layout";
 export { ENTITY_ANCHOR_SIDES, ENTITY_SELF_LAYOUT_ID, validateEntityLayout, type EntityAnchor, type EntityAnchorSide, type EntityComponentLayout, type EntityLayout, type EntityPoint, type EntitySize } from "../shared/entity-layout";
 import { ENTITY_SELF_LAYOUT_ID } from "../shared/entity-layout";
 
@@ -46,6 +46,29 @@ export function layoutSize(entry: EntityComponentLayout | undefined, fallback: E
 
 export function rectOf(point: EntityPoint, size: EntitySize): EntityRect {
   return { x: point.x, y: point.y, width: size.width, height: size.height };
+}
+
+/**
+ * Which sides two cards should connect through: the source side faces the target
+ * card and the target side faces back. Used for entity→component and for
+ * component→component mount edges.
+ */
+export function facingSides(source: EntityRect, target: EntityRect): { source: EntityAnchorSide; target: EntityAnchorSide } {
+  const dx = target.x + target.width / 2 - (source.x + source.width / 2);
+  const dy = target.y + target.height / 2 - (source.y + source.height / 2);
+  const horizontal = Math.abs(dx) > Math.abs(dy);
+  return horizontal
+    ? { source: dx >= 0 ? "right" : "left", target: dx >= 0 ? "left" : "right" }
+    : { source: dy >= 0 ? "bottom" : "top", target: dy >= 0 ? "top" : "bottom" };
+}
+
+/**
+ * Component that owns a binding's mount anchor. `__entity__`, missing parents and
+ * self-references fall back to the entity card so a broken mount still renders.
+ */
+export function mountParentId(bindingId: string, parent: string | undefined, boundIds: ReadonlySet<string>): string | undefined {
+  if (!parent || parent === "__entity__" || parent === bindingId) return undefined;
+  return boundIds.has(parent) ? parent : undefined;
 }
 
 /** True when two cards touch or sit closer than `gap` on both axes. */

@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, test } from "vitest";
 import {
-  CARD_GAP, COMPONENT_CARD_SIZE, ENTITY_CARD_SIZE, ENTITY_SELF_LAYOUT_ID, createLayoutSaver, loadEntityLayout, migrateLegacyPositions,
-  nearestFreePosition, packComponentPositions, pruneEntityLayout, rectOf, rectsOverlap, saveEntityLayout,
+  CARD_GAP, COMPONENT_CARD_SIZE, ENTITY_CARD_SIZE, ENTITY_SELF_LAYOUT_ID, createLayoutSaver, facingSides, loadEntityLayout, migrateLegacyPositions,
+  mountParentId, nearestFreePosition, packComponentPositions, pruneEntityLayout, rectOf, rectsOverlap, saveEntityLayout,
 } from "../../src/renderer/entity-layout";
 import type { EntityLayout } from "../../src/shared/entity-layout";
 
@@ -81,6 +81,29 @@ describe("migrateLegacyPositions", () => {
   test("leaves an already migrated layout untouched", () => {
     const layout = { keeper: { health: { x: 300, y: -140 }, [ENTITY_SELF_LAYOUT_ID]: { x: 0, y: 0 } } } as EntityLayout;
     expect(migrateLegacyPositions(layout)).toEqual(layout);
+  });
+});
+
+describe("facingSides", () => {
+  const source = { x: 0, y: 0, width: 200, height: 120 };
+
+  test("connects through the dominant axis", () => {
+    expect(facingSides(source, { x: 400, y: 0, width: 200, height: 120 })).toEqual({ source: "right", target: "left" });
+    expect(facingSides(source, { x: -400, y: 0, width: 200, height: 120 })).toEqual({ source: "left", target: "right" });
+    expect(facingSides(source, { x: 0, y: 300, width: 200, height: 120 })).toEqual({ source: "bottom", target: "top" });
+    expect(facingSides(source, { x: 0, y: -300, width: 200, height: 120 })).toEqual({ source: "top", target: "bottom" });
+  });
+});
+
+describe("mountParentId", () => {
+  const bound = new Set(["armor_slot", "armor_class_1"]);
+
+  test("resolves a bound component and falls back to the entity otherwise", () => {
+    expect(mountParentId("armor_class_1", "armor_slot", bound)).toBe("armor_slot");
+    expect(mountParentId("armor_class_1", undefined, bound)).toBeUndefined();
+    expect(mountParentId("armor_class_1", "__entity__", bound)).toBeUndefined();
+    expect(mountParentId("armor_class_1", "missing", bound)).toBeUndefined();
+    expect(mountParentId("armor_class_1", "armor_class_1", bound)).toBeUndefined();
   });
 });
 
