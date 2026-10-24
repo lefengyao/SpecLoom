@@ -93,9 +93,15 @@ const EntityAnchorSchema = z.object({
   side: z.enum(["top", "right", "bottom", "left"]),
   offset: z.number().finite().min(5).max(95),
 }).strict();
+const EntityLayoutSizeSchema = z.object({
+  width: z.number().finite().positive().max(10_000),
+  height: z.number().finite().positive().max(10_000),
+}).strict();
 const EntityLayoutEntrySchema = z.object({
   x: z.number().finite(),
   y: z.number().finite(),
+  // Measured card size; the workbench writes it back on every layout save.
+  size: EntityLayoutSizeSchema.optional(),
   sourceAnchor: z.enum(["top", "right", "bottom", "left"]).optional(),
   targetAnchor: z.string().min(1).max(80).optional(),
   anchors: z.array(EntityAnchorSchema).max(16).optional(),

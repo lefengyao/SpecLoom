@@ -1,7 +1,7 @@
 import type { ValidationDiagnostic } from "../../shared/contracts";
 import { VersionTokenSchema } from "../../shared/contracts";
 import { resolveComponentFields, type ComponentDefinition } from "../../shared/component-inheritance";
-import { readFields } from "../../shared/project-materials";
+import { readAnchors, readFields } from "../../shared/project-materials";
 import { componentValueMatches, diagnostic, nonempty, record, validReference, validationPathIdentity, type ParsedSpec } from "./validator-markdown";
 import { ValidationSource } from "./validator-source";
 import { normalizeProjectPath } from "./path-policy";
@@ -103,6 +103,11 @@ export async function validateReferences(specs: ParsedSpec[], source: Validation
     if (!nonempty(spec.data.id)) continue;
     const ownerId = spec.data.id;
     const kind = materialKind(spec);
+    for (const anchor of readAnchors(spec.data)) {
+      if (anchor.node !== undefined && (!anchor.node.trim() || anchor.node.startsWith("/") || anchor.node.split("/").includes(".."))) {
+        diagnostics.push(diagnostic(spec.path, "ANCHOR_NODE_INVALID", `Anchor '${anchor.name}' needs a project-relative scene node path`));
+      }
+    }
     if (kind && spec.data.parent !== undefined) {
       const code = kind === "entity" ? "ENTITY_PARENT" : "MATERIAL_PARENT";
       const parent = await semanticReference(spec.data.parent, spec, code, (target) => materialKind(target) === kind);
@@ -119,12 +124,22 @@ export async function validateReferences(specs: ParsedSpec[], source: Validation
     }
     if (spec.data.components !== undefined) {
       const attached = new Set<string>();
+      const bound = new Map<string, ParsedSpec>();
+      const mounts: { parent: string; anchor: string }[] = [];
       for (const value of Array.isArray(spec.data.components) ? spec.data.components : []) {
         const target = await semanticReference(value, spec, "ENTITY_COMPONENT", (target) => materialKind(target) === "component" && target.data.type === "component", true);
         if (!target) continue;
         const targetIdentity = validationPathIdentity(target.path);
         if (attached.has(targetIdentity)) diagnostics.push(diagnostic(spec.path, "ENTITY_COMPONENT_DUPLICATE", `Component '${String(target.data.id)}' is already attached`));
         attached.add(targetIdentity);
+        if (nonempty(target.data.id)) bound.set(String(target.data.id), target);
+        // A mount names its parent component and one of that parent's declared anchors.
+        if (record(value) && record(value.mount)) {
+          const parent = nonempty(value.mount.parent) ? String(value.mount.parent).trim() : "";
+          const anchor = nonempty(value.mount.anchor) ? String(value.mount.anchor).trim() : "";
+          if (!parent || !anchor) diagnostics.push(diagnostic(spec.path, "MOUNT_INVALID", `Component '${String(target.data.id)}' has an incomplete mount target`));
+          else mounts.push({ parent, anchor });
+        }
         if (!record(value) || !record(value.values)) continue;
         const fields = new Map<string, ReturnType<typeof readFields>[number]>();
         for (const field of effectiveFields.get(targetIdentity) ?? []) fields.set(field.key, field);
@@ -134,6 +149,7 @@ export async function validateReferences(specs: ParsedSpec[], source: Validation
           else if (!componentValueMatches(field.type, override)) diagnostics.push(diagnostic(spec.path, "ENTITY_COMPONENT_VALUE_INVALID", `Component '${String(target.data.id)}' field '${key}' requires a ${String(field.type)} value`));
         }
       }
+      validateMounts(spec, bound, mounts, diagnostics);
     }
   }
 
@@ -180,5 +196,36 @@ export async function validateReferences(specs: ParsedSpec[], source: Validation
       if (!Array.isArray(value.sources)) diagnostics.push(diagnostic(manifestPath, "GENERATED_MANIFEST_INVALID", `Generated entry '${target}' sources must be an array`));
       else for (const input of value.sources) await reference(input, manifestPath, "GENERATED_SOURCE_NOT_FOUND");
     }
+  }
+}
+
+/**
+ * Mount targets must point at a component attached to the same entity (or at the
+ * entity itself) and name one of that parent's declared anchors. Without this,
+ * "which slot an armor class mounts to" stays an unchecked ordering convention.
+ */
+function validateMounts(spec: ParsedSpec, bound: Map<string, ParsedSpec>, mounts: { parent: string; anchor: string }[], diagnostics: ValidationDiagnostic[]): void {
+  const entityAnchors = readAnchors(spec.data);
+  const occupied = new Map<string, number>();
+  for (const mount of mounts) {
+    let declared = entityAnchors;
+    if (mount.parent !== "__entity__") {
+      const parent = bound.get(mount.parent);
+      if (!parent) {
+        diagnostics.push(diagnostic(spec.path, "MOUNT_PARENT_UNKNOWN", `Mount parent '${mount.parent}' is not attached to this entity`));
+        continue;
+      }
+      declared = readAnchors(parent.data);
+    }
+    const anchor = declared.find((item) => item.name === mount.anchor);
+    if (!anchor) {
+      diagnostics.push(diagnostic(spec.path, "MOUNT_ANCHOR_UNKNOWN", mount.parent === "__entity__" ? `Entity has no anchor '${mount.anchor}'` : `Component '${mount.parent}' has no anchor '${mount.anchor}'`));
+      continue;
+    }
+    const capacity = anchor.capacity ?? 1;
+    const key = `${mount.parent}\\u0000${mount.anchor}`;
+    const used = (occupied.get(key) ?? 0) + 1;
+    occupied.set(key, used);
+    if (used > capacity) diagnostics.push(diagnostic(spec.path, "MOUNT_ANCHOR_OCCUPIED", `Anchor '${mount.anchor}' on '${mount.parent}' already holds ${String(capacity)} component(s)`));
   }
 }

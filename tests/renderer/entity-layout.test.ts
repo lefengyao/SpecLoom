@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, test } from "vitest";
 import {
-  CARD_GAP, COMPONENT_CARD_SIZE, ENTITY_CARD_SIZE, ENTITY_SELF_LAYOUT_ID, loadEntityLayout, migrateLegacyPositions,
+  CARD_GAP, COMPONENT_CARD_SIZE, ENTITY_CARD_SIZE, ENTITY_SELF_LAYOUT_ID, createLayoutSaver, loadEntityLayout, migrateLegacyPositions,
   nearestFreePosition, packComponentPositions, pruneEntityLayout, rectOf, rectsOverlap, saveEntityLayout,
 } from "../../src/renderer/entity-layout";
 import type { EntityLayout } from "../../src/shared/entity-layout";
@@ -81,6 +81,41 @@ describe("migrateLegacyPositions", () => {
   test("leaves an already migrated layout untouched", () => {
     const layout = { keeper: { health: { x: 300, y: -140 }, [ENTITY_SELF_LAYOUT_ID]: { x: 0, y: 0 } } } as EntityLayout;
     expect(migrateLegacyPositions(layout)).toEqual(layout);
+  });
+});
+
+describe("createLayoutSaver", () => {
+  const layout = (x: number) => ({ keeper: { health: { x, y: x } } }) as EntityLayout;
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  test("keeps one save in flight and drops intermediate layouts", async () => {
+    const calls: EntityLayout[] = [];
+    const releases: Array<() => void> = [];
+    const saver = createLayoutSaver((next) => { calls.push(next); return new Promise<void>((resolve) => { releases.push(resolve); }); });
+    const [a, b, c] = [layout(1), layout(2), layout(3)];
+    saver(a); saver(b); saver(c);
+    expect(calls).toEqual([a]);
+    releases.shift()!();
+    await tick();
+    expect(calls).toEqual([a, c]);
+    releases.shift()!();
+    await tick();
+    expect(calls).toEqual([a, c]);
+  });
+
+  test("reports a failed save and still sends the newest layout", async () => {
+    const errors: unknown[] = [];
+    const saved: EntityLayout[] = [];
+    const saver = createLayoutSaver(async (next) => {
+      saved.push(next);
+      if (saved.length === 1) throw new Error("写入失败");
+    }, (error) => errors.push(error));
+    const [a, b] = [layout(1), layout(2)];
+    saver(a); saver(b);
+    await tick();
+    await tick();
+    expect(errors).toHaveLength(1);
+    expect(saved).toEqual([a, b]);
   });
 });
 

@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
@@ -37,6 +37,30 @@ describe("EntityLayoutStore", () => {
     } as unknown as EntityLayout;
     expect(await store.save(layout)).toEqual(layout);
     expect(await store.read()).toEqual(layout);
+  });
+
+  test("persists measured card sizes and the entity row", async () => {
+    const directory = await root();
+    const store = new EntityLayoutStore(directory);
+    const layout = {
+      keeper: {
+        __entity__: { x: 0, y: 0, size: { width: 220, height: 170 } },
+        health: { x: 244, y: 0, size: { width: 196, height: 120 } },
+      },
+    } as unknown as EntityLayout;
+    expect(await store.save(layout)).toEqual(layout);
+    expect(await store.read()).toEqual(layout);
+  });
+
+  test("serializes a burst of saves and leaves no temporary files behind", async () => {
+    const directory = await root();
+    const store = new EntityLayoutStore(directory);
+    const layouts = Array.from({ length: 12 }, (_, index) => ({ keeper: { health: { x: index, y: index } } } as unknown as EntityLayout));
+    // Overlapping renames onto one file fail intermittently on Windows; the queue prevents that.
+    const results = await Promise.all(layouts.map((layout) => store.save(layout)));
+    expect(results).toHaveLength(12);
+    expect(await readdir(path.join(directory, ".specloom", "editor"))).toEqual(["entity-layouts.json"]);
+    expect(await store.read()).toEqual(layouts[layouts.length - 1]);
   });
 
   test("filters hostile points and tolerates corrupt JSON", async () => {

@@ -243,6 +243,22 @@ describe("EntityWorkbench", () => {
     expect(within(inspector).getByLabelText("当前值")).toHaveValue(80);
   });
 
+  it("shows declared anchors and where each component mounts", async () => {
+    setup({
+      "specs/entities/keeper.md": entityFile("keeper", "守灯人", {
+        anchors: [{ name: "head", node: "Visual/Head" }],
+        components: [{ id: "armor_class_1", mount: { parent: "__entity__", anchor: "head" } }],
+      }),
+      "specs/components/armor_class_1.md": componentFile("armor_class_1", "一类防具", healthFields, { anchors: [{ name: "slot_1" }] }),
+    });
+    const canvas = await screen.findByRole("region", { name: "实体画布" });
+    await within(canvas).findByLabelText("选择组件 一类防具");
+    expect(canvas.querySelector(".ewb-card-mount")?.textContent).toContain("head");
+    const anchorLabels = [...canvas.querySelectorAll(".ewb-card-spec-anchors")].map((element) => element.textContent ?? "");
+    expect(anchorLabels.some((text) => text.includes("head"))).toBe(true);
+    expect(anchorLabels.some((text) => text.includes("slot_1"))).toBe(true);
+  });
+
   it("flags overlapping cards and re-arranges them into a collision-free layout", async () => {
     window.localStorage.clear();
     saveEntityLayout("C:/Godot/lantern", { keeper: {

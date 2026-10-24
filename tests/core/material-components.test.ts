@@ -197,3 +197,80 @@ describe("component project materials", () => {
     expect(result.diagnostics).toContainEqual(expect.objectContaining({ path: "specs/entities/hero.md", code: "ENTITY_INHERIT_TARGET_INVALID" }));
   });
 });
+
+describe("component mount anchors", () => {
+  const armor = (id: string, extra: Record<string, unknown> = {}) =>
+    component(id, { title: id, fields: [{ key: "enabled", type: "boolean", default: true }], ...extra });
+
+  async function armorProject() {
+    const context = await fixture();
+    await put(context.root, "specs/components/armor_slot.md", armor("armor_slot", {
+      anchors: [
+        { name: "slot_1", label: "一类防具槽", node: "Visual/ArmorSlot1", capacity: 1 },
+        { name: "slot_2", label: "二类防具槽", node: "Visual/ArmorSlot2", capacity: 1 },
+      ],
+    }));
+    await put(context.root, "specs/components/armor_class_1.md", armor("armor_class_1"));
+    await put(context.root, "specs/components/armor_class_2.md", armor("armor_class_2"));
+    return context;
+  }
+
+  it("accepts mounts that name a declared anchor of an attached component", async () => {
+    const { root, validator } = await armorProject();
+    await put(root, "specs/entities/keeper.md", entity("keeper", { components: [
+      { id: "armor_slot" },
+      { id: "armor_class_1", mount: { parent: "armor_slot", anchor: "slot_1" } },
+      { id: "armor_class_2", mount: { parent: "armor_slot", anchor: "slot_2" } },
+    ] }));
+    expect((await validator.validate({ runGodot: false })).diagnostics).toEqual([]);
+  });
+
+  it("rejects unknown mount parents and undeclared anchors", async () => {
+    const { root, validator } = await armorProject();
+    await put(root, "specs/entities/keeper.md", entity("keeper", { components: [
+      { id: "armor_slot" },
+      { id: "armor_class_1", mount: { parent: "missing_component", anchor: "slot_1" } },
+      { id: "armor_class_2", mount: { parent: "armor_slot", anchor: "slot_9" } },
+    ] }));
+    const result = await validator.validate({ runGodot: false });
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({ path: "specs/entities/keeper.md", code: "MOUNT_PARENT_UNKNOWN" }));
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({ path: "specs/entities/keeper.md", code: "MOUNT_ANCHOR_UNKNOWN" }));
+  });
+
+  it("rejects two components on one anchor unless the anchor allows it", async () => {
+    const { root, validator } = await armorProject();
+    await put(root, "specs/entities/keeper.md", entity("keeper", { components: [
+      { id: "armor_slot" },
+      { id: "armor_class_1", mount: { parent: "armor_slot", anchor: "slot_1" } },
+      { id: "armor_class_2", mount: { parent: "armor_slot", anchor: "slot_1" } },
+    ] }));
+    expect((await validator.validate({ runGodot: false })).diagnostics)
+      .toContainEqual(expect.objectContaining({ path: "specs/entities/keeper.md", code: "MOUNT_ANCHOR_OCCUPIED" }));
+  });
+
+  it("supports entity-level anchors for components mounted on the entity itself", async () => {
+    const { root, validator } = await armorProject();
+    await put(root, "specs/entities/keeper.md", entity("keeper", {
+      anchors: [{ name: "head", node: "Visual/Head" }],
+      components: [{ id: "armor_class_1", mount: { parent: "__entity__", anchor: "head" } }],
+    }));
+    expect((await validator.validate({ runGodot: false })).diagnostics).toEqual([]);
+  });
+
+  it("rejects anchor declarations that escape the scene root", async () => {
+    const { root, validator } = await armorProject();
+    await put(root, "specs/components/armor_class_1.md", armor("armor_class_1", { anchors: [{ name: "slot", node: "../Outside" }] }));
+    const result = await validator.validate({ runGodot: false });
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({ code: "ANCHOR_NODE_INVALID" }));
+  });
+
+  it("keeps mount targets through binding normalization", async () => {
+    const { readAnchors, readBindings } = await import("../../src/shared/project-materials");
+    expect(readBindings({ components: [{ id: "armor_class_1", mount: { parent: "armor_slot", anchor: "slot_1" } }] }))
+      .toEqual([{ id: "armor_class_1", values: {}, mount: { parent: "armor_slot", anchor: "slot_1" } }]);
+    expect(readBindings({ components: [{ id: "broken", mount: { parent: "", anchor: "slot_1" } }] }))
+      .toEqual([{ id: "broken", values: {} }]);
+    expect(readAnchors({ anchors: [{ name: "slot_1", node: "Visual\\ArmorSlot1", capacity: 99 }, { name: "slot_1" }, { name: "" }] }))
+      .toEqual([{ name: "slot_1", node: "Visual/ArmorSlot1", capacity: 64 }]);
+  });
+});

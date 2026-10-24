@@ -19,7 +19,10 @@ const changes = z.object({
   type: z.enum(["entity", "character", "enemy", "map", "system", "item", "event", "component", "setting", "ui", "spec"]).optional(),
   status: z.string().trim().min(1).max(100).optional(), version: z.union([z.number().int().positive(), z.string().min(1).max(100)]).optional(),
   source: z.string().min(1).max(200).optional(), relations: z.array(path).max(256).optional(),
-  fields: z.array(field).max(256).optional(), components: z.array(z.object({ id: path, values: values.optional() }).strict()).max(256).optional(),
+  fields: z.array(field).max(256).optional(), components: z.array(z.object({
+    id: path, values: values.optional(),
+    mount: z.object({ parent: z.string().min(1).max(200), anchor: z.string().min(1).max(80) }).strict().optional(),
+  }).strict()).max(256).optional(),
   stateMachine: StateMachineSchema.nullable().optional(),
   materialGroups: materialGroups.optional(),
 }).strict();

@@ -206,7 +206,11 @@ export class WorkMaterials {
       const field = fields.find(field => field.key === key);
       if (!field || !componentValueMatches(field.type, value)) throw new ProjectError("VALIDATION_FAILED", `组件字段 ${key} 不存在或类型不正确`);
     }
-    const index = file.bindings.findIndex(matching); const binding = { id, values };
+    const index = file.bindings.findIndex(matching);
+    // Keep the declared mount and notes when only the field values change.
+    const kept = index >= 0 && existing && typeof existing === "object" && !Array.isArray(existing) ? existing as Record<string, unknown> : {};
+    const mount = input.mount && typeof input.mount === "object" ? input.mount : kept.mount;
+    const binding = { ...kept, id, values, ...(mount ? { mount } : {}) };
     if (index < 0) file.bindings.push(binding); else file.bindings[index] = binding;
     file.data.components = file.bindings; return this.save(file);
   }

@@ -24,11 +24,14 @@ import type { FileReadResult } from "../shared/contracts";
 import type { DesktopApi } from "../shared/desktop-api";
 import {
   parseMaterial,
+  readAnchors,
   readBindings,
   readFields,
   writeMaterial,
+  type ComponentAnchor,
   type ComponentBinding,
   type ComponentField,
+  type ComponentMount,
   type ComponentValue,
 } from "../shared/project-materials";
 import { materialGroupPath, normalizeMaterialGroups } from "../shared/material-groups";
@@ -42,6 +45,7 @@ import {
   ENTITY_NODE_ID,
   ENTITY_ORIGIN,
   defaultEntityPositions,
+  createLayoutSaver,
   layoutSize,
   loadEntityLayout,
   nearestFreePosition,
@@ -132,6 +136,7 @@ export interface EntityEntry {
   content: string;
   baseline: string;
   bindings: ComponentBinding[];
+  anchors?: ComponentAnchor[];
 }
 
 interface ComponentEntry {
@@ -146,6 +151,7 @@ interface ComponentEntry {
   group?: string;
   groupId?: string;
   extendsRef?: string;
+  anchors?: ComponentAnchor[];
 }
 
 interface BrowserNode { component: ComponentEntry; depth: number }
@@ -158,6 +164,7 @@ export interface ResolvedBinding {
   own: boolean;
   component?: ComponentEntry;
   inheritedFrom?: string;
+  mount?: ComponentMount;
 }
 
 interface MaterialLookup {
@@ -270,6 +277,7 @@ function resolveEntityBindings(entity: EntityEntry, lookup: MaterialLookup): Res
   const values = new Map<string, Record<string, ComponentValue>>();
   const notes = new Map<string, string[]>();
   const inheritedFrom = new Map<string, string>();
+  const mounts = new Map<string, ComponentMount>();
   const ownIdentities = new Set(entity.bindings.map((binding) => identify(binding.id)));
   for (const source of [...ancestors, entity]) {
     for (const binding of source.bindings) {
@@ -277,6 +285,7 @@ function resolveEntityBindings(entity: EntityEntry, lookup: MaterialLookup): Res
       if (!values.has(identity)) order.push(identity);
       ids.set(identity, binding.id);
       values.set(identity, { ...values.get(identity), ...binding.values });
+      if (binding.mount) mounts.set(identity, binding.mount);
       if (source === entity) {
         inheritedFrom.delete(identity);
         notes.set(identity, binding.notes ?? []);
@@ -287,6 +296,7 @@ function resolveEntityBindings(entity: EntityEntry, lookup: MaterialLookup): Res
     const id = ids.get(identity) ?? identity;
     const component = resolveComponentReference(id, lookup);
     const inheritedTitle = ownIdentities.has(identity) ? undefined : inheritedFrom.get(identity);
+    const mount = mounts.get(identity);
     return {
       id,
       values: values.get(identity) ?? {},
@@ -294,6 +304,7 @@ function resolveEntityBindings(entity: EntityEntry, lookup: MaterialLookup): Res
       own: ownIdentities.has(identity),
       ...(component ? { component } : {}),
       ...(inheritedTitle ? { inheritedFrom: inheritedTitle } : {}),
+      ...(mount ? { mount } : {}),
     };
   });
 }
@@ -311,6 +322,9 @@ type WorkbenchNodeData = {
   imageUrl?: string;
   imageMaxHeight?: number;
   anchors?: EntityAnchor[];
+  /** Attach points declared by the spec; `anchors` above stays canvas-only. */
+  specAnchors?: ComponentAnchor[];
+  mount?: ComponentMount;
 };
 
 type WorkbenchFlowNode = Node<WorkbenchNodeData>;
@@ -326,6 +340,7 @@ function EntityCard({ data }: NodeProps) {
       <strong className="ewb-card-title">{card.title}</strong>
       {inheritance && <span className="ewb-card-inheritance">{inheritance}</span>}
       <span className="ewb-card-meta">{card.meta}</span>
+      {card.specAnchors?.length ? <span className="ewb-card-spec-anchors">{tr("锚点")}: {card.specAnchors.map((anchor) => anchor.name).join(" · ")}</span> : null}
       {card.path && <code className="ewb-card-path">{card.path}</code>}
       <Handle type="source" position={Position.Top} id="source-top" className="ewb-handle" />
       <Handle type="source" position={Position.Bottom} id="source-bottom" className="ewb-handle" />
@@ -347,6 +362,8 @@ function ComponentCard({ data }: NodeProps) {
         <strong className="ewb-card-title">{card.title}</strong>
         <span className="ewb-card-meta">{card.meta}</span>
         {card.summary && <span className="ewb-card-summary">{card.summary}</span>}
+        {card.mount && <span className="ewb-card-mount">{tr("挂载")}: {card.mount.parent === "__entity__" ? tr("实体") : card.mount.parent} · {card.mount.anchor}</span>}
+        {card.specAnchors?.length ? <span className="ewb-card-spec-anchors">{tr("锚点")}: {card.specAnchors.map((anchor) => anchor.name).join(" · ")}</span> : null}
       </button>
       {card.inherited && (
         <span className="ewb-badge" title={card.inheritedFrom ? tr("继承自 {source}", { source: card.inheritedFrom }) : tr("继承组件")}>
@@ -433,6 +450,7 @@ function EntityCanvas({
           title: entity.title,
           meta: `${bindings.length} ${tr("个组件")}${inheritedCount ? ` · ${tr("{count} 个继承", { count: inheritedCount })}` : ""}`,
           path: entity.path,
+          ...(entity.anchors?.length ? { specAnchors: entity.anchors } : {}),
           ...(imageUrl ? { imageUrl, imageMaxHeight } : {}),
           ...(inheritsFrom ? { inheritedFrom: inheritsFrom } : {}),
         },
@@ -475,6 +493,8 @@ function EntityCanvas({
           ...(binding.inheritedFrom ? { inheritedFrom: binding.inheritedFrom } : {}),
           ...(binding.component ? {} : { missing: true }),
           ...(anchors.length ? { anchors } : {}),
+          ...(binding.component?.anchors?.length ? { specAnchors: binding.component.anchors } : {}),
+          ...(binding.mount ? { mount: binding.mount } : {}),
         },
         draggable: true,
         selectable: true,
@@ -1026,6 +1046,13 @@ export function EntityWorkbench({ api, projectPath, onError, onOpenDetail }: Ent
   const [savedNotice, setSavedNotice] = useState(false);
   const mountedRef = useRef(true);
   const requestRef = useRef(0);
+  const onErrorRef = useRef(onError);
+  onErrorRef.current = onError;
+  // Measurements and drops can fire several saves in a burst; the sidecar is written one at a time.
+  const saveLayout = useMemo(() => {
+    const target = api.entityLayout;
+    return target ? createLayoutSaver((next) => target.save(next), (error) => onErrorRef.current?.(error)) : undefined;
+  }, [api.entityLayout]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -1137,6 +1164,7 @@ export function EntityWorkbench({ api, projectPath, onError, onOpenDetail }: Ent
           content: item.content,
           baseline: item.file.content,
           bindings: readBindings(item.parsed.data),
+          anchors: readAnchors(item.parsed.data),
         };
       })
       .sort((left, right) => left.title.localeCompare(right.title) || left.path.localeCompare(right.path));
@@ -1172,6 +1200,7 @@ export function EntityWorkbench({ api, projectPath, onError, onOpenDetail }: Ent
           id: item.id,
           title: item.title,
           fields: readFields(item.parsed.data),
+          anchors: readAnchors(item.parsed.data),
           scope: item.parsed.data.scope === "system" ? "system" : "user",
           ...(typeof item.parsed.data.description === "string" ? { description: item.parsed.data.description } : {}),
           ...(notes.length ? { notes } : {}),
@@ -1391,6 +1420,7 @@ export function EntityWorkbench({ api, projectPath, onError, onOpenDetail }: Ent
       id: binding.id,
       values: binding.values,
       ...(binding.notes && binding.notes.length ? { notes: binding.notes } : {}),
+      ...(binding.mount ? { mount: binding.mount } : {}),
     }));
     const content = writeMaterial({ ...entity.data, components }, entity.body);
     setDrafts((current) => ({ ...current, [entity.path]: content }));
@@ -1417,7 +1447,7 @@ export function EntityWorkbench({ api, projectPath, onError, onOpenDetail }: Ent
     const values: Record<string, ComponentValue> = { ...defaults, ...binding.values };
     const identity = component?.id ?? bindingIdentity(binding.id);
     const remaining = entity.bindings.filter((ownBinding) => bindingIdentity(ownBinding.id) !== identity);
-    writeEntityBindings([...remaining, { id: identity, values, ...(binding.notes.length ? { notes: binding.notes } : {}) }]);
+    writeEntityBindings([...remaining, { id: identity, values, ...(binding.notes.length ? { notes: binding.notes } : {}), ...(binding.mount ? { mount: binding.mount } : {}) }]);
     setSelectedBindingId(identity);
   }
 
@@ -1438,7 +1468,7 @@ export function EntityWorkbench({ api, projectPath, onError, onOpenDetail }: Ent
     if (binding.component) for (const item of binding.component.fields) defaults[item.key] = item.default;
     const remaining = entity.bindings.filter((ownBinding) => bindingIdentity(ownBinding.id) !== identity);
     const id = binding.component?.id ?? identity;
-    writeEntityBindings([...remaining, { id, values: { ...defaults, ...binding.values, [field.key]: value }, ...(binding.notes.length ? { notes: binding.notes } : {}) }]);
+    writeEntityBindings([...remaining, { id, values: { ...defaults, ...binding.values, [field.key]: value }, ...(binding.notes.length ? { notes: binding.notes } : {}), ...(binding.mount ? { mount: binding.mount } : {}) }]);
     setSelectedBindingId(id);
   }
 
@@ -1455,13 +1485,13 @@ export function EntityWorkbench({ api, projectPath, onError, onOpenDetail }: Ent
     if (binding.component) for (const item of binding.component.fields) defaults[item.key] = item.default;
     const remaining = entity.bindings.filter((ownBinding) => bindingIdentity(ownBinding.id) !== identity);
     const id = binding.component?.id ?? identity;
-    writeEntityBindings([...remaining, { id, values: { ...defaults, ...binding.values }, ...(notes.length ? { notes } : {}) }]);
+    writeEntityBindings([...remaining, { id, values: { ...defaults, ...binding.values }, ...(notes.length ? { notes } : {}), ...(binding.mount ? { mount: binding.mount } : {}) }]);
     setSelectedBindingId(id);
   }
 
   function persistLayout(next: EntityLayout): void {
     saveEntityLayout(projectPath, next);
-    if (api.entityLayout) void api.entityLayout.save(next).catch((error) => onError?.(error));
+    saveLayout?.(next);
   }
 
   function updateImageSettings(next: WorkbenchImageSettings): void {

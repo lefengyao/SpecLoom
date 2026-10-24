@@ -162,7 +162,7 @@ export function MaterialDetails({ material, catalog, groups = [], onChange, disa
     const definition = components.find((item) => item.id === binding.id);
     const title = definition?.title ?? binding.id;
     return <section key={`${binding.id}:${index ?? "inherited"}`} className="material-card" aria-label={tr("组件 {title}", { title })}>
-      <header><strong><Puzzle size={16} />{title}</strong>{source ? <button type="button" onClick={() => patch({ components: [...rawBindings, { id: binding.id, values: { ...binding.values } }] })}>{tr("覆盖继承组件 {title}", { title })}</button> : <button type="button" aria-label={tr("移除组件 {title}", { title })} onClick={() => patch({ components: rawBindings.filter((_, position) => position !== index) })}><Trash2 size={15} />{tr("移除")}</button>}</header>
+      <header><strong><Puzzle size={16} />{title}</strong>{source ? <button type="button" onClick={() => patch({ components: [...rawBindings, { id: binding.id, values: { ...binding.values }, ...(binding.mount ? { mount: binding.mount } : {}) }] })}>{tr("覆盖继承组件 {title}", { title })}</button> : <button type="button" aria-label={tr("移除组件 {title}", { title })} onClick={() => patch({ components: rawBindings.filter((_, position) => position !== index) })}><Trash2 size={15} />{tr("移除")}</button>}</header>
       {source && <p className="subtle">{tr("继承自 {source}", { source })}</p>}
       {!definition && <p role="alert">{tr("组件定义不存在，请移除或重新添加。")}</p>}
       {definition && !definition.fields.length && <p className="subtle">{tr("这个组件还没有字段，可在组件页完善定义。")}</p>}

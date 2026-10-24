@@ -7,7 +7,26 @@ export interface ComponentField {
   type: "number" | "string" | "boolean";
   default: ComponentValue;
 }
-export interface ComponentBinding { id: string; values: Record<string, ComponentValue>; notes?: string[] }
+/** Physical attach point declared by a component or entity spec. */
+export interface ComponentAnchor {
+  name: string;
+  label?: string;
+  /** Scene node path relative to the owning scene root; absent means a logical-only anchor. */
+  node?: string;
+  /** How many components may mount here at once. */
+  capacity?: number;
+}
+/** Where a bound component attaches: another component's anchor, or the entity's own anchor. */
+export interface ComponentMount {
+  parent: string;
+  anchor: string;
+}
+export interface ComponentBinding {
+  id: string;
+  values: Record<string, ComponentValue>;
+  notes?: string[];
+  mount?: ComponentMount;
+}
 export interface MaterialDocument { data: Record<string, unknown>; body: string }
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -52,6 +71,34 @@ export function readFields(data: Record<string, unknown>): ComponentField[] {
   return fields;
 }
 
+/** Normalize anchor declarations; undeclared or malformed entries are ignored. */
+export function readAnchors(data: Record<string, unknown>): ComponentAnchor[] {
+  if (!Array.isArray(data.anchors)) return [];
+  const anchors: ComponentAnchor[] = [];
+  const seen = new Set<string>();
+  for (const value of data.anchors) {
+    if (!record(value) || typeof value.name !== "string" || !value.name.trim()) continue;
+    const name = value.name.trim();
+    if (seen.has(name) || name.length > 80) continue;
+    const anchor: ComponentAnchor = { name };
+    if (typeof value.label === "string" && value.label.trim()) anchor.label = value.label.trim();
+    if (typeof value.node === "string" && value.node.trim()) anchor.node = value.node.trim().replaceAll("\\", "/");
+    if (typeof value.capacity === "number" && Number.isFinite(value.capacity)) anchor.capacity = Math.min(64, Math.max(1, Math.round(value.capacity)));
+    anchors.push(anchor);
+    seen.add(name);
+  }
+  return anchors.slice(0, 64);
+}
+
+/** Normalize a binding's mount target; incomplete declarations are dropped rather than guessed. */
+function readMount(value: unknown): ComponentMount | undefined {
+  if (!record(value)) return undefined;
+  const parent = typeof value.parent === "string" ? value.parent.trim() : "";
+  const anchor = typeof value.anchor === "string" ? value.anchor.trim() : "";
+  if (!parent || !anchor || parent.length > 200 || anchor.length > 80) return undefined;
+  return { parent: parent === "__entity__" ? "__entity__" : parent, anchor };
+}
+
 /** Normalize component references for display without mutating the original front matter. */
 export function readBindings(data: Record<string, unknown>): ComponentBinding[] {
   if (!Array.isArray(data.components)) return [];
@@ -66,7 +113,8 @@ export function readBindings(data: Record<string, unknown>): ComponentBinding[] 
     const notes = record(value) && Array.isArray(value.notes)
       ? value.notes.filter((note): note is string => typeof note === "string").map((note) => note.trim()).slice(0, 32)
       : [];
-    bindings.push({ id, values, ...(notes.length ? { notes } : {}) });
+    const mount = record(value) ? readMount(value.mount) : undefined;
+    bindings.push({ id, values, ...(notes.length ? { notes } : {}), ...(mount ? { mount } : {}) });
     seen.add(id);
   }
   return bindings;

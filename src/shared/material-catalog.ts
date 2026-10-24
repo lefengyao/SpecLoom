@@ -1,11 +1,11 @@
-import { parseMaterial, readBindings, readFields, type ComponentBinding, type ComponentField } from "./project-materials";
+import { parseMaterial, readAnchors, readBindings, readFields, type ComponentAnchor, type ComponentBinding, type ComponentField } from "./project-materials";
 import { materialGroupPath, normalizeMaterialGroups, resolveLegacyGroup, type MaterialGroupRegistry } from "./material-groups";
 
 export type DocumentCategory = "all" | "entity" | "component" | "setting" | "map" | "ui" | "spec";
 export interface MaterialSummary {
   id: string; title: string; type: string; path: string; version: string; content: string;
   description?: string; group?: string; groupId?: string; groupPath?: string; scope?: ComponentScope; image?: string; parent?: string; extends?: string;
-  fields: ComponentField[]; components: ComponentBinding[]; invalid?: boolean;
+  fields: ComponentField[]; components: ComponentBinding[]; anchors?: ComponentAnchor[]; invalid?: boolean;
 }
 export type ComponentScope = "system" | "user";
 export const componentScopeLabels: Record<ComponentScope, string> = { system: "官方组件", user: "自定义组件" };
@@ -75,7 +75,7 @@ export function summarizeMaterial(file: { path: string; version: string; content
     ...(data?.scope === "system" || data?.scope === "user" ? { scope: data.scope } : {}),
     ...(typeof data?.image === "string" ? { image: data.image } : {}),
     ...(parent ? { parent } : {}), ...(base ? { extends: base } : {}),
-    fields: readFields(data ?? {}), components: readBindings({ components: Array.isArray(data?.components) ? data.components.map((item) => {
+    fields: readFields(data ?? {}), anchors: readAnchors(data ?? {}), components: readBindings({ components: Array.isArray(data?.components) ? data.components.map((item) => {
       const id = referenceId(item);
       return item && typeof item === "object" && !Array.isArray(item) ? { ...item, id } : item;
     }) : [] }), ...(!valid ? { invalid: true } : {}),

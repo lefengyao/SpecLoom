@@ -386,6 +386,16 @@ describe("entity layout requests", () => {
     expect(EntityLayoutRequestSchema.safeParse({ layout: { keeper: { health: { x: Number.NaN, y: 2 } } } }).success).toBe(false);
     expect(EntityLayoutRequestSchema.safeParse({ layout: { keeper: { health: { x: 1, y: 2 } } }, extra: true }).success).toBe(false);
   });
+
+  test("accepts measured card sizes used by the workbench layout", () => {
+    const payload = { layout: { keeper: {
+      __entity__: { x: 0, y: 0, size: { width: 220, height: 170 } },
+      health: { x: 244, y: 0, size: { width: 196, height: 120 }, sourceAnchor: "left", targetAnchor: "target-left" },
+    } } };
+    expect(EntityLayoutRequestSchema.safeParse(payload).success).toBe(true);
+    expect(EntityLayoutRequestSchema.safeParse({ layout: { keeper: { health: { x: 1, y: 2, size: { width: 0, height: 120 } } } } }).success).toBe(false);
+    expect(EntityLayoutRequestSchema.safeParse({ layout: { keeper: { health: { x: 1, y: 2, size: { width: 196, height: 120, depth: 1 } } } } }).success).toBe(false);
+  });
 });
 describe("workflow trigger requests", () => {
   test("accepts a task start with an optional bounded implementation message", () => {

@@ -20,12 +20,29 @@ export const record = (value: unknown): value is SpecData => value !== null && t
 export function validReference(value: unknown, componentBinding = false): boolean {
   if (nonempty(value)) return true;
   if (!record(value)) return false;
-  const keys = ["id", "path", "type", "version", ...(componentBinding ? ["values", "notes"] : [])];
+  const keys = ["id", "path", "type", "version", ...(componentBinding ? ["values", "notes", "mount"] : [])];
   return Object.keys(value).every((key) => keys.includes(key))
     && ((nonempty(value.id) && value.path === undefined) || (nonempty(value.path) && value.id === undefined))
     && (value.type === undefined || nonempty(value.type))
     && (!componentBinding || value.values === undefined || record(value.values))
+    && (!componentBinding || value.mount === undefined || (record(value.mount) && nonempty(value.mount.parent) && nonempty(value.mount.anchor) && Object.keys(value.mount).every((key) => key === "parent" || key === "anchor")))
     && (!componentBinding || value.notes === undefined || (Array.isArray(value.notes) && value.notes.length <= 32 && value.notes.every((note) => nonempty(note) && note.trim().length <= 2000)));
+}
+
+/** Anchor declarations join specifications to scene nodes; keep them bounded and unique. */
+export function validAnchors(value: unknown): boolean {
+  if (!Array.isArray(value) || value.length > 64) return false;
+  const names = new Set<string>();
+  return value.every((item) => {
+    if (!record(item) || !nonempty(item.name) || item.name.length > 80) return false;
+    if (Object.keys(item).some((key) => !["name", "label", "node", "capacity"].includes(key))) return false;
+    if (item.label !== undefined && typeof item.label !== "string") return false;
+    if (item.node !== undefined && (typeof item.node !== "string" || !item.node.trim())) return false;
+    if (item.capacity !== undefined && !(typeof item.capacity === "number" && Number.isSafeInteger(item.capacity) && item.capacity >= 1 && item.capacity <= 64)) return false;
+    if (names.has(item.name)) return false;
+    names.add(item.name);
+    return true;
+  });
 }
 
 export function componentValueMatches(type: unknown, value: unknown): boolean {
@@ -102,6 +119,7 @@ export function validateFields(spec: ParsedSpec, diagnostics: ValidationDiagnost
     if (data.type !== "entity" || data.source !== undefined) field("source", nonempty(data.source) || (Array.isArray(data.source) && data.source.every((value) => validReference(value))) || validReference(data.source));
     if (data.extends !== undefined) field("extends", validReference(data.extends));
     if (data.components !== undefined) field("components", Array.isArray(data.components) && data.components.every((value) => validReference(value, true)));
+    if (data.anchors !== undefined) field("anchors", validAnchors(data.anchors));
   } else if (identity.startsWith("specs/components/")) {
     if (data.type !== "component") diagnostics.push(diagnostic(path, "SPEC_TYPE_INVALID", "Specification type must be component"));
     const segments = identity.split("/");
@@ -114,6 +132,7 @@ export function validateFields(spec: ParsedSpec, diagnostics: ValidationDiagnost
     if (data.notes !== undefined) field("notes", Array.isArray(data.notes) && data.notes.length <= 32 && data.notes.every((note) => typeof note === "string" && note.length <= 2000));
     if (data.scope !== undefined) field("scope", data.scope === "system" || data.scope === "user");
     if (data.extends !== undefined) field("extends", validReference(data.extends));
+    if (data.anchors !== undefined) field("anchors", validAnchors(data.anchors));
     field("fields", Array.isArray(data.fields));
     const keys = new Set<string>();
     for (const [index, value] of (Array.isArray(data.fields) ? data.fields : []).entries()) {

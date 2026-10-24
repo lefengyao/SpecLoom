@@ -887,6 +887,17 @@
   white-space: nowrap;
 }
 
+.ewb-card-spec-anchors,
+.ewb-card-mount {
+  display: block;
+  margin-top: 4px;
+  overflow: hidden;
+  color: var(--text-subtle);
+  font: 10px/1.4 ui-monospace, "Cascadia Mono", monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .ewb-card-component {
   padding: 7px 9px;
 }

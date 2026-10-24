@@ -27,7 +27,7 @@
 | 真机裁剪链路（主进程 + Electron） | 已在真实 Electron 验证 14/14（§7.2） |
 | 渲染层裁剪换算与 WebP 编码 | 已在真实 Chromium 验证（§7.3） |
 | Git 分支表头配色 | 已用真实 CSS 实测，三套主题对比度 5.19–8.09（§7.4） |
-| Hub 模块打包 | **已完成**：2.3.0 与 2.3.1 模块均已生成（§8、§9.0） |
+| Hub 模块打包 | **已完成**：2.3.0、2.3.1、2.3.2、2.3.3 模块均已生成（§8、§9.0） |
 | 提交 | **未提交**，工作树包含此前多轮未提交改动 |
 
 ## 3. 改动明细
@@ -261,14 +261,31 @@
 
 ## 9. 同日另一批：版本冲突修复、Git 差异着色、工作台尺寸与防重叠
 
-这批改动发生在 2.3.0 打包之后，已按用户确认**重新出包为 2.3.1**（同名换内容会让 Hub 更新器无法识别，因此升版本号）。
+这批改动发生在 2.3.0 打包之后，已按用户确认**重新出包为 2.3.1**（同名换内容会让 Hub 更新器无法识别，因此升版本号）；布局保存 schema 修复后再出包为 **2.3.2**。
 
-### 9.0 2.3.1 产物
+### 9.0 产物（2.3.1 / 2.3.2 / 2.3.3）
+
+**2.3.3**（布局保存并发写修复后重出）：
+
+- 版本：`package.json` / `package-lock.json` 升到 `2.3.3`，新增 `docs/release-2.3.3.md`。
+- 模块目录：`release/0.1.7/modules/specloom-2.3.3/`
+- ZIP：`specloom-module-2.3.3.zip` —— **23,045,498 字节**，sha256 `f310337920071738992290df76720800ec8456250ef4d59c6ffdb5ac7c10eb01`（与 `.sha256` 实测一致）
+- 包内自检：`runtime/backend.mjs` 含 `saveQueues`（按路径串行化）、`replaceFile`（EPERM/EBUSY 重试）、带 `max(1e4)` 边界的 `EntityLayoutSizeSchema`，并保留 `replaceDependency`
+- 出包前门禁：`typecheck` 通过，`entity-layout-store` / `entity-layout` / `EntityWorkbench` / `workflow-ipc` 共 **62/62 通过**
+
+**2.3.2**（布局保存 schema 修复后重出）：
+
+- 版本：`package.json` / `package-lock.json` 升到 `2.3.2`，新增 `docs/release-2.3.2.md`。
+- 模块目录：`release/0.1.7/modules/specloom-2.3.2/`
+- ZIP：`specloom-module-2.3.2.zip` —— **23,045,123 字节**，sha256 `7c1ba65f470fdbb602807a7a4a4706e7fa2bc243b96f090133606ad7ca50637d`（与 `.sha256` 实测一致）
+- 包内自检：`runtime/backend.mjs` 含 `EntityLayoutSizeSchema`（`width/height` 均为 `finite().positive().max(1e4)`）与 `EntityLayoutRequestSchema`，并保留 `replaceDependency`
+- 出包前门禁：`typecheck` 通过，`workflow-ipc` / `entity-layout-store` / `EntityWorkbench` / `GitView` / `GitDiff` 共 **58/58 通过**
+
+**2.3.1**：
 
 - 版本：`package.json` / `package-lock.json` 升到 `2.3.1`，新增 `docs/release-2.3.1.md`。
 - 模块目录：`release/0.1.7/modules/specloom-2.3.1/`
 - ZIP：`specloom-module-2.3.1.zip` —— **23,045,045 字节**，sha256 `741b651a3fc02d0d9dc8d5a873d645c53e0944593f23fc83f86adc11e9f9226e`（与 `.sha256` 实测一致）
-- `modules.json` 只登记 specloom 2.3.1；`exports/` 有 ZIP 与校验和副本；`module.json` 版本 2.3.1、`hostApiVersion` 2、`minimumHostVersion` 0.1.6
 - 包内自检：renderer bundle 含 `git-diff-line`、`ewb-overlap`、「自动整理组件」、「继承字段」、`material-crop-stage`；CSS 含 `git-diff-line` 与 `ewb-overlap`；`runtime/backend.mjs` 含 `replaceDependency` 与 `COMPONENT_INHERIT`
 - 未产生桌面安装包：没有执行 `npm run build` / `electron-builder`，`SpecLoom/dist` 仍是 10 月 1 日目录
 
@@ -296,3 +313,25 @@
 ### 9.4 顺带修复
 
 - `git.css` 的 `.git-error` 与 `usage.css` 的 `.usage-error` 引用了**不存在**的 `--danger`，整条声明失效（与「关于项目」表头黑底黑字同一类问题）；改为 `--danger-text` / `--danger-border` / `--danger-soft`。
+
+### 9.5 回归：布局保存被 IPC schema 拒绝（2.3.1 出包之后发现并修复）
+
+- 现象：打开实体工作台或拖动组件即报 `VALIDATION_FAILED · Invalid desktop operation arguments`。
+- 根因：`src/main/ipc.ts` 的 `EntityLayoutEntrySchema` 是 `.strict()`；9.2 给布局条目新增的 `size` 没有同步进 schema，于是 `entityLayoutSave` 的整包负载被拒。渲染层测试用的是 mock `api`（`entityLayout` 未参与），所以没覆盖到这条链路。实测旧 schema 对该负载报 `unrecognized_keys`。
+- 修复：schema 增加 `size: { width, height }`（有限正数、上限 10000），并新增回归用例：
+  - `tests/integration/workflow-ipc.test.ts`「accepts measured card sizes used by the workbench layout」——带 `size` 与锚点的负载必须通过，`width: 0` 与未知键仍必须被拒。
+  - `tests/core/entity-layout-store.test.ts`「persists measured card sizes and the entity row」——`size` 与实体行能真正写入 `.specloom/editor/entity-layouts.json`。
+- 结果：三个相关文件 48/48 通过，`npm run typecheck` 与 `eslint` 通过。
+- 教训：渲染层写入的布局字段必须与主进程 IPC schema 同步；`persistLayout` 在工作台挂载测量时就会触发保存，schema 一旦漏字段，页面一打开就报错。新增布局字段时同步补 `workflow-ipc` 的 schema 用例。
+- 该修复发生在 2.3.1 出包之后，因此 2.3.1 模块仍带此缺陷；已按用户要求出包为 **2.3.2**（§9.0）。
+
+### 9.6 回归：布局落盘并发写导致 EPERM（2.3.2 出包之后发现并修复）
+
+- 现象：2.3.2 装上后，打开实体工作台报 `INTERNAL_ERROR · 无法保存实体工作台布局 · .specloom/editor/entity-layouts.json`。
+- 根因：工作台在挂载测量与拖动时**连发多次** `entityLayoutSave`，每次都是「写临时文件 + rename」到同一个路径；Windows 上并发 rename 同一目标会间歇性 `EPERM`。实测脚本：24 次并发写同一文件 **3 次 EPERM**，串行 24 次 0 次失败。2.3.1 及更早版本的这些请求在 IPC schema 层就被拒，写盘从未真正发生，所以问题到 2.3.2 才暴露。
+- 修复（两层）：
+  - 主进程 `EntityLayoutStore.save` 按文件路径**跨实例串行化**（模块级队列），rename 对 `EPERM`/`EBUSY`/`EACCES` 重试（最多 4 次，30/60/90ms 退避）；`mkdir` 也纳入同一错误包装，错误信息带上底层 fs 错误码，例如「无法保存实体工作台布局（EPERM）」。
+  - 渲染层新增 `createLayoutSaver`：同一时刻只允许一个保存在途，期间的更新合并为最新一份（末位优先），失败后仍会发送最新布局。
+- 回归测试：`entity-layout-store`「serializes a burst of saves and leaves no temporary files behind」（12 次并发全部成功、目录只剩目标文件、内容为最后一次）；`entity-layout`「createLayoutSaver」两条（一次在途、丢弃中间态；失败后继续发送最新）。
+- 结果：相关 5 个文件 44/44 通过，`typecheck` 与 `eslint` 通过。
+- 该修复已出包为 **2.3.3**（§9.0）。注意并发写测试是概率性的（旧实现约 1/8 概率失败），真正的确定性保证来自串行队列本身。

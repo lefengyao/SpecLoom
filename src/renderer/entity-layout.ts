@@ -173,3 +173,28 @@ export function pruneEntityLayout(layout: EntityLayout, entityId: string, active
   }
   return next;
 }
+
+/**
+ * Coalesce layout saves: the workbench persists on every measurement and drop, and a
+ * burst of overlapping writes to one sidecar fails intermittently on Windows. At most
+ * one save is in flight; the newest layout is sent once it finishes.
+ */
+export function createLayoutSaver(
+  save: (layout: EntityLayout) => Promise<unknown>,
+  onError?: ((error: unknown) => void) | undefined,
+): (layout: EntityLayout) => void {
+  let pending: EntityLayout | undefined;
+  let inFlight = false;
+  const flush = () => {
+    const next = pending;
+    if (!next) { inFlight = false; return; }
+    pending = undefined;
+    void save(next).catch((error: unknown) => { onError?.(error); }).finally(() => { flush(); });
+  };
+  return (layout: EntityLayout) => {
+    pending = layout;
+    if (inFlight) return;
+    inFlight = true;
+    flush();
+  };
+}
