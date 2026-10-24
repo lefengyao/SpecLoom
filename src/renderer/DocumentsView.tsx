@@ -473,6 +473,7 @@ export function DocumentsView({ api, projectPath, onError, busy, revision, categ
           key={file.path}
           treePath={file.path}
           root={material.data.root}
+          catalog={selectable}
           disabled={busy || saving || loading}
           onChange={(root) => updateText(writeMaterial({ ...material.data, root }, material.body))}
         /> : <>

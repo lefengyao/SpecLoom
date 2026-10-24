@@ -72,6 +72,18 @@
   font-size: 11px;
 }
 
+.dtree-condition-row {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr);
+  gap: 8px;
+}
+
+.dtree-comparator {
+  color: var(--text-subtle);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+
 .dtree-node {
   min-width: 150px;
   max-width: 220px;

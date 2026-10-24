@@ -4,10 +4,11 @@ import "@xyflow/react/dist/style.css";
 import "./decision-tree.css";
 import { Background, Controls, MiniMap, ReactFlow, applyNodeChanges, type Edge, type Node, type OnNodesChange } from "@xyflow/react";
 import {
-  NODE_KIND_LABELS, NODE_KINDS, findDecisionNode, flattenDecisionTree, insertDecisionNode, isComposite, isDecorator,
-  isNodeKind, removeDecisionNode, reorderDecisionNode, updateDecisionNode,
+  COMPARATOR_OPERATORS, NODE_KIND_LABELS, NODE_KINDS, composeComparator, findDecisionNode, flattenDecisionTree, insertDecisionNode,
+  isComposite, isDecorator, isNodeKind, parseComparator, removeDecisionNode, reorderDecisionNode, updateDecisionNode,
   type DecisionNode, type DecisionNodeKind,
 } from "../shared/decision-tree";
+import { categoryForPath, componentScope, componentScopeLabels, type MaterialSummary } from "./materials-model";
 import { useI18n } from "./i18n";
 
 interface Point { x: number; y: number }
@@ -52,9 +53,10 @@ function nodeLabel(node: DecisionNode): string {
 }
 
 /** Node graph editor for one decision tree spec; every edit rewrites `root`. */
-export function DecisionTreeEditor({ root, treePath, onChange, disabled = false }: {
+export function DecisionTreeEditor({ root, treePath, catalog = [], onChange, disabled = false }: {
   root: unknown;
   treePath: string;
+  catalog?: MaterialSummary[];
   onChange: (root: DecisionNode) => void;
   disabled?: boolean;
 }) {
@@ -109,6 +111,23 @@ export function DecisionTreeEditor({ root, treePath, onChange, disabled = false 
   const patch = (change: Partial<DecisionNode>) => {
     if (!tree || !selected) return;
     onChange(updateDecisionNode(tree, selected.id, change));
+  };
+  const conditionComponents = catalog.filter((item) => !item.invalid && item.type === "component" && categoryForPath(item.path) === "component");
+  const conditionEntities = catalog.filter((item) => !item.invalid && categoryForPath(item.path) === "entity");
+  const parsedComparator = selected?.kind === "condition" && selected.comparator ? parseComparator(selected.comparator) : undefined;
+  const activeComponent = conditionComponents.find((item) => item.id === parsedComparator?.component);
+  const activeField = activeComponent?.fields.find((field) => field.key === parsedComparator?.field);
+  /** Compose a comparator from the pickers; changing component or field resets the literal to its default. */
+  const compose = (change: { owner?: string; component?: string; field?: string; operator?: string; literal?: string }) => {
+    if (!selected) return;
+    const owner = change.owner ?? selected.owner ?? "";
+    const component = change.component ?? parsedComparator?.component ?? conditionComponents[0]?.id ?? "";
+    const definition = conditionComponents.find((item) => item.id === component);
+    const field = change.field ?? (change.component ? definition?.fields[0]?.key : parsedComparator?.field) ?? definition?.fields[0]?.key ?? "";
+    const fieldDefinition = definition?.fields.find((item) => item.key === field);
+    const operator = change.operator ?? parsedComparator?.operator ?? "<=";
+    const literal = change.literal ?? (change.component || change.field ? String(fieldDefinition?.default ?? "") : parsedComparator?.literal ?? String(fieldDefinition?.default ?? ""));
+    patch({ comparator: composeComparator(component, field, operator, literal), owner });
   };
   const addChild = () => {
     if (!tree || !selected) return;
@@ -170,8 +189,38 @@ export function DecisionTreeEditor({ root, treePath, onChange, disabled = false 
           </select></label>
           <label>{tr("标题")}<input aria-label={tr("节点标题")} disabled={disabled} value={selected.title ?? ""} maxLength={100} onChange={(event) => patch({ title: event.target.value })} /></label>
           {selected.kind === "condition" && <>
-            <label>{tr("字段比较")}<input aria-label={tr("字段比较")} disabled={disabled} placeholder="vitality.current <= 30" value={selected.comparator ?? ""} onChange={(event) => patch({ comparator: event.target.value })} /></label>
-            <label>{tr("事件名")}<input aria-label={tr("事件名")} disabled={disabled} placeholder="enemy_in_range" value={selected.event ?? ""} onChange={(event) => patch({ event: event.target.value })} /></label>
+            <label>{tr("条件类型")}<select aria-label={tr("条件类型")} disabled={disabled} value={selected.comparator !== undefined ? "comparator" : "event"} onChange={(event) => {
+              if (event.target.value === "comparator") patch({ comparator: composeComparator(conditionComponents[0]?.id ?? "component", conditionComponents[0]?.fields[0]?.key ?? "value", "<=", String(conditionComponents[0]?.fields[0]?.default ?? 0)), owner: "" });
+              else patch({ event: "enemy_in_range", comparator: "" });
+            }}>
+              <option value="comparator">{tr("字段比较")}</option>
+              <option value="event">{tr("事件名")}</option>
+            </select></label>
+            {selected.comparator !== undefined ? <>
+              <label>{tr("引用实体")}<select aria-label={tr("引用实体")} disabled={disabled} value={selected.owner ?? ""} onChange={(event) => compose({ owner: event.target.value })}>
+                <option value="">{tr("当前实体")}</option>
+                {conditionEntities.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
+              </select></label>
+              <label>{tr("组件")}<select aria-label={tr("条件组件")} disabled={disabled} value={parsedComparator?.component ?? ""} onChange={(event) => compose({ component: event.target.value })}>
+                <option value="">{tr("选择组件")}</option>
+                {(["system", "user"] as const).map((scope) => {
+                  const items = conditionComponents.filter((item) => componentScope(item) === scope);
+                  return items.length ? <optgroup key={scope} label={tr(componentScopeLabels[scope])}>{items.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</optgroup> : null;
+                })}
+              </select></label>
+              <label>{tr("字段")}<select aria-label={tr("条件字段")} disabled={disabled || !activeComponent?.fields.length} value={parsedComparator?.field ?? ""} onChange={(event) => compose({ field: event.target.value })}>
+                {(activeComponent?.fields ?? []).map((field) => <option key={field.key} value={field.key}>{field.label || field.key}</option>)}
+              </select></label>
+              <div className="dtree-condition-row">
+                <label>{tr("运算符")}<select aria-label={tr("运算符")} disabled={disabled} value={parsedComparator?.operator ?? "<="} onChange={(event) => compose({ operator: event.target.value })}>
+                  {COMPARATOR_OPERATORS.map((operator) => <option key={operator} value={operator}>{operator}</option>)}
+                </select></label>
+                <label>{tr("值")}{activeField?.type === "boolean"
+                  ? <select aria-label={tr("比较值")} disabled={disabled} value={parsedComparator?.literal ?? "true"} onChange={(event) => compose({ literal: event.target.value })}><option value="true">true</option><option value="false">false</option></select>
+                  : <input aria-label={tr("比较值")} disabled={disabled} type={activeField?.type === "number" ? "number" : "text"} value={parsedComparator?.literal ?? ""} onChange={(event) => compose({ literal: event.target.value })} />}</label>
+              </div>
+              {selected.comparator && <code className="dtree-comparator">{selected.comparator}</code>}
+            </> : <label>{tr("事件名")}<input aria-label={tr("事件名")} disabled={disabled} placeholder="enemy_in_range" value={selected.event ?? ""} onChange={(event) => patch({ event: event.target.value })} /></label>}
           </>}
           {selected.kind === "action" && <label>{tr("动作")}<input aria-label={tr("动作名")} disabled={disabled} placeholder="move_away" value={selected.action ?? ""} onChange={(event) => patch({ action: event.target.value })} /></label>}
           {selected.kind === "cooldown" && <label>{tr("冷却秒数")}<input aria-label={tr("冷却秒数")} type="number" min={0} step={0.1} disabled={disabled} value={selected.seconds ?? 1} onChange={(event) => patch({ seconds: Number(event.target.value) })} /></label>}

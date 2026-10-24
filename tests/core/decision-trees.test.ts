@@ -146,4 +146,30 @@ describe("decision tree specs and mounts", () => {
     }));
     expect((await validator.validate({ runGodot: false })).diagnostics).toEqual([]);
   });
+
+  it("checks the entity a condition reads its component from", async () => {
+    const owned = (owner: string) => md({
+      schemaVersion: 1, id: "owned", title: "owned", type: "decision_tree", description: "",
+      root: { id: "root", kind: "selector", children: [{ id: "c", kind: "condition", owner, comparator: "vitality.current <= 30" }] },
+    });
+
+    const missing = await project();
+    await put(missing.root, "specs/decision_trees/owned.md", owned("ghost"));
+    expect((await missing.validator.validate({ runGodot: false })).diagnostics)
+      .toContainEqual(expect.objectContaining({ code: "TREE_OWNER_UNKNOWN" }));
+
+    const unattached = await project();
+    await put(unattached.root, "specs/entities/keeper.md", md({ schemaVersion: 1, id: "keeper", title: "守灯人", type: "entity", description: "" }));
+    await put(unattached.root, "specs/decision_trees/owned.md", owned("keeper"));
+    expect((await unattached.validator.validate({ runGodot: false })).diagnostics)
+      .toContainEqual(expect.objectContaining({ code: "TREE_OWNER_COMPONENT_MISSING" }));
+
+    const accepted = await project();
+    await put(accepted.root, "specs/entities/keeper.md", md({
+      schemaVersion: 1, id: "keeper", title: "守灯人", type: "entity", description: "",
+      components: [{ id: "vitality", values: { current: 100 } }],
+    }));
+    await put(accepted.root, "specs/decision_trees/owned.md", owned("keeper"));
+    expect((await accepted.validator.validate({ runGodot: false })).diagnostics).toEqual([]);
+  });
 });

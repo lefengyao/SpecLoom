@@ -27,6 +27,8 @@ export interface DecisionNode {
   title?: string;
   children?: DecisionNode[];
   child?: DecisionNode;
+  /** Condition only: the entity whose component is compared; empty means the tree host itself. */
+  owner?: string;
   comparator?: string;
   event?: string;
   action?: string;
@@ -68,6 +70,12 @@ const EVENT_NAME = /^[a-z][a-z0-9_]*$/;
 
 export function isNodeId(value: unknown): value is string {
   return typeof value === "string" && NODE_ID.test(value);
+}
+
+/** Build the canonical comparator text the editor and validator share. */
+export function composeComparator(component: string, field: string, operator: string, literal: string | number | boolean): string {
+  const value = typeof literal === "string" ? literal.trim() : String(literal);
+  return `${component}.${field} ${operator} ${value}`;
 }
 
 /** `component.field <= literal` — the only condition form SpecLoom can check. */
@@ -145,10 +153,15 @@ export function validateDecisionTree(root: unknown): DecisionTreeIssue[] {
       return;
     }
     if (kind === "condition") {
+      if (value.owner !== undefined && !(typeof value.owner === "string" && NODE_ID.test(value.owner))) {
+        issues.push({ path: at, code: "TREE_CONDITION_INVALID", message: "Condition owner must be an entity id" });
+      }
       const hasComparator = value.comparator !== undefined;
       const hasEvent = value.event !== undefined;
       if (hasComparator === hasEvent) {
         issues.push({ path: at, code: "TREE_CONDITION_INVALID", message: "Condition needs exactly one of comparator or event" });
+      } else if (hasEvent && value.owner !== undefined) {
+        issues.push({ path: at, code: "TREE_CONDITION_INVALID", message: "Only comparator conditions can name an owner entity" });
       } else if (hasComparator && !parseComparator(value.comparator)) {
         issues.push({ path: at, code: "TREE_CONDITION_INVALID", message: "Comparator must look like component.field <= value" });
       } else if (hasEvent && !(typeof value.event === "string" && EVENT_NAME.test(value.event))) {
@@ -263,6 +276,7 @@ export function updateDecisionNode(root: DecisionNode, id: string, patch: Partia
   // comparator and event are mutually exclusive; an empty string clears the field.
   if (patch.comparator !== undefined) { delete node.event; if (!node.comparator) delete node.comparator; }
   if (patch.event !== undefined) { delete node.comparator; if (!node.event) delete node.event; }
+  if (patch.owner !== undefined && !node.owner) delete node.owner;
   if (patch.kind !== undefined) {
     if (isComposite(node.kind)) {
       delete node.child;

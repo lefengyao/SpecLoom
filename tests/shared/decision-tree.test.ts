@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildDecisionTree, findDecisionNode, flattenDecisionTree, insertDecisionNode, parseComparator,
+  buildDecisionTree, composeComparator, findDecisionNode, flattenDecisionTree, insertDecisionNode, parseComparator,
   removeDecisionNode, reorderDecisionNode, updateDecisionNode, validateDecisionTree,
 } from "../../src/shared/decision-tree";
 
@@ -58,6 +58,19 @@ describe("decision tree model", () => {
     expect(parseComparator("vitality.current <= 30")).toEqual({ component: "vitality", field: "current", operator: "<=", literal: "30" });
     expect(parseComparator("vitality.current <=")).toBeUndefined();
     expect(parseComparator("just_a_name")).toBeUndefined();
+    expect(composeComparator("vitality", "current", "<=", 30)).toBe("vitality.current <= 30");
+    expect(parseComparator(composeComparator("offense", "range", ">", "12"))).toEqual({ component: "offense", field: "range", operator: ">", literal: "12" });
+  });
+
+  it("only lets comparator conditions name an owner entity", () => {
+    const withOwner = validateDecisionTree({ id: "root", kind: "selector", children: [
+      { id: "c", kind: "condition", owner: "keeper", comparator: "vitality.current < 30" },
+    ] });
+    expect(withOwner).toEqual([]);
+    expect(validateDecisionTree({ id: "root", kind: "selector", children: [{ id: "c", kind: "condition", owner: "keeper", event: "hit" }] }))
+      .toContainEqual(expect.objectContaining({ code: "TREE_CONDITION_INVALID" }));
+    expect(validateDecisionTree({ id: "root", kind: "selector", children: [{ id: "c", kind: "condition", owner: "Not An Id", comparator: "vitality.current < 1" }] }))
+      .toContainEqual(expect.objectContaining({ code: "TREE_CONDITION_INVALID" }));
   });
 
   it("validates decorator parameters and action names", () => {

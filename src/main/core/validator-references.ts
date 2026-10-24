@@ -4,6 +4,7 @@ import { resolveComponentAnchors, resolveComponentFields, type ComponentDefiniti
 import { sceneNodePaths } from "../../shared/godot-scene";
 import { flattenDecisionTree, parseComparator } from "../../shared/decision-tree";
 import { bindingIdentity, readAnchors, readBindingKey, readFields } from "../../shared/project-materials";
+import { referenceId } from "../../shared/material-catalog";
 import { componentValueMatches, diagnostic, nonempty, record, validReference, validationPathIdentity, type ParsedSpec } from "./validator-markdown";
 import { ValidationSource } from "./validator-source";
 import { normalizeProjectPath } from "./path-policy";
@@ -136,10 +137,20 @@ export async function validateReferences(specs: ParsedSpec[], source: Validation
         if (node.kind !== "condition" || typeof node.comparator !== "string") continue;
         const parsed = parseComparator(node.comparator);
         if (!parsed) continue; // the structural validator already reports the syntax
+        const ownerEntity = typeof node.owner === "string" && node.owner.trim() ? specs.find((candidate) => materialKind(candidate) === "entity" && candidate.data.id === node.owner) : undefined;
+        if (typeof node.owner === "string" && node.owner.trim() && !ownerEntity) {
+          diagnostics.push(diagnostic(spec.path, "TREE_OWNER_UNKNOWN", `Condition '${node.id}' references unknown entity '${node.owner}'`));
+        }
         const component = componentDefinitions.find((definition) => definition.id === parsed.component);
         if (!component) {
           diagnostics.push(diagnostic(spec.path, "TREE_COMPARATOR_UNKNOWN_COMPONENT", `Condition '${node.id}' references unknown component '${parsed.component}'`));
           continue;
+        }
+        if (ownerEntity) {
+          const attached = Array.isArray(ownerEntity.data.components) ? ownerEntity.data.components.map((entry) => referenceId(entry)).filter((entry): entry is string => Boolean(entry)) : [];
+          if (!attached.includes(parsed.component)) {
+            diagnostics.push(diagnostic(spec.path, "TREE_OWNER_COMPONENT_MISSING", `Entity '${node.owner}' does not mount component '${parsed.component}' used by condition '${node.id}'`));
+          }
         }
         const declared = effectiveFields.get(validationPathIdentity(component.path)) ?? [];
         const field = declared.find((item) => item.key === parsed.field);
