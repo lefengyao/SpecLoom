@@ -83,6 +83,13 @@ export function ComponentBrowserDialog({
     return () => document.removeEventListener("keydown", close);
   }, [onClose]);
 
+  // Preselect the first addable component so its details are visible immediately.
+  useEffect(() => {
+    setSelectedPath((current) => current && entries.some((entry) => entry.path === current)
+      ? current
+      : (entries.find((entry) => entry.status !== "added") ?? entries[0])?.path);
+  }, [entries]);
+
   const visible = useMemo(() => {
     const text = query.trim().toLowerCase();
     return entries.filter((entry) => {

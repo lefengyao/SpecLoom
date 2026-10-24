@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, Image as ImageIcon, ImageOff, LayoutGrid, Plus, Puzzle, RefreshCw, Save, Search, Star, Trash2, X } from "lucide-react";
+import { Image as ImageIcon, ImageOff, LayoutGrid, Plus, RefreshCw, Save, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Background,
@@ -37,7 +37,9 @@ import {
 import { materialGroupPath, normalizeMaterialGroups } from "../shared/material-groups";
 import { resolveComponentAnchors, resolveComponentFields } from "../shared/component-inheritance";
 import { categoryForPath, referenceId } from "./materials-model";
+import { ComponentBrowserDialog, type BrowserEntry } from "./ComponentBrowserDialog";
 import { useI18n, type Translate } from "./i18n";
+import "./component-browser.css";
 import {
   ENTITY_ANCHOR_SIDES,
   ENTITY_CARD_SIZE,
@@ -70,25 +72,9 @@ const COMPONENT_NODE_PREFIX = "component:";
 const EMPTY_POSITIONS: Record<string, EntityPoint> = {};
 const fieldTypeLabels: Record<ComponentField["type"], string> = { number: "数值", string: "文本", boolean: "布尔" };
 const IMAGE_SETTINGS_PREFIX = "specloom.entity-workbench.images.";
-const RECENT_COMPONENTS_PREFIX = "specloom.entity-workbench.recent-components.";
-const FAVORITE_COMPONENTS_PREFIX = "specloom.entity-workbench.favorite-components.";
 const IMAGE_SIZE_MIN = 80;
 const IMAGE_SIZE_MAX = 360;
 interface WorkbenchImageSettings { show: boolean; size: number }
-
-function loadComponentPaths(prefix: string, projectPath: string): string[] {
-  try {
-    const raw = window.localStorage.getItem(`${prefix}${projectPath.trim()}`);
-    if (!raw) return [];
-    const value = JSON.parse(raw) as unknown;
-    return Array.isArray(value) ? value.filter((path): path is string => typeof path === "string" && path.length > 0).slice(0, 32) : [];
-  } catch { return []; }
-}
-
-function saveComponentPaths(prefix: string, projectPath: string, paths: string[]): void {
-  try { window.localStorage.setItem(`${prefix}${projectPath.trim()}`, JSON.stringify(paths.slice(0, 32))); }
-  catch { /* The preference is best effort. */ }
-}
 
 /** Drop blank per-binding notes and trim the rest before the entity is saved. */
 function cleanBindingNotes(content: string): string {
@@ -155,9 +141,6 @@ interface ComponentEntry {
   extendsRef?: string;
   anchors?: ComponentAnchor[];
 }
-
-interface BrowserNode { component: ComponentEntry; depth: number }
-interface BrowserSection { key: string; label: string; order: number; nodes: BrowserNode[] }
 
 export interface ResolvedBinding {
   id: string;
@@ -1082,11 +1065,6 @@ export function EntityWorkbench({ api, projectPath, onError, onOpenDetail }: Ent
   const [selectedBindingId, setSelectedBindingId] = useState<string | undefined>(undefined);
   const [componentDrawerOpen, setComponentDrawerOpen] = useState(false);
   const [componentBrowserOpen, setComponentBrowserOpen] = useState(false);
-  const [componentFilter, setComponentFilter] = useState<"all" | "available" | "added" | "inherited">("all");
-  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
-  const [browserSelection, setBrowserSelection] = useState<string>();
-  const [recentComponents, setRecentComponents] = useState<string[]>(() => loadComponentPaths(RECENT_COMPONENTS_PREFIX, projectPath));
-  const [favoriteComponents, setFavoriteComponents] = useState<string[]>(() => loadComponentPaths(FAVORITE_COMPONENTS_PREFIX, projectPath));
   useEffect(() => {
     if (selectedBindingId) setComponentDrawerOpen(true);
   }, [selectedBindingId]);
@@ -1097,7 +1075,6 @@ export function EntityWorkbench({ api, projectPath, onError, onOpenDetail }: Ent
     return () => document.removeEventListener("keydown", close);
   }, [componentBrowserOpen]);
   const [entityQuery, setEntityQuery] = useState("");
-  const [componentQuery, setComponentQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | undefined>(undefined);
@@ -1173,11 +1150,6 @@ export function EntityWorkbench({ api, projectPath, onError, onOpenDetail }: Ent
     let cancelled = false;
     setLayout(loadEntityLayout(projectPath));
     setImageSettings(loadImageSettings(projectPath));
-    setRecentComponents(loadComponentPaths(RECENT_COMPONENTS_PREFIX, projectPath));
-    setFavoriteComponents(loadComponentPaths(FAVORITE_COMPONENTS_PREFIX, projectPath));
-    setComponentQuery("");
-    setComponentFilter("all");
-    setBrowserSelection(undefined);
     setComponentBrowserOpen(false);
     setDrafts({});
     setSelectedEntityPath(undefined);
@@ -1376,118 +1348,39 @@ export function EntityWorkbench({ api, projectPath, onError, onOpenDetail }: Ent
     const binding = effectiveBindingFor(component);
     return binding?.own ? "added" : binding ? "inherited" : "available";
   };
-  const browserVisible = useMemo(() => componentEntries.filter((component) => {
-    const status = componentStatus(component);
-    if (componentFilter !== "all" && status !== componentFilter) return false;
-    return matchesQuery(componentQuery, [component.title, component.id, component.path, component.description ?? "", ...component.fields.map((field) => `${field.key} ${field.label ?? ""}`)]);
-  }), [componentEntries, componentQuery, componentFilter, bindings]);
-  const browserSelected = componentEntries.find((component) => component.path === browserSelection);
-  const browserFavorite = Boolean(browserSelected && favoriteComponents.includes(browserSelected.path));
-  const browserBase = browserSelected?.extendsRef ? resolveComponentReference(browserSelected.extendsRef, lookup) : undefined;
-  const browserGroup = browserSelected?.groupId ? materialGroupPath(componentGroups, browserSelected.groupId) || browserSelected.group || browserSelected.groupId : browserSelected?.group;
-  const browserSections = useMemo<BrowserSection[]>(() => {
-    const byReference = new Map<string, ComponentEntry>();
-    for (const component of componentEntries) {
-      byReference.set(`id:${component.id}`, component);
-      const normalized = normalizeReference(component.path);
-      byReference.set(`path:${normalized}`, component);
-      byReference.set(`path:${normalized.replace(/\.md$/, "")}`, component);
-    }
-    const resolve = (reference: string): ComponentEntry | undefined => {
-      const direct = byReference.get(`id:${reference.trim()}`);
-      if (direct) return direct;
-      const normalized = normalizeReference(reference);
-      return byReference.get(`path:${normalized}`) ?? byReference.get(`path:${normalized.replace(/\.md$/, "")}`);
-    };
-    const groupOrder = new Map(componentGroups.map((group, index) => [group.id, index]));
-    const grouping = new Map<string, { key: string; label: string; order: number; components: ComponentEntry[] }>();
-    for (const component of browserVisible) {
-      const registry = component.groupId ? componentGroups.find((group) => group.id === component.groupId) : undefined;
-      const legacy = component.group?.trim();
-      const key = registry ? `group:${registry.id}` : component.groupId ? `group:${component.groupId}` : legacy ? `legacy:${legacy}` : "ungrouped";
-      const label = registry ? materialGroupPath(componentGroups, registry.id) : legacy ?? component.groupId ?? tr("未分组");
-      const order = registry ? groupOrder.get(registry.id) ?? 9999 : component.groupId ? 9998 : 9999;
-      const bucket = grouping.get(key) ?? { key, label, order, components: [] };
-      bucket.components.push(component);
-      grouping.set(key, bucket);
-    }
-    const sections: BrowserSection[] = [];
-    const byTitle = (left: ComponentEntry, right: ComponentEntry) => left.title.localeCompare(right.title) || left.path.localeCompare(right.path);
-    for (const group of [...grouping.values()].sort((left, right) => left.order - right.order || left.label.localeCompare(right.label))) {
-      const inGroup = new Set(group.components.map((component) => component.path));
-      const children = new Map<string, ComponentEntry[]>();
-      const parentOf = new Set<string>();
-      for (const component of group.components) {
-        const base = component.extendsRef ? resolve(component.extendsRef) : undefined;
-        if (!base || base.path === component.path || !inGroup.has(base.path)) continue;
-        let cursor: ComponentEntry | undefined = base;
-        const seen = new Set<string>();
-        let cycle = false;
-        while (cursor) {
-          if (cursor.path === component.path) { cycle = true; break; }
-          if (seen.has(cursor.path)) break;
-          seen.add(cursor.path);
-          cursor = cursor.extendsRef ? resolve(cursor.extendsRef) : undefined;
-        }
-        if (cycle) continue;
-        children.set(base.path, [...(children.get(base.path) ?? []), component]);
-        parentOf.add(component.path);
-      }
-      const nodes: BrowserNode[] = [];
-      const push = (component: ComponentEntry, depth: number, visited: Set<string>) => {
-        if (visited.has(component.path) || depth > 12) return;
-        visited.add(component.path);
-        nodes.push({ component, depth });
-        for (const child of [...(children.get(component.path) ?? [])].sort(byTitle)) push(child, depth + 1, visited);
-      };
-      for (const root of group.components.filter((component) => !parentOf.has(component.path)).sort(byTitle)) push(root, 0, new Set());
-      if (!nodes.length) for (const component of [...group.components].sort(byTitle)) nodes.push({ component, depth: 0 });
-      sections.push({ ...group, nodes });
-    }
-    return sections;
-  }, [browserVisible, componentEntries, componentGroups, tr]);
-  const favoriteItems = favoriteComponents.map((path) => componentEntries.find((component) => component.path === path)).filter((component): component is ComponentEntry => Boolean(component));
-  const recentItems = recentComponents.map((path) => componentEntries.find((component) => component.path === path)).filter((component): component is ComponentEntry => Boolean(component));
-
-  function toggleFavorite(path: string | undefined): void {
-    if (!path) return;
-    setFavoriteComponents((current) => {
-      const next = current.includes(path) ? current.filter((item) => item !== path) : [path, ...current];
-      saveComponentPaths(FAVORITE_COMPONENTS_PREFIX, projectPath, next);
-      return next;
-    });
-  }
-
-  function rememberRecent(path: string): void {
-    setRecentComponents((current) => {
-      const next = [path, ...current.filter((item) => item !== path)].slice(0, 16);
-      saveComponentPaths(RECENT_COMPONENTS_PREFIX, projectPath, next);
-      return next;
-    });
-  }
+  /** The shared browser only needs flat entries; grouping and nesting happen inside it. */
+  const browserEntries = useMemo<BrowserEntry[]>(() => componentEntries.map((component) => {
+    const registry = component.groupId ? componentGroups.find((group) => group.id === component.groupId) : undefined;
+    const groupLabel = component.groupId
+      ? materialGroupPath(componentGroups, component.groupId) || component.group || component.groupId
+      : component.group;
+    return {
+      path: component.path,
+      id: component.id,
+      title: component.title,
+      ...(component.description ? { description: component.description } : {}),
+      ...(component.body ? { body: component.body } : {}),
+      ...(component.notes?.length ? { notes: component.notes } : {}),
+      ...(component.extendsRef ? { extendsRef: component.extendsRef } : {}),
+      ...(component.scope ? { scope: component.scope } : {}),
+      fields: component.fields,
+      ...(groupLabel ? { groupLabel } : {}),
+      ...(registry ? { groupOrder: componentGroups.indexOf(registry) } : {}),
+      status: componentStatus(component),
+    } as BrowserEntry;
+  }), [componentEntries, componentGroups, bindings]);
 
   function openComponentBrowser(): void {
-    setComponentQuery("");
-    setComponentFilter("all");
-    const first = componentEntries.find((component) => componentStatus(component) === "available") ?? componentEntries[0];
-    setBrowserSelection(first?.path);
     setComponentBrowserOpen(true);
     setComponentDrawerOpen(false);
   }
 
   function createBrowserComponent(component: ComponentEntry | undefined): void {
     if (!component || componentStatus(component) === "added") return;
-    rememberRecent(component.path);
     addComponent(component);
     setComponentBrowserOpen(false);
   }
 
-  useEffect(() => {
-    if (!componentBrowserOpen) return;
-    if (browserSelection && componentEntries.some((component) => component.path === browserSelection)) return;
-    const first = componentEntries.find((component) => componentStatus(component) !== "added") ?? componentEntries[0];
-    setBrowserSelection(first?.path);
-  }, [componentBrowserOpen, browserSelection, componentEntries, bindings]);
 
   function writeEntityBindings(nextBindings: ComponentBinding[]) {
     if (!entity) return;
@@ -1988,151 +1881,17 @@ export function EntityWorkbench({ api, projectPath, onError, onOpenDetail }: Ent
         )}
       </div>
 
-      {componentBrowserOpen && entity && (
-        <div
-          className="ewb-create-overlay"
-          role="presentation"
-          onMouseDown={(event) => { if (event.target === event.currentTarget) setComponentBrowserOpen(false); }}
-        >
-          <section className="ewb-create-dialog" role="dialog" aria-modal="true" aria-label={tr("创建组件")}>
-            <header className="ewb-create-head">
-              <h2>{tr("创建组件")}</h2>
-              <button type="button" className="ewb-drawer-close" aria-label={tr("关闭")} title={tr("关闭")} onClick={() => setComponentBrowserOpen(false)}><X size={16} /></button>
-            </header>
-            <div className="ewb-create-body">
-              <aside className="ewb-create-side">
-                <section>
-                  <h3>{tr("收藏")}</h3>
-                  {favoriteItems.length ? (
-                    <ul>{favoriteItems.map((component) => (
-                      <li key={component.path}>
-                        <button type="button" className={browserSelection === component.path ? "is-selected" : ""} onClick={() => setBrowserSelection(component.path)}>{component.title}</button>
-                      </li>
-                    ))}</ul>
-                  ) : <p className="ewb-empty">{tr("暂无收藏")}</p>}
-                </section>
-                <section>
-                  <h3>{tr("最近使用")}</h3>
-                  {recentItems.length ? (
-                    <ul>{recentItems.map((component) => (
-                      <li key={component.path}>
-                        <button type="button" className={browserSelection === component.path ? "is-selected" : ""} onClick={() => setBrowserSelection(component.path)}>{component.title}</button>
-                      </li>
-                    ))}</ul>
-                  ) : <p className="ewb-empty">{tr("暂无最近使用")}</p>}
-                </section>
-              </aside>
-              <div className="ewb-create-main">
-                <div className="ewb-create-search">
-                  <Search size={16} aria-hidden="true" />
-                  <input autoFocus aria-label={tr("搜索组件")} placeholder={tr("搜索组件")} value={componentQuery} onChange={(event) => setComponentQuery(event.target.value)} />
-                  <button
-                    type="button"
-                    className="ewb-create-star"
-                    aria-label={browserFavorite ? tr("取消收藏") : tr("收藏")}
-                    aria-pressed={browserFavorite}
-                    disabled={!browserSelected}
-                    onClick={() => toggleFavorite(browserSelected?.path)}
-                  >
-                    <Star size={16} fill={browserFavorite ? "currentColor" : "none"} />
-                  </button>
-                </div>
-                <div className="ewb-create-match">
-                  <span>{tr("匹配项")} · {browserVisible.length}</span>
-                  <label className="ewb-create-filter">
-                    {tr("筛选")}
-                    <select aria-label={tr("筛选")} value={componentFilter} onChange={(event) => setComponentFilter(event.target.value as "all" | "available" | "added" | "inherited")}>
-                      <option value="all">{tr("全部")}</option>
-                      <option value="available">{tr("未添加")}</option>
-                      <option value="inherited">{tr("已继承")}</option>
-                      <option value="added">{tr("已添加")}</option>
-                    </select>
-                  </label>
-                </div>
-                <ul className="ewb-create-list" aria-label={tr("组件列表")}>
-                  {browserSections.map((section) => (
-                    <li key={section.key} className="ewb-create-group">
-                      <button
-                        type="button"
-                        className="ewb-create-group-head"
-                        aria-expanded={!collapsedSections.has(section.key)}
-                        onClick={() => setCollapsedSections((current) => {
-                          const next = new Set(current);
-                          if (next.has(section.key)) next.delete(section.key); else next.add(section.key);
-                          return next;
-                        })}
-                      >
-                        {collapsedSections.has(section.key) ? <ChevronRight size={12} aria-hidden="true" /> : <ChevronDown size={12} aria-hidden="true" />}
-                        <span>{section.label}</span><span>{section.nodes.length}</span>
-                      </button>
-                      {!collapsedSections.has(section.key) && <ul>
-                        {section.nodes.map(({ component, depth }) => {
-                          const status = componentStatus(component);
-                          const base = component.extendsRef ? resolveComponentReference(component.extendsRef, lookup) : undefined;
-                          const inheritance = component.extendsRef ? tr("继承自 {source}", { source: base?.title ?? component.extendsRef }) : undefined;
-                          return (
-                            <li key={component.path}>
-                              <button
-                                type="button"
-                                className={"ewb-create-item" + (browserSelection === component.path ? " is-selected" : "")}
-                                data-depth={depth}
-                                style={{ paddingLeft: `${20 + depth * 16}px` }}
-                                title={[component.description, inheritance, component.path].filter(Boolean).join("\n")}
-                                onClick={() => setBrowserSelection(component.path)}
-                                onDoubleClick={() => createBrowserComponent(component)}
-                              >
-                                <Puzzle size={14} aria-hidden="true" />
-                                <span className="ewb-create-item-title">{component.title}</span>
-                                {status !== "available" && <span className={"ewb-badge" + (status === "added" ? " is-own" : "")}>{status === "added" ? tr("已添加") : tr("已继承")}</span>}
-                              </button>
-                            </li>
-                          );
-                        })}
-                      </ul>}
-                    </li>
-                  ))}
-                </ul>
-                {browserVisible.length === 0 && (
-                  <p className="ewb-empty">{componentEntries.length ? tr("没有匹配的组件") : loading ? tr("正在读取资料…") : tr("还没有组件。可在项目资料的组件页新建组件。")}</p>
-                )}
-                <section className="ewb-create-description" aria-label={tr("描述")}>
-                  <h3>{tr("描述")}</h3>
-                  {browserSelected ? (
-                    <>
-                      <div className="ewb-create-description-head"><strong>{browserSelected.title}</strong><code>{browserSelected.path}</code></div>
-                      {browserSelected.description && <p>{browserSelected.description}</p>}
-                      {browserSelected.notes?.length ? <ul className="ewb-component-note-list">{browserSelected.notes.map((note, index) => <li key={index}>{note}</li>)}</ul> : null}
-                      {browserSelected.body && <pre className="ewb-create-body-text">{browserSelected.body}</pre>}
-                      <dl>
-                        {browserGroup && <div><dt>{tr("分组")}</dt><dd>{browserGroup}</dd></div>}
-                        {browserSelected.extendsRef && <div><dt>{tr("继承")}</dt><dd>{browserBase?.title ?? browserSelected.extendsRef}</dd></div>}
-                        <div><dt>{tr("ID")}</dt><dd>{browserSelected.id}</dd></div>
-                        <div><dt>{tr("范围")}</dt><dd>{browserSelected.scope === "system" ? tr("系统") : tr("用户")}</dd></div>
-                        <div><dt>{tr("字段")}</dt><dd>{browserSelected.fields.length}</dd></div>
-                      </dl>
-                      {browserSelected.fields.length > 0 && (
-                        <ul className="ewb-create-fields">
-                          {browserSelected.fields.map((field) => (
-                            <li key={field.key}>
-                              <code>{field.key}</code>
-                              <span>{field.label ?? field.key}</span>
-                              <span>{tr(fieldTypeLabels[field.type])} · {tr("默认")} {formatValue(field.default, tr)}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </>
-                  ) : <p className="ewb-empty">{tr("选择一个组件查看描述")}</p>}
-                </section>
-              </div>
-            </div>
-            <footer className="ewb-create-actions">
-              <button type="button" className="primary" disabled={!browserSelected || componentStatus(browserSelected) === "added"} onClick={() => createBrowserComponent(browserSelected)}>{tr("创建")}</button>
-              <button type="button" onClick={() => setComponentBrowserOpen(false)}>{tr("取消")}</button>
-            </footer>
-          </section>
-        </div>
-      )}
+      {componentBrowserOpen && entity && <ComponentBrowserDialog
+        title="创建组件"
+        pickLabel="创建"
+        entries={browserEntries}
+        projectPath={projectPath}
+        recentPrefix="specloom.entity-workbench.recent-components."
+        favoritePrefix="specloom.entity-workbench.favorite-components."
+        onPick={(entry) => createBrowserComponent(componentEntries.find((component) => component.path === entry.path))}
+        onClose={() => setComponentBrowserOpen(false)}
+        disabled={saving}
+      />}
     </section>
   );
 }
