@@ -1,5 +1,5 @@
 import type { MaterialSummary } from "../shared/material-catalog";
-export { categoryForPath, categoryLabels, categoryRoots, componentScope, componentScopeLabels, referenceId, summarizeMaterial, type ComponentScope, type DocumentCategory, type MaterialSummary } from "../shared/material-catalog";
+export { categoryForPath, categoryLabels, categoryRoots, componentScope, componentScopeLabels, materialScope, referenceId, summarizeMaterial, type ComponentScope, type DocumentCategory, type MaterialSummary } from "../shared/material-catalog";
 
 export interface MaterialNode {
   key: string;

@@ -166,14 +166,14 @@ export class WorkMaterials {
   }
   async update(input: Record<string, unknown>) {
     const file = await this.existing(input); const changes = input.changes as Record<string, unknown> ?? {};
-    const { materialGroups, ...properties } = changes as { materialGroups?: Partial<Record<MaterialGroupCategory, { id?: string; name: string; parentId?: string; order?: number }[]>> } & Record<string, unknown>;
+    const { materialGroups, ...properties } = changes as { materialGroups?: Partial<Record<MaterialGroupCategory, { id?: string; name: string; parentId?: string; order?: number; scope?: "system" | "user" }[]>> } & Record<string, unknown>;
     this.assertProperties(categoryForPath(file.path)!, properties);
     if (materialGroups !== undefined) {
       if (file.path.toLowerCase() !== "specs/project.md") throw new ProjectError("VALIDATION_FAILED", "materialGroups 只能在项目资料 specs/project.md 上编辑");
       const registry: MaterialGroupRegistry = { ...normalizeMaterialGroups(file.data.materialGroups) };
       for (const [category, groups] of Object.entries(materialGroups)) {
         if (!groups) continue;
-        registry[category as MaterialGroupCategory] = groups.map((group, index) => ({ id: group.id ?? stableGroupId(category, group.name), name: group.name, ...(group.parentId ? { parentId: group.parentId } : {}), order: group.order ?? index }));
+        registry[category as MaterialGroupCategory] = groups.map((group, index) => ({ id: group.id ?? stableGroupId(category, group.name), name: group.name, ...(group.parentId ? { parentId: group.parentId } : {}), ...(group.scope ? { scope: group.scope } : {}), order: group.order ?? index }));
       }
       const errors = validateMaterialGroupRegistry(registry);
       if (errors.length) throw new ProjectError("VALIDATION_FAILED", `项目分组登记表无效：${errors[0]}`, { path: file.path, diagnostics: errors });

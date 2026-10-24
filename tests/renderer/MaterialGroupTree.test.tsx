@@ -12,7 +12,7 @@ const material = (path: string, title: string, groupId?: string) => ({
   ...(groupId ? { groupId } : {}),
 }) as unknown as MaterialSummary;
 
-const renderTree = (groups: { id: string; name: string; order: number }[], materials: MaterialSummary[], onSelectMaterial = vi.fn()) => {
+const renderTree = (groups: { id: string; name: string; order: number; scope?: "system" | "user" }[], materials: MaterialSummary[], onSelectMaterial = vi.fn()) => {
   render(<MaterialGroupTree
     groups={groups}
     materials={materials}
@@ -56,4 +56,12 @@ test("lets the ungrouped bucket collapse its own materials", () => {
   expect(screen.getByRole("treeitem", { name: "散落资料" })).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "收起 未分组" }));
   expect(screen.queryByRole("treeitem", { name: "散落资料" })).not.toBeInTheDocument();
+});
+
+test("labels official groups and refuses to rename them", () => {
+  renderTree([{ id: "basic", name: "基础组件", order: 0, scope: "system" }], []);
+  expect(screen.getByText("官方")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "管理 基础组件" }));
+  expect(screen.getByRole("button", { name: "重命名" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "删除" })).toBeDisabled();
 });

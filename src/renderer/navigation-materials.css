@@ -71,6 +71,7 @@
 .material-group-choice[aria-selected="true"] { color: var(--accent); border-color: var(--accent-border); background: var(--accent-soft); }
 .material-group-choice > span { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .material-group-choice small { flex: 0 0 auto; color: var(--text-muted); font-size: 10px; }
+.material-group-badge { flex: 0 0 auto; padding: 1px 6px; border: 1px solid var(--accent-border); border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 9px; line-height: 1.4; }
 .material-group-materials { list-style: none; margin: 2px 0 2px 13px; padding-left: 5px; border-left: 1px solid var(--border); }
 .material-group-material-choice { display: flex; align-items: center; gap: 6px; min-width: 0; width: 100%; min-height: 28px; padding: 4px 7px; border: 1px solid transparent; border-radius: 6px; background: transparent; text-align: left; font-size: 12px; color: var(--text-muted); }
 .material-group-material-choice > span { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -1,7 +1,7 @@
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useI18n } from "./i18n";
-import { componentScope, componentScopeLabels, resolveMaterial, type DocumentCategory, type MaterialNode, type MaterialSummary } from "./materials-model";
+import { componentScope, componentScopeLabels, materialScope, resolveMaterial, type DocumentCategory, type MaterialNode, type MaterialSummary } from "./materials-model";
 import "./navigation-materials.css";
 
 export interface MaterialHierarchyListProps {
@@ -82,7 +82,7 @@ export function MaterialHierarchyList({ tree, materials, category, selectedPath,
       const parent = item ? resolveMaterial(materials, item.parent) : undefined;
       const parentLabel = item?.parent ? parent?.title ?? tr("缺失父级：{parent}", { parent: item.parent }) : tr("根资料");
       const groupLabel = item?.groupPath || item?.group || tr("未分组");
-      const metadata = item ? tr(category === "component" || item.type === "component"
+      const metadata = item ? tr(materialScope(item) === "system" && !(category === "component" || item.type === "component") ? "官方" : category === "component" || item.type === "component"
         ? componentScopeLabels[componentScope(item)] : typeLabels[item.type] ?? item.type) : "";
       const accessibleSummary = [
         ...(item?.description ? [tr("说明：{value}", { value: item.description })] : []),

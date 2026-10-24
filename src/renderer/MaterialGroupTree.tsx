@@ -113,19 +113,20 @@ export function MaterialGroupTree({ groups, materials, selection, onSelect, sele
     const ownMaterials = materialsOf.get(group.id) ?? [];
     const branch = nested.length > 0 || ownMaterials.length > 0;
     const isExpanded = expanded.has(group.id);
+    const official = group.scope === "system";
     return <li role="none" key={group.id} className="material-group-node">
       <div className="material-group-row">
         {branch ? <button type="button" className="material-group-disclosure" aria-label={`${isExpanded ? tr("收起") : tr("展开")} ${group.name}`} aria-expanded={isExpanded} onClick={() => toggleExpanded(group.id)}>{isExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}</button> : <span className="material-group-disclosure-placeholder" />}
         <button type="button" role="treeitem" data-group-id={group.id} aria-level={level} aria-selected={selected({ kind: "group", id: group.id })} aria-pressed={selected({ kind: "group", id: group.id })} className="material-group-choice" onClick={() => onSelect({ kind: "group", id: group.id })} title={group.name}>
-          {branch && isExpanded ? <FolderOpen size={14} /> : <Folder size={14} />}<span>{group.name}</span><small>{groupCount(group.id)}</small>
+          {branch && isExpanded ? <FolderOpen size={14} /> : <Folder size={14} />}<span>{group.name}</span>{official && <span className="material-group-badge">{tr("官方")}</span>}<small>{groupCount(group.id)}</small>
         </button>
         <button type="button" className="material-group-more" aria-label={tr("管理 {name}", { name: group.name })} aria-expanded={menuGroup === group.id} disabled={groupsSaving} onClick={() => setMenuGroup((current) => current === group.id ? undefined : group.id)}><MoreHorizontal size={15} /></button>
       </div>
       {menuGroup === group.id && <div className="material-group-actions" role="group" aria-label={tr("{name}分组操作", { name: group.name })}>
         <button type="button" onClick={() => beginDialog({ mode: "create", parentId: group.id })}><Plus size={13} />{tr("新建子分组")}</button>
-        <button type="button" onClick={() => beginDialog({ mode: "rename", groupId: group.id })}>{tr("重命名")}</button>
+        <button type="button" onClick={() => beginDialog({ mode: "rename", groupId: group.id })} disabled={official} title={official ? tr("官方分组不能改名") : undefined}>{tr("重命名")}</button>
         <button type="button" onClick={() => beginDialog({ mode: "move", groupId: group.id })}>{tr("移动")}</button>
-        <button type="button" disabled={groupsSaving || groupCount(group.id) > 0 || groupChildCount(group.id) > 0} onClick={() => void deleteGroup(group)}>{tr("删除")}</button>
+        <button type="button" disabled={official || groupsSaving || groupCount(group.id) > 0 || groupChildCount(group.id) > 0} title={official ? tr("官方分组不能删除") : undefined} onClick={() => void deleteGroup(group)}>{tr("删除")}</button>
         {(groupCount(group.id) > 0 || groupChildCount(group.id) > 0) && <small className="material-group-delete-hint">{tr("需先移动资料并删除子分组，才能删除此组。")}</small>}
       </div>}
       {branch && isExpanded && <ul role="group">

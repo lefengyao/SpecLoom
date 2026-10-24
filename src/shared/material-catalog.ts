@@ -29,10 +29,20 @@ const builtinComponents = [{ id: "state_machine", path: "specs/components/state_
  * Recognize the built-in file, including older projects without scope metadata.
  * An editable scope/group or a copied ID is not evidence of official origin.
  */
-export function componentScope(item: Pick<MaterialSummary, "id" | "type" | "path">): ComponentScope {
+export function componentScope(item: Pick<MaterialSummary, "id" | "type" | "path" | "scope">): ComponentScope {
   const identity = item.path.replaceAll("\\", "/").toLowerCase();
   if (item.type === "component" && builtinComponents.some((builtin) => item.id === builtin.id && identity === builtin.path)) return "system";
   return "user";
+}
+
+/**
+ * Official means the material is part of the shipped baseline. Components are
+ * judged by their shipped path (a copied component may keep `scope: system`),
+ * other kinds by their explicit scope.
+ */
+export function materialScope(item: Pick<MaterialSummary, "id" | "type" | "path" | "scope">): ComponentScope {
+  if (item.type === "component") return componentScope(item);
+  return item.scope === "system" ? "system" : "user";
 }
 export const categoryLabels: Record<DocumentCategory, string> = {
   all: "项目文件", entity: "实体", component: "组件", setting: "设定", map: "地图", ui: "UI",

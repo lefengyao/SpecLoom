@@ -9,6 +9,8 @@ export interface MaterialGroup {
   /** Original flat label, retained to resolve materials that still store `group`. */
   legacyName?: string;
   order: number;
+  /** Official groups ship with the project and are not renamed or deleted from the UI. */
+  scope?: "system" | "user";
 }
 
 export type MaterialGroupRegistry = Partial<Record<MaterialGroupCategory, MaterialGroup[]>>;
@@ -65,6 +67,7 @@ export function normalizeMaterialGroups(value: unknown): MaterialGroupRegistry {
         name: group.name,
         ...(typeof group.parentId === "string" && group.parentId ? { parentId: group.parentId } : {}),
         ...(typeof group.legacyName === "string" ? { legacyName: group.legacyName } : {}),
+        ...(group.scope === "system" || group.scope === "user" ? { scope: group.scope } : {}),
         order: typeof group.order === "number" && Number.isFinite(group.order) ? group.order : index,
       }];
     });
@@ -99,6 +102,7 @@ export function validateMaterialGroupRegistry(value: unknown): string[] {
       if (typeof group.id !== "string" || !group.id.trim() || typeof group.name !== "string"
         || (group.parentId !== undefined && typeof group.parentId !== "string")
         || (group.legacyName !== undefined && typeof group.legacyName !== "string")
+        || (group.scope !== undefined && group.scope !== "system" && group.scope !== "user")
         || typeof group.order !== "number" || !Number.isFinite(group.order)) {
         errors.add("GROUP_NODE_INVALID");
         continue;
@@ -108,6 +112,7 @@ export function validateMaterialGroupRegistry(value: unknown): string[] {
         name: group.name,
         ...(group.parentId ? { parentId: group.parentId as string } : {}),
         ...(typeof group.legacyName === "string" ? { legacyName: group.legacyName } : {}),
+        ...(group.scope === "system" || group.scope === "user" ? { scope: group.scope } : {}),
         order: group.order,
       });
     }

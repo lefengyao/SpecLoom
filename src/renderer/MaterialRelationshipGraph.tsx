@@ -1,7 +1,7 @@
 import { ChevronDown, ChevronRight, Maximize2, Minus, Plus } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { useI18n } from "./i18n";
-import { componentScope, componentScopeLabels, resolveMaterial, type DocumentCategory, type MaterialNode, type MaterialSummary } from "./materials-model";
+import { componentScope, componentScopeLabels, materialScope, resolveMaterial, type DocumentCategory, type MaterialNode, type MaterialSummary } from "./materials-model";
 import { layoutMaterialGraph } from "./material-graph-layout";
 import "./navigation-materials.css";
 
@@ -159,7 +159,7 @@ export function MaterialRelationshipGraph({ tree, materials, category, selectedP
             const parentLabel = item.parent ? parent?.title ?? tr("缺失父级：{parent}", { parent: item.parent }) : tr("根资料");
             const group = item.groupPath || item.group || tr("未分组");
             const component = category === "component" || item.type === "component";
-            const metadata = tr(component ? componentScopeLabels[componentScope(item)] : typeLabels[item.type] ?? item.type);
+            const metadata = tr(materialScope(item) === "system" && !component ? "官方" : component ? componentScopeLabels[componentScope(item)] : typeLabels[item.type] ?? item.type);
             const open = expanded.has(node.key);
             const metadataId = `${id}-metadata-${encodeURIComponent(node.key)}`;
             const summary = [

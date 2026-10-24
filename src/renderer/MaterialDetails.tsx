@@ -3,7 +3,7 @@ import { useId, useState } from "react";
 import { type ComponentBinding, type ComponentField, type MaterialDocument } from "../shared/project-materials";
 import { type StateMachine } from "../shared/state-machine";
 import { materialGroupPath, resolveLegacyGroup, type MaterialGroup } from "../shared/material-groups";
-import { categoryForPath, componentScope, componentScopeLabels, referenceId, resolveMaterial, wouldCycle, type MaterialSummary } from "./materials-model";
+import { categoryForPath, componentScope, componentScopeLabels, materialScope, referenceId, resolveMaterial, wouldCycle, type MaterialSummary } from "./materials-model";
 import { AUDIO_SYSTEM_ID, audioBusUsage, isBuiltinBus, readAudioBuses, readAudioEvents, type AudioBus, type AudioEvent } from "../shared/audio-system";
 import { StateMachineEditor } from "./StateMachineEditor";
 import { useI18n } from "./i18n";
@@ -51,6 +51,10 @@ export function MaterialDetails({ material, catalog, groups = [], onChange, disa
   const relationshipId = useId();
   const [componentId, setComponentId] = useState("");
   const owner = catalog.find((item) => item.id === data.id);
+  const official = materialScope({
+    id: String(data.id ?? ""), type: String(data.type ?? ""),
+    path: owner?.path ?? "", ...(data.scope === "system" || data.scope === "user" ? { scope: data.scope } : {}),
+  }) === "system";
   const type = String(data.type);
   const entity = type === "entity" || (owner && categoryForPath(owner.path) === "entity");
   const isComponent = type === "component";
@@ -310,10 +314,10 @@ export function MaterialDetails({ material, catalog, groups = [], onChange, disa
   </section>;
   return <fieldset className="material-details form-stack" disabled={disabled}>
     <div className="form-row">
-      <label>{tr("名称")}<input required maxLength={200} value={String(data.title ?? "")} onChange={(event) => {
+      <label>{tr("名称")}<span className="material-name-row"><input required maxLength={200} value={String(data.title ?? "")} onChange={(event) => {
         const title = event.target.value;
         emit({ ...data, title }, /^#\s+.+$/m.test(body) ? body.replace(/^#\s+.+$/m, `# ${title}`) : body);
-      }} /></label>
+      }} />{official && <span className="material-type-badge material-source-system">{tr("官方")}</span>}</span></label>
       {entity && <label>{tr("实体类型")}<select aria-label={tr("实体类型")} value={type} onChange={(event) => patch({ type: event.target.value })}>
         <option value="entity">{tr("通用实体")}</option><option value="character">{tr("角色")}</option><option value="enemy">{tr("敌人")}</option><option value="item">{tr("物品")}</option><option value="system">{tr("系统")}</option><option value="event">{tr("事件")}</option>
       </select></label>}

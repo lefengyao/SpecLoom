@@ -7,7 +7,7 @@ import { MaterialGroupTree, type MaterialGroupSelection } from "./MaterialGroupT
 import { MaterialHierarchyList } from "./MaterialHierarchyList";
 import { MaterialRelationshipGraph } from "./MaterialRelationshipGraph";
 import { useI18n } from "./i18n";
-import { componentScope, componentScopeLabels, materialTree, projectMaterialTree, resolveMaterial, type DocumentCategory, type MaterialNode, type MaterialSummary } from "./materials-model";
+import { componentScope, componentScopeLabels, materialScope, materialTree, projectMaterialTree, resolveMaterial, type DocumentCategory, type MaterialNode, type MaterialSummary } from "./materials-model";
 import "./navigation-materials.css";
 
 type View = "icons" | "list" | "graph";
@@ -88,7 +88,8 @@ export function MaterialExplorer({ materials, groups, groupsSaving, onGroupsChan
       const parent = resolveMaterial(materials, item.parent);
       const parentLabel = item.parent ? parent?.title ?? tr("缺失父级：{parent}", { parent: item.parent }) : tr("根资料");
       const isComponent = category === "component" || item.type === "component";
-      const metadata = tr(isComponent ? componentScopeLabels[componentScope(item)] : typeLabels[item.type] ?? item.type);
+      const official = materialScope(item) === "system";
+      const metadata = tr(official && !isComponent ? "官方" : isComponent ? componentScopeLabels[componentScope(item)] : typeLabels[item.type] ?? item.type);
       const summaryId = `material-icon-summary-${encodeURIComponent(item.path)}`;
       const accessibleSummary = [
         tr("类型：{value}", { value: metadata }), tr("父级：{value}", { value: parentLabel }), tr("所属分组：{value}", { value: groupLabel }), tr("层级：第 {level} 级", { level: depth + 1 }),

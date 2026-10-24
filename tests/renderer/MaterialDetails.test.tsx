@@ -89,6 +89,11 @@ describe("structured editors for system, feature and decision specs", () => {
     expect(within(section).getByText("战斗决策")).toBeInTheDocument();
   });
 
+  it("marks an official system with a badge", () => {
+    renderDetails({ schemaVersion: 1, id: "audio", title: "音频", type: "system", scope: "system", description: "" }, [summary("audio", "音频", "system", "systems")]);
+    expect(screen.getAllByText("官方").length).toBeGreaterThan(0);
+  });
+
   it("edits audio buses on the audio system and locks built-ins", () => {
     const audioCatalog = [summary("audio", "音频", "system", "systems")];
     const onChange = renderDetails({

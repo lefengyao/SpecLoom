@@ -10,7 +10,7 @@ const category = z.enum(["entity", "component", "map", "setting", "ui", "system"
 const value = z.union([z.number().finite(), z.string().max(65536), z.boolean()]);
 const values = z.record(z.string().regex(/^[a-zA-Z_][a-zA-Z0-9_]*$/).refine(key => !["__proto__", "prototype", "constructor"].includes(key)), value);
 const field = z.object({ key: z.string().min(1).max(100), label: z.string().max(200).optional(), type: z.enum(["number", "string", "boolean"]), default: value }).strict();
-const groupNode = z.object({ id: z.string().trim().min(1).max(200).optional(), name: z.string().trim().min(1).max(100), parentId: z.string().trim().min(1).max(200).optional(), order: z.number().int().optional() }).strict();
+const groupNode = z.object({ id: z.string().trim().min(1).max(200).optional(), name: z.string().trim().min(1).max(100), parentId: z.string().trim().min(1).max(200).optional(), order: z.number().int().optional(), scope: z.enum(["system", "user"]).optional() }).strict();
 const materialGroups = z.partialRecord(category, z.array(groupNode).max(1000));
 const changes = z.object({
   title: z.string().trim().min(1).max(200).optional(), description: text.optional(),

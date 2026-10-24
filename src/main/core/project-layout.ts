@@ -151,6 +151,8 @@ async function ensureAudioSystem(root: string): Promise<void> {
       id: AUDIO_SYSTEM_ID,
       title: "音频",
       type: "system",
+      scope: "system",
+      groupId: "group_audio",
       description: "项目音频总线与事件；master、music、sfx 为内置总线，可继续添加自定义总线。",
       buses: builtinAudioBuses(),
       events: [],
@@ -194,7 +196,16 @@ export class ProjectLayout {
     for (const directory of [...EDITABLE_PROJECT_DIRECTORIES, ...RESERVED_PROJECT_DIRECTORIES]) {
       await ensureProjectDirectory(root, directory);
     }
-    await writeInitialFile(root, "specs/project.md", markdown({ schemaVersion: SCHEMA_VERSION, id: "project", title: metadata.name, description: metadata.description }, `# ${metadata.name}\n\n${metadata.description}`));
+    await writeInitialFile(root, "specs/project.md", markdown({
+      schemaVersion: SCHEMA_VERSION,
+      id: "project",
+      title: metadata.name,
+      description: metadata.description,
+      materialGroups: {
+        component: [{ id: "group_basic_components", name: "基础组件", legacyName: "基础组件", order: 0, scope: "system" }],
+        system: [{ id: "group_audio", name: "音频", legacyName: "音频", order: 0, scope: "system" }],
+      },
+    }, `# ${metadata.name}\n\n${metadata.description}`));
     await writeInitialFile(root, "specs/outline.md", markdown({ schemaVersion: SCHEMA_VERSION, id: "outline", title: "Project Outline", description: "High-level structure and milestones for the project." }, "# Project Outline\n\n## Overview\n\n## Milestones"));
     await writeInitialFile(root, "specs/components/state_machine.md", markdown({
       schemaVersion: SCHEMA_VERSION,
@@ -202,7 +213,7 @@ export class ProjectLayout {
       title: "状态机基类",
       type: "component",
       scope: "system",
-      group: "基础组件",
+      groupId: "group_basic_components",
       description: "Reusable state-machine lifecycle data and behavior contract.",
       fields: [
         { key: "enabled", label: "启用", type: "boolean", default: true },
@@ -215,7 +226,7 @@ export class ProjectLayout {
       title: "决策树",
       type: "component",
       scope: "system",
-      group: "基础组件",
+      groupId: "group_basic_components",
       description: "引用一棵决策树规范，用行为决策驱动实体或系统；同一所有者可挂多棵，用 key 区分。",
       fields: [
         { key: "enabled", label: "启用", type: "boolean", default: true },

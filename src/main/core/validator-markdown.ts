@@ -95,7 +95,7 @@ export function validateFields(spec: ParsedSpec, diagnostics: ValidationDiagnost
   const { path, data } = spec;
   const identity = validationPathIdentity(path);
   const field = (key: string, valid: boolean) => { if (!valid) diagnostics.push(diagnostic(path, "SPEC_FIELD_INVALID", `Field '${key}' is missing or invalid`)); };
-  if (data.scope !== undefined && data.type !== "component") field("scope", false);
+  if (data.scope !== undefined && data.type !== "component" && data.type !== "system") field("scope", false);
   field("id", nonempty(data.id));
   if (!identity.startsWith("specs/systems/") && (data.buses !== undefined || data.events !== undefined)) {
     diagnostics.push(diagnostic(path, "SPEC_FIELD_INVALID", "Audio buses and events belong to the audio system specification"));

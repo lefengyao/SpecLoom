@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { parse, stringify } from "yaml";
 import { builtinAudioBuses, mergeBuiltinBuses, validateAudioSpec } from "../../src/shared/audio-system";
+import { normalizeMaterialGroups, validateMaterialGroupRegistry } from "../../src/shared/material-groups";
 import { FileStore } from "../../src/main/core/file-store";
 import { ProjectLayout } from "../../src/main/core/project-layout";
 import { Validator } from "../../src/main/core/validator";
@@ -80,6 +81,29 @@ describe("audio spec validation", () => {
     expect(merged.buses[0]).toEqual({ name: "master", volume: 0.4, muted: true });
     expect(merged.buses.map((bus) => bus.name)).toEqual(["master", "ui", "music", "sfx"]);
     expect(mergeBuiltinBuses(merged.buses).changed).toBe(false);
+  });
+});
+
+describe("official scope", () => {
+  it("seeds official groups and keeps their scope through normalization", async () => {
+    const { root } = await fixture();
+    const data = parse((await readFile(path.join(root, "specs/project.md"), "utf8")).split("---")[1]!) as {
+      materialGroups: { component?: { scope?: string }[]; system?: { scope?: string }[] };
+    };
+    expect(data.materialGroups.component?.[0]?.scope).toBe("system");
+    expect(data.materialGroups.system?.[0]?.scope).toBe("system");
+    const registry = normalizeMaterialGroups(data.materialGroups);
+    expect(registry.component?.[0]?.scope).toBe("system");
+    expect(validateMaterialGroupRegistry(data.materialGroups)).toEqual([]);
+    expect(validateMaterialGroupRegistry({ component: [{ id: "g", name: "组", order: 0, scope: "owner" }] }))
+      .toContainEqual("GROUP_NODE_INVALID");
+  });
+
+  it("marks the seeded audio system as official and grouped", async () => {
+    const { root } = await fixture();
+    const data = parse((await readFile(path.join(root, AUDIO), "utf8")).split("---")[1]!) as { scope?: string; groupId?: string };
+    expect(data.scope).toBe("system");
+    expect(data.groupId).toBe("group_audio");
   });
 });
 
