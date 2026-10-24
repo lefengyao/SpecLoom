@@ -134,7 +134,19 @@ export async function validateReferences(specs: ParsedSpec[], source: Validation
     }
     if (kind === "decision_tree") {
       for (const { node } of flattenDecisionTree(spec.data.root)) {
-        if (node.kind !== "condition" || typeof node.comparator !== "string") continue;
+        if (node.kind !== "condition") continue;
+        if (node.signal) {
+          const source = specs.find((candidate) => ["entity", "system"].includes(materialKind(candidate) ?? "") && candidate.data.id === node.signal!.from);
+          if (!source) {
+            diagnostics.push(diagnostic(spec.path, "TREE_SIGNAL_UNKNOWN_SOURCE", `Condition '${node.id}' waits on a signal from unknown entity or system '${node.signal.from}'`));
+          } else {
+            const declared = Array.isArray(source.data.signals) ? source.data.signals.filter((item): item is string => typeof item === "string") : [];
+            if (!declared.includes(node.signal.name)) {
+              diagnostics.push(diagnostic(spec.path, "TREE_SIGNAL_UNKNOWN_NAME", `'${node.signal.from}' does not declare signal '${node.signal.name}'`));
+            }
+          }
+        }
+        if (typeof node.comparator !== "string") continue;
         const parsed = parseComparator(node.comparator);
         if (!parsed) continue; // the structural validator already reports the syntax
         const ownerEntity = typeof node.owner === "string" && node.owner.trim() ? specs.find((candidate) => materialKind(candidate) === "entity" && candidate.data.id === node.owner) : undefined;

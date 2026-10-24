@@ -147,6 +147,42 @@ describe("decision tree specs and mounts", () => {
     expect((await validator.validate({ runGodot: false })).diagnostics).toEqual([]);
   });
 
+  it("checks signals against the entity or system that declares them", async () => {
+    const signaling = (from: string, name: string) => md({
+      schemaVersion: 1, id: "signals", title: "signals", type: "decision_tree", description: "",
+      root: { id: "root", kind: "selector", children: [{ id: "c", kind: "condition", signal: { from, name } }] },
+    });
+
+    const unknownSource = await project();
+    await put(unknownSource.root, "specs/decision_trees/signals.md", signaling("ghost", "hp_low"));
+    expect((await unknownSource.validator.validate({ runGodot: false })).diagnostics)
+      .toContainEqual(expect.objectContaining({ code: "TREE_SIGNAL_UNKNOWN_SOURCE" }));
+
+    const unknownName = await project();
+    await put(unknownName.root, "specs/entities/keeper.md", md({
+      schemaVersion: 1, id: "keeper", title: "守灯人", type: "entity", description: "", signals: ["hp_low"],
+    }));
+    await put(unknownName.root, "specs/decision_trees/signals.md", signaling("keeper", "alarm"));
+    expect((await unknownName.validator.validate({ runGodot: false })).diagnostics)
+      .toContainEqual(expect.objectContaining({ code: "TREE_SIGNAL_UNKNOWN_NAME" }));
+
+    const systemSignal = await project();
+    await put(systemSignal.root, "specs/systems/alarm.md", md({
+      schemaVersion: 1, id: "alarm", title: "警报系统", type: "system", description: "", signals: ["alarm_raised"],
+    }));
+    await put(systemSignal.root, "specs/decision_trees/signals.md", signaling("alarm", "alarm_raised"));
+    expect((await systemSignal.validator.validate({ runGodot: false })).diagnostics).toEqual([]);
+  });
+
+  it("rejects malformed signal declarations on entities", async () => {
+    const { root, validator } = await project();
+    await put(root, "specs/entities/keeper.md", md({
+      schemaVersion: 1, id: "keeper", title: "守灯人", type: "entity", description: "", signals: ["Not Valid"],
+    }));
+    expect((await validator.validate({ runGodot: false })).diagnostics)
+      .toContainEqual(expect.objectContaining({ path: "specs/entities/keeper.md", code: "SPEC_FIELD_INVALID" }));
+  });
+
   it("checks the entity a condition reads its component from", async () => {
     const owned = (owner: string) => md({
       schemaVersion: 1, id: "owned", title: "owned", type: "decision_tree", description: "",

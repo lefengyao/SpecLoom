@@ -73,6 +73,16 @@ describe("decision tree model", () => {
       .toContainEqual(expect.objectContaining({ code: "TREE_CONDITION_INVALID" }));
   });
 
+  it("accepts signal conditions and rejects malformed ones", () => {
+    expect(validateDecisionTree({ id: "root", kind: "selector", children: [
+      { id: "c", kind: "condition", signal: { from: "combat_entity", name: "hp_low" } },
+    ] })).toEqual([]);
+    expect(validateDecisionTree({ id: "root", kind: "selector", children: [{ id: "c", kind: "condition", signal: { from: "combat_entity" } }] }))
+      .toContainEqual(expect.objectContaining({ code: "TREE_SIGNAL_INVALID" }));
+    expect(validateDecisionTree({ id: "root", kind: "selector", children: [{ id: "c", kind: "condition", signal: { from: "combat_entity", name: "hp_low" }, event: "hit" }] }))
+      .toContainEqual(expect.objectContaining({ code: "TREE_CONDITION_INVALID" }));
+  });
+
   it("validates decorator parameters and action names", () => {
     expect(validateDecisionTree({ id: "root", kind: "selector", children: [{ id: "c", kind: "cooldown", seconds: 0, child: { id: "a", kind: "action", action: "x" } }] }))
       .toContainEqual(expect.objectContaining({ code: "TREE_NODE_INVALID" }));

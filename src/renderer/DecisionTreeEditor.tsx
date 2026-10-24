@@ -47,7 +47,9 @@ function autoPositions(root: DecisionNode): Record<string, Point> {
 }
 
 function nodeLabel(node: DecisionNode): string {
-  const detail = node.kind === "condition" ? (node.comparator ?? node.event ?? "") : node.kind === "action" ? (node.action ?? "") : "";
+  const detail = node.kind === "condition"
+    ? (node.comparator ?? (node.signal ? `${node.signal.from}.${node.signal.name}` : node.event) ?? "")
+    : node.kind === "action" ? (node.action ?? "") : "";
   const title = node.title?.trim() ? node.title : node.id;
   return detail ? `${title}\n${detail}` : title;
 }
@@ -114,9 +116,12 @@ export function DecisionTreeEditor({ root, treePath, catalog = [], onChange, dis
   };
   const conditionComponents = catalog.filter((item) => !item.invalid && item.type === "component" && categoryForPath(item.path) === "component");
   const conditionEntities = catalog.filter((item) => !item.invalid && categoryForPath(item.path) === "entity");
+  const signalSources = catalog.filter((item) => !item.invalid && ["entity", "system"].includes(categoryForPath(item.path) ?? ""));
   const parsedComparator = selected?.kind === "condition" && selected.comparator ? parseComparator(selected.comparator) : undefined;
   const activeComponent = conditionComponents.find((item) => item.id === parsedComparator?.component);
   const activeField = activeComponent?.fields.find((field) => field.key === parsedComparator?.field);
+  const signalSource = selected?.signal ? signalSources.find((item) => item.id === selected.signal?.from) : undefined;
+  const conditionMode: "comparator" | "event" | "signal" = selected?.comparator !== undefined ? "comparator" : selected?.signal !== undefined ? "signal" : "event";
   /** Compose a comparator from the pickers; changing component or field resets the literal to its default. */
   const compose = (change: { owner?: string; component?: string; field?: string; operator?: string; literal?: string }) => {
     if (!selected) return;
@@ -189,14 +194,34 @@ export function DecisionTreeEditor({ root, treePath, catalog = [], onChange, dis
           </select></label>
           <label>{tr("标题")}<input aria-label={tr("节点标题")} disabled={disabled} value={selected.title ?? ""} maxLength={100} onChange={(event) => patch({ title: event.target.value })} /></label>
           {selected.kind === "condition" && <>
-            <label>{tr("条件类型")}<select aria-label={tr("条件类型")} disabled={disabled} value={selected.comparator !== undefined ? "comparator" : "event"} onChange={(event) => {
-              if (event.target.value === "comparator") patch({ comparator: composeComparator(conditionComponents[0]?.id ?? "component", conditionComponents[0]?.fields[0]?.key ?? "value", "<=", String(conditionComponents[0]?.fields[0]?.default ?? 0)), owner: "" });
-              else patch({ event: "enemy_in_range", comparator: "" });
+            <label>{tr("条件类型")}<select aria-label={tr("条件类型")} disabled={disabled} value={conditionMode} onChange={(event) => {
+              const mode = event.target.value;
+              if (mode === "comparator") patch({ comparator: composeComparator(conditionComponents[0]?.id ?? "component", conditionComponents[0]?.fields[0]?.key ?? "value", "<=", String(conditionComponents[0]?.fields[0]?.default ?? 0)), owner: "" });
+              else if (mode === "signal") {
+                const source = signalSources.find((item) => (item.signals?.length ?? 0) > 0) ?? signalSources[0];
+                patch({ signal: source ? { from: source.id, name: source.signals?.[0] ?? "signal_raised" } : { from: "", name: "" } });
+              } else patch({ event: "enemy_in_range" });
             }}>
               <option value="comparator">{tr("字段比较")}</option>
               <option value="event">{tr("事件名")}</option>
+              <option value="signal">{tr("信号")}</option>
             </select></label>
-            {selected.comparator !== undefined ? <>
+            {conditionMode === "signal" ? <>
+              <label>{tr("信号来源")}<select aria-label={tr("信号来源")} disabled={disabled} value={selected.signal?.from ?? ""} onChange={(event) => {
+                const source = signalSources.find((item) => item.id === event.target.value);
+                patch({ signal: { from: event.target.value, name: source?.signals?.[0] ?? "" } });
+              }}>
+                <option value="">{tr("选择实体或系统")}</option>
+                {signalSources.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
+              </select></label>
+              <label>{tr("信号")}{(signalSource?.signals?.length ?? 0) > 0
+                ? <select aria-label={tr("信号名")} disabled={disabled} value={selected.signal?.name ?? ""} onChange={(event) => patch({ signal: { from: selected.signal?.from ?? "", name: event.target.value } })}>
+                    {(signalSource?.signals ?? []).map((name) => <option key={name} value={name}>{name}</option>)}
+                  </select>
+                : <input aria-label={tr("信号名")} disabled={disabled} placeholder="alarm_raised" value={selected.signal?.name ?? ""} onChange={(event) => patch({ signal: { from: selected.signal?.from ?? "", name: event.target.value } })} />}</label>
+              {signalSource && !(signalSource.signals?.length) && <p className="subtle">{tr("该来源还没有声明 signals；可先在资料里添加。")}</p>}
+              {selected.signal && <code className="dtree-comparator">{selected.signal.from}.{selected.signal.name}</code>}
+            </> : conditionMode === "comparator" ? <>
               <label>{tr("引用实体")}<select aria-label={tr("引用实体")} disabled={disabled} value={selected.owner ?? ""} onChange={(event) => compose({ owner: event.target.value })}>
                 <option value="">{tr("当前实体")}</option>
                 {conditionEntities.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}

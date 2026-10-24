@@ -31,6 +31,11 @@ export function validReference(value: unknown, componentBinding = false): boolea
     && (!componentBinding || value.notes === undefined || (Array.isArray(value.notes) && value.notes.length <= 32 && value.notes.every((note) => nonempty(note) && note.trim().length <= 2000)));
 }
 
+/** Signals an entity or system can emit; decision trees may wait on them. */
+export function signalList(value: unknown): boolean {
+  return Array.isArray(value) && value.length <= 64 && value.every((item) => typeof item === "string" && /^[a-z][a-z0-9_]*$/.test(item));
+}
+
 /** Anchor declarations join specifications to scene nodes; keep them bounded and unique. */
 export function validAnchors(value: unknown): boolean {
   if (!Array.isArray(value) || value.length > 64) return false;
@@ -119,6 +124,7 @@ export function validateFields(spec: ParsedSpec, diagnostics: ValidationDiagnost
       const scene = typeof data.scene === "string" ? data.scene.trim().replaceAll("\\", "/") : "";
       field("scene", nonempty(scene) && !scene.startsWith("/") && !scene.split("/").includes("..") && /\.tscn$/i.test(scene));
     }
+    if (data.signals !== undefined) field("signals", signalList(data.signals));
     if (data.type !== "entity" || data.status !== undefined) field("status", nonempty(data.status));
     if (data.type !== "entity" || data.version !== undefined) field("version", nonempty(data.version) || (typeof data.version === "number" && Number.isSafeInteger(data.version) && data.version > 0));
     if (data.type !== "entity" || data.relations !== undefined) field("relations", Array.isArray(data.relations) && data.relations.every((value) => validReference(value)));
@@ -177,6 +183,7 @@ export function validateFields(spec: ParsedSpec, diagnostics: ValidationDiagnost
       if (data.components !== undefined) field("components", referenceList(data.components));
       if (data.entities !== undefined) field("entities", referenceList(data.entities));
       if (data.dependsOn !== undefined) field("dependsOn", referenceList(data.dependsOn));
+      if (data.signals !== undefined) field("signals", signalList(data.signals));
     } else if (kind === "feature") {
       field("status", data.status === "planned" || data.status === "active" || data.status === "done");
       if (data.systems !== undefined) field("systems", referenceList(data.systems));

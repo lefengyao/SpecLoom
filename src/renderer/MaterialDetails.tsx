@@ -100,6 +100,12 @@ export function MaterialDetails({ material, catalog, groups = [], onChange, disa
       return [
         { label: tr("被这些功能引用"), items: usable.filter((item) => categoryForPath(item.path) === "feature" && (item.systems ?? []).includes(id)) },
         { label: tr("被这些架构决策影响"), items: usable.filter((item) => categoryForPath(item.path) === "decision" && (item.affectedSystems ?? []).includes(id)) },
+        { label: tr("被这些决策树监听"), items: usable.filter((item) => categoryForPath(item.path) === "decision_tree" && (item.treeSignals ?? []).includes(id)) },
+      ].filter((section) => section.items.length > 0);
+    }
+    if (category === "entity") {
+      return [
+        { label: tr("被这些决策树监听"), items: usable.filter((item) => categoryForPath(item.path) === "decision_tree" && (item.treeSignals ?? []).includes(id)) },
       ].filter((section) => section.items.length > 0);
     }
     if (category === "decision_tree") {
@@ -217,6 +223,12 @@ export function MaterialDetails({ material, catalog, groups = [], onChange, disa
     : [];
   const updateMount = (index: number, change: Record<string, unknown>) =>
     patch({ mounts: mountList.map((mount, position) => position === index ? { ...mount, ...change } : mount) });
+  const signalNames = Array.isArray(data.signals) ? data.signals.filter((item): item is string => typeof item === "string") : [];
+  const updateSignals = (next: string[]) => {
+    const updated = { ...data };
+    if (next.length) updated.signals = next; else delete updated.signals;
+    emit(updated);
+  };
   const bindingKeyOf = (entry: unknown): string => entry && typeof entry === "object" && !Array.isArray(entry) && typeof (entry as Record<string, unknown>).key === "string" ? String((entry as Record<string, unknown>).key) : "";
   const updateBindingKey = (index: number, id: string, value: string) => patch({ components: rawBindings.map((entry, position) => {
     if (position !== index) return entry;
@@ -355,6 +367,18 @@ export function MaterialDetails({ material, catalog, groups = [], onChange, disa
         <strong>{group.label}</strong>
         <ul>{group.items.map((item) => <li key={item.path}><span>{item.title}</span><code>{item.id}</code></li>)}</ul>
       </div>)}
+    </section>}
+    {(entity || isSystem) && <section className="material-section" aria-label={tr("信号")}>
+      <header><div><h3>{tr("信号")}</h3><span className="subtle">{tr("声明这里会发出的信号；决策树可以等待这些信号。")}</span></div>
+        <button type="button" disabled={disabled || signalNames.length >= 64} onClick={() => updateSignals([...signalNames, "signal_raised"])}><Plus size={16} />{tr("添加信号")}</button></header>
+      {signalNames.length ? <ul className="material-signal-list">{signalNames.map((name, index) => <li key={index}>
+        <input aria-label={tr("信号 {index}", { index: index + 1 })} maxLength={80} value={name} disabled={disabled} onChange={(event) => {
+          const next = [...signalNames];
+          next[index] = event.target.value;
+          updateSignals(next);
+        }} />
+        <button type="button" aria-label={tr("移除信号 {index}", { index: index + 1 })} disabled={disabled} onClick={() => updateSignals(signalNames.filter((_, position) => position !== index))}><Trash2 size={15} /></button>
+      </li>)}</ul> : <p className="subtle">{tr("还没有声明信号。")}</p>}
     </section>}
     {entity && !stateMachine && <section className="material-section state-machine-section" aria-label={tr("实体状态机")}>
       <header><div><h3>{tr("状态机")}</h3><span className="subtle">{tr("为实体添加状态和转换配置")}</span></div><button type="button" onClick={enableStateMachine}><Plus size={16} />{tr("添加状态机")}</button></header>

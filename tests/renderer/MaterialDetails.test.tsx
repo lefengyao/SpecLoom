@@ -77,6 +77,18 @@ describe("structured editors for system, feature and decision specs", () => {
     expect(onChange.mock.calls.at(-1)![0]).toMatchObject({ components: [{ id: "health", values: {}, key: "tank" }] });
   });
 
+  it("declares signals on an entity and lists the trees listening to them", () => {
+    const signalCatalog = [
+      summary("combat_entity", "战斗实体", "entity", "entities"),
+      { ...summary("combat_decision", "战斗决策", "decision_tree", "decision_trees"), treeSignals: ["combat_entity"] } as unknown as MaterialSummary,
+    ];
+    const onChange = renderDetails({ schemaVersion: 1, id: "combat_entity", title: "战斗实体", type: "entity", description: "" }, signalCatalog);
+    fireEvent.click(screen.getByRole("button", { name: "添加信号" }));
+    expect(onChange.mock.calls.at(-1)![0]).toMatchObject({ signals: ["signal_raised"] });
+    const section = screen.getByRole("region", { name: "被引用" });
+    expect(within(section).getByText("战斗决策")).toBeInTheDocument();
+  });
+
   it("lists the systems and decision trees that reference a component", () => {
     const componentCatalog = [
       summary("vitality", "生命", "component", "components"),

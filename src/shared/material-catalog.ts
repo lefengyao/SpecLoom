@@ -12,6 +12,10 @@ export interface MaterialSummary {
   systems?: string[];
   affectedSystems?: string[];
   treeComponents?: string[];
+  /** Signals an entity or system declares, so decision trees can wait on them. */
+  signals?: string[];
+  /** Signal source ids a decision tree listens to. */
+  treeSignals?: string[];
 }
 export type ComponentScope = "system" | "user";
 export const componentScopeLabels: Record<ComponentScope, string> = { system: "官方组件", user: "自定义组件" };
@@ -84,6 +88,23 @@ function treeComponentReferences(root: unknown): string[] {
   visit(root);
   return [...ids];
 }
+
+/** Signal sources a decision tree waits on, so entities and systems can list their listeners. */
+function treeSignalSources(root: unknown): string[] {
+  const ids = new Set<string>();
+  const visit = (node: unknown): void => {
+    if (!node || typeof node !== "object" || Array.isArray(node)) return;
+    const record = node as Record<string, unknown>;
+    const signal = record.signal;
+    if (signal && typeof signal === "object" && !Array.isArray(signal) && typeof (signal as { from?: unknown }).from === "string") {
+      ids.add(String((signal as { from: string }).from));
+    }
+    if (Array.isArray(record.children)) for (const child of record.children) visit(child);
+    visit(record.child);
+  };
+  visit(root);
+  return [...ids];
+}
 export function summarizeMaterial(file: { path: string; version: string; content: string }, registry?: MaterialGroupRegistry): MaterialSummary {
   const parsed = parseMaterial(file.content); const data = parsed?.data;
   const valid = typeof data?.id === "string" && data.id.trim();
@@ -117,7 +138,8 @@ export function summarizeMaterial(file: { path: string; version: string; content
     ...(category === "system" && Array.isArray(data?.components) ? { uses: stringList(data.components) } : {}),
     ...(category === "feature" && Array.isArray(data?.systems) ? { systems: stringList(data.systems) } : {}),
     ...(category === "decision" && Array.isArray(data?.affectedSystems) ? { affectedSystems: stringList(data.affectedSystems) } : {}),
-    ...(category === "decision_tree" ? { treeComponents: treeComponentReferences(data?.root) } : {}),
+    ...(category === "decision_tree" ? { treeComponents: treeComponentReferences(data?.root), treeSignals: treeSignalSources(data?.root) } : {}),
+    ...((category === "entity" || category === "system") && Array.isArray(data?.signals) ? { signals: stringList(data.signals) } : {}),
     ...(!valid ? { invalid: true } : {}),
   };
 }

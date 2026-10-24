@@ -21,6 +21,12 @@ export const NODE_KIND_LABELS: Record<DecisionNodeKind, string> = {
 
 export const COMPARATOR_OPERATORS = ["<=", ">=", "==", "!=", "<", ">"] as const;
 
+export interface DecisionSignal {
+  /** Entity or system id that emits the signal. */
+  from: string;
+  name: string;
+}
+
 export interface DecisionNode {
   id: string;
   kind: DecisionNodeKind;
@@ -31,6 +37,8 @@ export interface DecisionNode {
   owner?: string;
   comparator?: string;
   event?: string;
+  /** Condition only: a signal emitted by an entity or system. */
+  signal?: DecisionSignal;
   action?: string;
   params?: Record<string, unknown>;
   seconds?: number;
@@ -156,12 +164,19 @@ export function validateDecisionTree(root: unknown): DecisionTreeIssue[] {
       if (value.owner !== undefined && !(typeof value.owner === "string" && NODE_ID.test(value.owner))) {
         issues.push({ path: at, code: "TREE_CONDITION_INVALID", message: "Condition owner must be an entity id" });
       }
+      const modes = [value.comparator !== undefined, value.event !== undefined, value.signal !== undefined].filter(Boolean).length;
       const hasComparator = value.comparator !== undefined;
       const hasEvent = value.event !== undefined;
-      if (hasComparator === hasEvent) {
-        issues.push({ path: at, code: "TREE_CONDITION_INVALID", message: "Condition needs exactly one of comparator or event" });
+      const hasSignal = value.signal !== undefined;
+      if (modes !== 1) {
+        issues.push({ path: at, code: "TREE_CONDITION_INVALID", message: "Condition needs exactly one of comparator, event or signal" });
       } else if (hasEvent && value.owner !== undefined) {
         issues.push({ path: at, code: "TREE_CONDITION_INVALID", message: "Only comparator conditions can name an owner entity" });
+      } else if (hasSignal) {
+        const signal = value.signal;
+        if (!record(signal) || !(typeof signal.from === "string" && NODE_ID.test(signal.from)) || !(typeof signal.name === "string" && EVENT_NAME.test(signal.name))) {
+          issues.push({ path: at, code: "TREE_SIGNAL_INVALID", message: "Signal needs from (entity or system id) and name ([a-z][a-z0-9_]*)" });
+        }
       } else if (hasComparator && !parseComparator(value.comparator)) {
         issues.push({ path: at, code: "TREE_CONDITION_INVALID", message: "Comparator must look like component.field <= value" });
       } else if (hasEvent && !(typeof value.event === "string" && EVENT_NAME.test(value.event))) {
@@ -230,6 +245,7 @@ export function cloneDecisionNode(node: DecisionNode): DecisionNode {
     ...node,
     ...(node.children ? { children: node.children.map(cloneDecisionNode) } : {}),
     ...(node.child ? { child: cloneDecisionNode(node.child) } : {}),
+    ...(node.signal ? { signal: { ...node.signal } } : {}),
     ...(node.params ? { params: { ...node.params } } : {}),
   };
 }
@@ -273,9 +289,10 @@ export function updateDecisionNode(root: DecisionNode, id: string, patch: Partia
   const node = findDecisionNode(next, id);
   if (!node) return next;
   Object.assign(node, patch);
-  // comparator and event are mutually exclusive; an empty string clears the field.
-  if (patch.comparator !== undefined) { delete node.event; if (!node.comparator) delete node.comparator; }
-  if (patch.event !== undefined) { delete node.comparator; if (!node.event) delete node.event; }
+  // comparator, event and signal are mutually exclusive; an empty value clears the field.
+  if (patch.comparator !== undefined) { delete node.event; delete node.signal; if (!node.comparator) delete node.comparator; }
+  if (patch.event !== undefined) { delete node.comparator; delete node.signal; if (!node.event) delete node.event; }
+  if (patch.signal !== undefined) { delete node.comparator; delete node.event; if (!node.signal) delete node.signal; }
   if (patch.owner !== undefined && !node.owner) delete node.owner;
   if (patch.kind !== undefined) {
     if (isComposite(node.kind)) {
