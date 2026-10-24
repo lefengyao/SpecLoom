@@ -1,6 +1,6 @@
 import type { ValidationDiagnostic } from "../../shared/contracts";
 import { VersionTokenSchema } from "../../shared/contracts";
-import { resolveComponentFields, type ComponentDefinition } from "../../shared/component-inheritance";
+import { resolveComponentAnchors, resolveComponentFields, type ComponentDefinition } from "../../shared/component-inheritance";
 import { readAnchors, readFields } from "../../shared/project-materials";
 import { componentValueMatches, diagnostic, nonempty, record, validReference, validationPathIdentity, type ParsedSpec } from "./validator-markdown";
 import { ValidationSource } from "./validator-source";
@@ -33,6 +33,8 @@ export async function validateReferences(specs: ParsedSpec[], source: Validation
     .filter((spec) => materialKind(spec) === "component" && spec.data.type === "component" && nonempty(spec.data.id))
     .map((spec) => ({ path: spec.path, id: String(spec.data.id), data: spec.data }));
   const effectiveFields = new Map<string, ReturnType<typeof readFields>>(componentDefinitions.map((definition) => [validationPathIdentity(definition.path), resolveComponentFields(componentDefinitions, definition).fields]));
+  // Mounts may target anchors a component inherits from its base definition.
+  const effectiveAnchors = new Map<string, ReturnType<typeof readAnchors>>(componentDefinitions.map((definition) => [validationPathIdentity(definition.path), resolveComponentAnchors(componentDefinitions, definition).anchors]));
 
   async function resolveReference(value: unknown, owner: string, missingCode: string, invalidCode = "REFERENCE_INVALID", componentBinding = false): Promise<{ spec?: ParsedSpec; path: string } | undefined> {
     const target = typeof value === "string" ? value : record(value) ? value.path ?? value.id : undefined;
@@ -180,7 +182,7 @@ export async function validateReferences(specs: ParsedSpec[], source: Validation
           else if (!componentValueMatches(field.type, override)) diagnostics.push(diagnostic(spec.path, "ENTITY_COMPONENT_VALUE_INVALID", `Component '${String(target.data.id)}' field '${key}' requires a ${String(field.type)} value`));
         }
       }
-      validateMounts(spec, bound, mounts, diagnostics);
+      validateMounts(spec, bound, mounts, effectiveAnchors, diagnostics);
     }
   }
 
@@ -236,7 +238,7 @@ export async function validateReferences(specs: ParsedSpec[], source: Validation
  * entity itself) and name one of that parent's declared anchors. Without this,
  * "which slot an armor class mounts to" stays an unchecked ordering convention.
  */
-function validateMounts(spec: ParsedSpec, bound: Map<string, ParsedSpec>, mounts: { parent: string; anchor: string }[], diagnostics: ValidationDiagnostic[]): void {
+function validateMounts(spec: ParsedSpec, bound: Map<string, ParsedSpec>, mounts: { parent: string; anchor: string }[], anchors: Map<string, ReturnType<typeof readAnchors>>, diagnostics: ValidationDiagnostic[]): void {
   const entityAnchors = readAnchors(spec.data);
   const occupied = new Map<string, number>();
   for (const mount of mounts) {
@@ -247,7 +249,7 @@ function validateMounts(spec: ParsedSpec, bound: Map<string, ParsedSpec>, mounts
         diagnostics.push(diagnostic(spec.path, "MOUNT_PARENT_UNKNOWN", `Mount parent '${mount.parent}' is not attached to this entity`));
         continue;
       }
-      declared = readAnchors(parent.data);
+      declared = anchors.get(validationPathIdentity(parent.path)) ?? readAnchors(parent.data);
     }
     const anchor = declared.find((item) => item.name === mount.anchor);
     if (!anchor) {

@@ -237,6 +237,20 @@ describe("component mount anchors", () => {
     expect(result.diagnostics).toContainEqual(expect.objectContaining({ path: "specs/entities/keeper.md", code: "MOUNT_ANCHOR_UNKNOWN" }));
   });
 
+  it("lets a derived component mount on an anchor it inherits from its base", async () => {
+    const { root, validator } = await fixture();
+    await put(root, "specs/components/slot_contract.md", armor("slot_contract", {
+      anchors: [{ name: "slot_1", label: "一类防具槽", node: "Visual/ArmorSlot1" }],
+    }));
+    await put(root, "specs/components/armor_slot.md", armor("armor_slot", { extends: "slot_contract" }));
+    await put(root, "specs/components/armor_class_1.md", armor("armor_class_1"));
+    await put(root, "specs/entities/keeper.md", entity("keeper", { components: [
+      { id: "armor_slot" },
+      { id: "armor_class_1", mount: { parent: "armor_slot", anchor: "slot_1" } },
+    ] }));
+    expect((await validator.validate({ runGodot: false })).diagnostics).toEqual([]);
+  });
+
   it("rejects two components on one anchor unless the anchor allows it", async () => {
     const { root, validator } = await armorProject();
     await put(root, "specs/entities/keeper.md", entity("keeper", { components: [

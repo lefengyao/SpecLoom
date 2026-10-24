@@ -1183,6 +1183,31 @@
   white-space: nowrap;
 }
 
+.ewb-mount-editor {
+  display: grid;
+  gap: 6px;
+  padding: 8px 0 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ewb-mount-editor h3 {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+.ewb-mount-editor label {
+  display: grid;
+  gap: 3px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.ewb-mount-editor select {
+  width: 100%;
+}
+
 .ewb-fields {
   display: flex;
   flex-direction: column;

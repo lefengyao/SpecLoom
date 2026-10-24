@@ -265,6 +265,22 @@ describe("EntityWorkbench", () => {
     expect(within(inspector).getByLabelText("当前值")).toHaveValue(80);
   });
 
+  it("mounts a selected component on a parent anchor from the inspector", async () => {
+    const { api } = setup({
+      "specs/entities/keeper.md": entityFile("keeper", "守灯人", { components: [{ id: "armor_slot" }, { id: "armor_class_1" }] }),
+      "specs/components/armor_slot.md": componentFile("armor_slot", "防具槽", [], { anchors: [{ name: "slot_1", label: "一类防具槽", node: "Visual/Slot1" }] }),
+      "specs/components/armor_class_1.md": componentFile("armor_class_1", "一类防具", []),
+    });
+    const canvas = await screen.findByRole("region", { name: "实体画布" });
+    fireEvent.click(await within(canvas).findByLabelText("选择组件 一类防具"));
+    const inspector = await screen.findByRole("complementary", { name: "组件检查器" });
+    fireEvent.change(within(inspector).getByLabelText("挂载父级"), { target: { value: "armor_slot" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存资料" }));
+    await waitFor(() => expect(api.saveDocument).toHaveBeenCalled());
+    const components = frontMatter(api.saveDocument.mock.calls.at(-1)![2]).components as { id: string; mount?: unknown }[];
+    expect(components.find((item) => item.id === "armor_class_1")?.mount).toEqual({ parent: "armor_slot", anchor: "slot_1" });
+  });
+
   it("shows declared anchors and where each component mounts", async () => {
     setup({
       "specs/entities/keeper.md": entityFile("keeper", "守灯人", {

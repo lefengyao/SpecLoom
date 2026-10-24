@@ -35,7 +35,7 @@ import {
   type ComponentValue,
 } from "../shared/project-materials";
 import { materialGroupPath, normalizeMaterialGroups } from "../shared/material-groups";
-import { resolveComponentFields } from "../shared/component-inheritance";
+import { resolveComponentAnchors, resolveComponentFields } from "../shared/component-inheritance";
 import { categoryForPath, referenceId } from "./materials-model";
 import { useI18n, type Translate } from "./i18n";
 import {
@@ -801,6 +801,9 @@ export interface ComponentFillPanelProps {
   component: ResolvedBinding["component"];
   fields: ComponentField[];
   anchors?: EntityAnchor[];
+  mount?: ComponentMount | undefined;
+  mountParents?: { id: string; label: string; anchors: { name: string; label?: string }[] }[] | undefined;
+  onMountChange?: ((mount: ComponentMount | undefined) => void) | undefined;
   sourceAnchor?: EntityAnchorSide | undefined;
   targetAnchor?: string | undefined;
   onConnectionChange?: (patch: { sourceAnchor?: EntityAnchorSide | null; targetAnchor?: string | null }) => void;
@@ -823,6 +826,9 @@ export function ComponentFillPanel({
   component,
   fields,
   anchors = [],
+  mount,
+  mountParents,
+  onMountChange,
   sourceAnchor,
   targetAnchor,
   onConnectionChange,
@@ -841,6 +847,7 @@ export function ComponentFillPanel({
   const tr = useI18n();
   const [anchorSide, setAnchorSide] = useState<EntityAnchorSide>("right");
   const [anchorOffset, setAnchorOffset] = useState(25);
+  const declaredAnchors = mountParents?.find((item) => item.id === mount?.parent)?.anchors ?? [];
   return (
     <section className="ewb-panel ewb-inspector" role="complementary" aria-label={tr("组件检查器")}>
       <header className="ewb-panel-head">
@@ -861,6 +868,37 @@ export function ComponentFillPanel({
             </span>
           </div>
           <code className="ewb-inspector-path">{component?.path ?? tr("找不到组件定义")}</code>
+          {mountParents && mountParents.length > 0 && onMountChange && (
+            <section className="ewb-mount-editor" aria-label={tr("挂载")}>
+              <h3>{tr("挂载")}</h3>
+              <label>{tr("父级")}
+                <select
+                  aria-label={tr("挂载父级")}
+                  value={mount ? mount.parent : ""}
+                  onChange={(event) => {
+                    const parentId = event.target.value;
+                    if (!parentId) { onMountChange(undefined); return; }
+                    const anchor = mountParents.find((item) => item.id === parentId)?.anchors[0]?.name;
+                    if (anchor) onMountChange({ parent: parentId, anchor });
+                  }}
+                >
+                  <option value="">{tr("不挂载")}</option>
+                  {mountParents.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+                </select>
+              </label>
+              {mount && <label>{tr("锚点")}
+                <select
+                  aria-label={tr("挂载锚点")}
+                  value={mount.anchor}
+                  onChange={(event) => onMountChange({ parent: mount.parent, anchor: event.target.value })}
+                >
+                  {declaredAnchors.map((anchor) => <option key={anchor.name} value={anchor.name}>{anchor.label ?? anchor.name}</option>)}
+                  {!declaredAnchors.some((anchor) => anchor.name === mount.anchor) && <option value={mount.anchor}>{mount.anchor}（{tr("未声明")}）</option>}
+                </select>
+              </label>}
+              {mount && declaredAnchors.length === 0 && <p className="ewb-inspector-hint">{tr("该父级没有声明锚点，请先在组件里添加。")}</p>}
+            </section>
+          )}
           {component && (component.description?.trim() || component.body?.trim()) && (
             <section className="ewb-component-notes" aria-label={tr("组件说明")}>
               <h3>{tr("组件说明")}</h3>
@@ -1231,11 +1269,11 @@ export function EntityWorkbench({ api, projectPath, onError, onOpenDetail }: Ent
           ...(extendsRef ? { extendsRef } : {}),
         };
       });
-    const definitions = entries.map((entry) => ({ path: entry.path, id: entry.id, data: { extends: entry.extendsRef, fields: entry.fields } }));
+    const definitions = entries.map((entry) => ({ path: entry.path, id: entry.id, data: { extends: entry.extendsRef, fields: entry.fields, anchors: entry.anchors } }));
     const byPath = new Map(definitions.map((definition) => [normalizeReference(definition.path), definition]));
     const effective = entries.map((entry) => {
       const definition = byPath.get(normalizeReference(entry.path));
-      return definition ? { ...entry, fields: resolveComponentFields(definitions, definition).fields } : entry;
+      return definition ? { ...entry, fields: resolveComponentFields(definitions, definition).fields, anchors: resolveComponentAnchors(definitions, definition).anchors } : entry;
     });
     return effective.sort((left, right) => left.title.localeCompare(right.title) || left.path.localeCompare(right.path));
   }, [parsedFiles]);
@@ -1269,6 +1307,22 @@ export function EntityWorkbench({ api, projectPath, onError, onOpenDetail }: Ent
   const selectedImage = entity && typeof entity.data.image === "string" ? entityImages[entity.data.image] : undefined;
   const imageUrl = imageSettings.show ? selectedImage : undefined;
   const bindings = useMemo(() => (entity ? resolveEntityBindings(entity, lookup) : []), [entity, lookup]);
+  /** Anchor-bearing parents a component can mount on: the entity itself plus bound components. */
+  const mountParents = useMemo(() => {
+    if (!entity) return [];
+    const options: { id: string; label: string; anchors: { name: string; label?: string }[] }[] = [];
+    const entityAnchors = readAnchors(entity.data);
+    if (entityAnchors.length) options.push({ id: "__entity__", label: entity.title, anchors: entityAnchors });
+    const selectedIdentity = selectedBindingId;
+    for (const binding of bindings) {
+      // A component cannot mount on itself.
+      if (selectedIdentity && binding.id === selectedIdentity) continue;
+      const anchors = binding.component?.anchors ?? [];
+      if (!anchors.length) continue;
+      options.push({ id: binding.component?.id ?? binding.id, label: binding.component?.title ?? binding.id, anchors });
+    }
+    return options;
+  }, [entity, bindings, selectedBindingId]);
   const bindingIdentity = useCallback(
     (reference: string): string => resolveComponentReference(reference, lookup)?.id ?? normalizeReference(reference),
     [lookup],
@@ -1507,6 +1561,28 @@ export function EntityWorkbench({ api, projectPath, onError, onOpenDetail }: Ent
     const remaining = entity.bindings.filter((ownBinding) => bindingIdentity(ownBinding.id) !== identity);
     const id = binding.component?.id ?? identity;
     writeEntityBindings([...remaining, { id, values: { ...defaults, ...binding.values }, ...(notes.length ? { notes } : {}), ...(binding.mount ? { mount: binding.mount } : {}) }]);
+    setSelectedBindingId(id);
+  }
+
+  function updateBindingMount(binding: ResolvedBinding, mount: ComponentMount | undefined): void {
+    if (!entity) return;
+    const identity = bindingIdentity(binding.id);
+    const rebound = (item: ComponentBinding): ComponentBinding => ({
+      id: item.id,
+      values: item.values,
+      ...(item.notes?.length ? { notes: item.notes } : {}),
+      ...(mount ? { mount } : {}),
+    });
+    if (binding.own) {
+      writeEntityBindings(entity.bindings.map((ownBinding) => bindingIdentity(ownBinding.id) === identity ? rebound(ownBinding) : ownBinding));
+      return;
+    }
+    // Editing an inherited mount materializes an explicit binding for this entity.
+    const defaults: Record<string, ComponentValue> = {};
+    if (binding.component) for (const item of binding.component.fields) defaults[item.key] = item.default;
+    const remaining = entity.bindings.filter((ownBinding) => bindingIdentity(ownBinding.id) !== identity);
+    const id = binding.component?.id ?? identity;
+    writeEntityBindings([...remaining, rebound({ id, values: { ...defaults, ...binding.values }, ...(binding.notes.length ? { notes: binding.notes } : {}) })]);
     setSelectedBindingId(id);
   }
 
@@ -1870,6 +1946,11 @@ export function EntityWorkbench({ api, projectPath, onError, onOpenDetail }: Ent
                 component={selectedBinding?.component}
                 fields={componentFields}
                 anchors={selectedAnchors}
+                mount={selectedBinding.mount}
+                mountParents={mountParents}
+                onMountChange={(nextMount) => {
+                  if (selectedBinding) updateBindingMount(selectedBinding, nextMount);
+                }}
                 sourceAnchor={selectedSourceAnchor}
                 targetAnchor={selectedTargetAnchor}
                 onConnectionChange={(patch) => {
