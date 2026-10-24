@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, test } from "vitest";
 import {
-  CARD_GAP, COMPONENT_CARD_SIZE, ENTITY_CARD_SIZE, ENTITY_SELF_LAYOUT_ID, createLayoutSaver, facingSides, loadEntityLayout, migrateLegacyPositions,
-  mountParentId, nearestFreePosition, packComponentPositions, pruneEntityLayout, rectOf, rectsOverlap, saveEntityLayout,
+  CARD_GAP, COMPONENT_CARD_SIZE, ENTITY_CARD_SIZE, ENTITY_ORIGIN, ENTITY_SELF_LAYOUT_ID, createLayoutSaver, facingSides, loadEntityLayout, migrateLegacyPositions,
+  mountDepths, mountParentId, nearestFreePosition, packComponentPositions, packMountPositions, pruneEntityLayout, rectOf, rectsOverlap, saveEntityLayout,
 } from "../../src/renderer/entity-layout";
 import type { EntityLayout } from "../../src/shared/entity-layout";
 
@@ -104,6 +104,40 @@ describe("mountParentId", () => {
     expect(mountParentId("armor_class_1", "__entity__", bound)).toBeUndefined();
     expect(mountParentId("armor_class_1", "missing", bound)).toBeUndefined();
     expect(mountParentId("armor_class_1", "armor_class_1", bound)).toBeUndefined();
+  });
+});
+
+describe("packMountPositions", () => {
+  const card = (id: string, parent?: string) => ({ id, size: COMPONENT_CARD_SIZE, ...(parent ? { parent } : {}) });
+
+  test("keeps nested mounts outward from their parent on the same side", () => {
+    const positions = packMountPositions([card("armor_slot"), card("armor_class_1", "armor_slot"), card("armor_class_2", "armor_slot")]);
+    const root = positions.armor_slot!;
+    expect(positions.armor_class_1!.x).toBeGreaterThan(root.x);
+    expect(positions.armor_class_2!.x).toBeGreaterThan(root.x);
+    const entity = rectOf(ENTITY_ORIGIN, ENTITY_CARD_SIZE);
+    for (const position of Object.values(positions)) {
+      expect(rectsOverlap(rectOf(position, COMPONENT_CARD_SIZE), entity)).toBe(false);
+    }
+  });
+
+  test("never overlaps cards across depths", () => {
+    const cards = [card("a"), card("b", "a"), card("c", "b"), card("d")];
+    const positions = packMountPositions(cards);
+    const rects = cards.map((item) => rectOf(positions[item.id]!, item.size));
+    for (const [index, rect] of rects.entries()) {
+      for (const [other, otherRect] of rects.entries()) {
+        if (index !== other) expect(rectsOverlap(rect, otherRect)).toBe(false);
+      }
+    }
+  });
+
+  test("treats unknown parents and cycles as roots", () => {
+    expect(packMountPositions([card("x", "missing")]).x).toBeDefined();
+    const depths = mountDepths([card("left", "right"), card("right", "left")]);
+    expect(depths.get("left")).toBeGreaterThanOrEqual(0);
+    expect(depths.get("right")).toBeGreaterThanOrEqual(0);
+    expect(packMountPositions([card("left", "right"), card("right", "left")])).toHaveProperty("left");
   });
 });
 

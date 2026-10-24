@@ -98,12 +98,13 @@ export function nearestFreePosition(desired: EntityPoint, size: EntitySize, obst
 export interface PackedCard {
   id: string;
   size: EntitySize;
+  /** Component this card is mounted on; absent or "__entity__" places it beside the entity. */
+  parent?: string;
 }
 
 /**
- * Deterministic, size-aware arrangement: alternating columns to the right and
- * left of the entity card, each stacking downwards. Produces no overlapping
- * cards for the sizes it is given.
+ * Flat size-aware arrangement: alternating columns to the right and left of the
+ * entity card, each stacking downwards. Used when no mount hierarchy is known.
  */
 export function packComponentPositions(cards: PackedCard[], entitySize: EntitySize = ENTITY_CARD_SIZE, gap = CARD_GAP): Record<string, EntityPoint> {
   const positions: Record<string, EntityPoint> = {};
@@ -121,6 +122,90 @@ export function packComponentPositions(cards: PackedCard[], entitySize: EntitySi
     const x = onRight ? entitySize.width + gap + depth * columnWidth : -(gap + columnWidth * (depth + 1));
     positions[card.id] = { x: Math.round(x), y: Math.round(row * rowHeight) };
     row += 1;
+  }
+  return positions;
+}
+
+/** Depth of every card in the mount tree; cycles and unknown parents stay at depth 0. */
+export function mountDepths(cards: PackedCard[]): Map<string, number> {
+  const ids = new Set(cards.map((card) => card.id));
+  const parentOf = new Map<string, string | undefined>();
+  for (const card of cards) {
+    const parent = card.parent && card.parent !== card.id && ids.has(card.parent) ? card.parent : undefined;
+    parentOf.set(card.id, parent);
+  }
+  const depths = new Map<string, number>();
+  const resolve = (id: string, seen: Set<string>): number => {
+    const cached = depths.get(id);
+    if (cached !== undefined) return cached;
+    if (seen.has(id) || seen.size > 16) return 0;
+    seen.add(id);
+    const parent = parentOf.get(id);
+    const value = parent ? Math.min(8, resolve(parent, seen) + 1) : 0;
+    depths.set(id, value);
+    return value;
+  };
+  for (const card of cards) resolve(card.id, new Set());
+  return depths;
+}
+
+/**
+ * Hierarchical default layout: the entity sits at the origin, its direct mounts
+ * alternate left and right, and nested mounts continue outward on the same side.
+ * Cards keep the column of their root so a mounted child lands next to its parent
+ * instead of wherever the flat binding order put it.
+ */
+export function packMountPositions(cards: PackedCard[], entitySize: EntitySize = ENTITY_CARD_SIZE, gap = CARD_GAP): Record<string, EntityPoint> {
+  const positions: Record<string, EntityPoint> = {};
+  if (!cards.length) return positions;
+  const depths = mountDepths(cards);
+  const byId = new Map(cards.map((card) => [card.id, card]));
+  const columnWidth = Math.max(...cards.map((card) => card.size.width)) + gap;
+  const rowHeight = Math.max(...cards.map((card) => card.size.height)) + gap;
+  const order = new Map(cards.map((card, index) => [card.id, index]));
+  const rootOf = (id: string): string => {
+    let cursor = id;
+    for (let step = 0; step < 9; step++) {
+      const card = byId.get(cursor);
+      const parent = card?.parent && card.parent !== cursor && byId.has(card.parent) ? card.parent : undefined;
+      if (!parent) return cursor;
+      cursor = parent;
+    }
+    return cursor;
+  };
+  // Roots alternate sides so the entity stays visually centred.
+  const side = new Map<string, 1 | -1>();
+  const roots = cards.filter((card) => depths.get(card.id) === 0).map((card) => card.id);
+  roots.forEach((id, index) => side.set(id, index % 2 === 0 ? 1 : -1));
+  const buckets = new Map<string, string[]>();
+  for (const card of cards) {
+    const depth = depths.get(card.id) ?? 0;
+    const facing = side.get(rootOf(card.id)) ?? 1;
+    const key = `${facing}:${depth}`;
+    const bucket = buckets.get(key);
+    if (bucket) bucket.push(card.id); else buckets.set(key, [card.id]);
+  }
+  const placedY = new Map<string, number>();
+  for (const [key, ids] of buckets) {
+    const [facingText, depthText] = key.split(":");
+    const facing = Number(facingText) as 1 | -1;
+    const depth = Number(depthText);
+    const x = facing === 1
+      ? entitySize.width + gap + depth * columnWidth
+      : -(gap + columnWidth * (depth + 1));
+    // Children sort by their parent's row so subtrees stay together.
+    const sorted = [...ids].sort((left, right) => {
+      const leftParent = byId.get(left)?.parent;
+      const rightParent = byId.get(right)?.parent;
+      const leftY = leftParent ? placedY.get(leftParent) ?? 0 : 0;
+      const rightY = rightParent ? placedY.get(rightParent) ?? 0 : 0;
+      return (leftY - rightY) || ((order.get(left) ?? 0) - (order.get(right) ?? 0));
+    });
+    sorted.forEach((id, index) => {
+      const y = index * rowHeight;
+      positions[id] = { x: Math.round(x), y: Math.round(y) };
+      placedY.set(id, y);
+    });
   }
   return positions;
 }

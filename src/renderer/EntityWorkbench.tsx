@@ -48,10 +48,10 @@ import {
   createLayoutSaver,
   facingSides,
   mountParentId,
+  packMountPositions,
   layoutSize,
   loadEntityLayout,
   nearestFreePosition,
-  packComponentPositions,
   pruneEntityLayout,
   rectOf,
   rectsOverlap,
@@ -430,9 +430,14 @@ function EntityCanvas({
   const tr = useI18n();
   const model = useMemo(() => {
     const selfSize = layoutSize(storedPositions[ENTITY_NODE_ID], ENTITY_CARD_SIZE);
+    const boundIds = new Set(bindings.map((binding) => binding.id));
     const sizes: Record<string, EntitySize> = {};
     for (const binding of bindings) sizes[binding.id] = layoutSize(storedPositions[binding.id], COMPONENT_CARD_SIZE);
-    const defaults = defaultEntityPositions(bindings.map((binding) => binding.id), sizes, selfSize);
+    // Default placement follows the mount tree: direct mounts beside the entity, nested mounts outward.
+    const defaults = packMountPositions(bindings.map((binding) => {
+      const parent = mountParentId(binding.id, binding.mount?.parent, boundIds);
+      return { id: binding.id, size: sizes[binding.id]!, ...(parent ? { parent } : {}) };
+    }), selfSize);
     const inheritedCount = bindings.filter((binding) => !binding.own).length;
     const rects: Record<string, EntityRect> = { [ENTITY_NODE_ID]: rectOf(ENTITY_ORIGIN, selfSize) };
     const positions = new Map<string, EntityPoint>();
@@ -469,7 +474,6 @@ function EntityCanvas({
       },
     ];
     const entityRect = rects[ENTITY_NODE_ID]!;
-    const boundIds = new Set(bindings.map((binding) => binding.id));
     const edges: Edge[] = [];
     for (const binding of bindings) {
       const title = binding.component?.title ?? binding.id;
@@ -1566,8 +1570,12 @@ export function EntityWorkbench({ api, projectPath, onError, onOpenDetail }: Ent
     setLayout((current) => {
       const entityLayout = current[entity.id] ?? {};
       const entitySize = layoutSize(entityLayout[ENTITY_NODE_ID], ENTITY_CARD_SIZE);
-      const cards = bindings.map((binding) => ({ id: binding.id, size: layoutSize(entityLayout[binding.id], COMPONENT_CARD_SIZE) }));
-      const positions = packComponentPositions(cards, entitySize);
+      const boundIds = new Set(bindings.map((binding) => binding.id));
+      const cards = bindings.map((binding) => {
+        const parent = mountParentId(binding.id, binding.mount?.parent, boundIds);
+        return { id: binding.id, size: layoutSize(entityLayout[binding.id], COMPONENT_CARD_SIZE), ...(parent ? { parent } : {}) };
+      });
+      const positions = packMountPositions(cards, entitySize);
       const nextEntity: Record<string, EntityComponentLayout> = {
         ...entityLayout,
         [ENTITY_NODE_ID]: { ...(entityLayout[ENTITY_NODE_ID] ?? { x: 0, y: 0 }), x: 0, y: 0, size: entitySize },
