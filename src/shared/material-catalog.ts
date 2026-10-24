@@ -21,7 +21,12 @@ export type ComponentScope = "system" | "user";
 export const componentScopeLabels: Record<ComponentScope, string> = { system: "官方组件", user: "自定义组件" };
 
 /** Built-in identity is independent of editable front matter and display groups. */
-const builtinComponents = [{ id: "state_machine", path: "specs/components/state_machine.md" }, { id: "decision_tree", path: "specs/components/decision_tree.md" }] as const;
+const builtinComponents = [
+  { id: "state_machine", path: "specs/components/state_machine.md" },
+  { id: "decision_tree", path: "specs/components/decision_tree.md" },
+  { id: "audio_source", path: "specs/components/audio_source.md" },
+  { id: "audio_listener", path: "specs/components/audio_listener.md" },
+] as const;
 
 /**
  * Classify component definitions for the component library UI.

@@ -138,6 +138,52 @@ describe("audio system seeding", () => {
     expect((await validator.validate({ runGodot: false })).diagnostics).toEqual([]);
   });
 
+  it("seeds the audio capability components and their initial mounts", async () => {
+    const { root, validator } = await fixture();
+    const source = parse((await readFile(path.join(root, "specs/components/audio_source.md"), "utf8")).split("---")[1]!) as {
+      id: string; scope?: string; groupId?: string; fields: { key: string; default: unknown }[];
+    };
+    expect(source.id).toBe("audio_source");
+    expect(source.scope).toBe("system");
+    expect(source.groupId).toBe("group_audio_components");
+    expect(source.fields.map((field) => field.key)).toContain("positional");
+
+    const listener = parse((await readFile(path.join(root, "specs/components/audio_listener.md"), "utf8")).split("---")[1]!) as { id: string; scope?: string };
+    expect(listener).toMatchObject({ id: "audio_listener", scope: "system" });
+
+    const audio = parse((await readFile(path.join(root, AUDIO), "utf8")).split("---")[1]!) as {
+      components?: string[]; mounts?: { id: string; key?: string }[];
+    };
+    expect(audio.components).toEqual(["audio_source", "audio_listener"]);
+    expect(audio.mounts?.map((mount) => mount.key)).toEqual(["listener", "music", "sfx"]);
+
+    const project = parse((await readFile(path.join(root, "specs/project.md"), "utf8")).split("---")[1]!) as {
+      materialGroups?: { component?: { id: string; scope?: string }[] };
+    };
+    expect(project.materialGroups?.component).toContainEqual(expect.objectContaining({ id: "group_audio_components", scope: "system" }));
+    expect((await validator.validate({ runGodot: false })).diagnostics).toEqual([]);
+  });
+
+  it("backfills components and mounts without rewriting custom ones", async () => {
+    const { root, layout, validator } = await fixture();
+    await writeFile(path.join(root, AUDIO), md({
+      schemaVersion: 1, id: "audio", title: "音频", type: "system", description: "",
+      buses: builtinAudioBuses(), events: [],
+      mounts: [{ id: "audio_source", key: "ui", values: { bus: "sfx" } }],
+    }));
+    await layout.initialize(root);
+    const data = parse((await readFile(path.join(root, AUDIO), "utf8")).split("---")[1]!) as {
+      components?: string[]; mounts?: { id: string; key?: string }[];
+    };
+    expect(data.components).toEqual(["audio_source", "audio_listener"]);
+    expect(data.mounts?.map((mount) => mount.key)).toEqual(["ui"]);
+    expect((await validator.validate({ runGodot: false })).diagnostics).toEqual([]);
+
+    await layout.initialize(root);
+    const again = parse((await readFile(path.join(root, AUDIO), "utf8")).split("---")[1]!) as { mounts?: unknown[] };
+    expect(again.mounts).toHaveLength(1);
+  });
+
   it("reports structural problems in the audio system", async () => {
     const { root, validator } = await fixture();
     await writeFile(path.join(root, AUDIO), md({

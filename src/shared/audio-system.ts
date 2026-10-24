@@ -234,3 +234,61 @@ export function validateAudioSpec(data: Record<string, unknown>): AudioIssue[] {
 /** Only the audio system declares buses and events; other systems keep their fields. */
 export const AUDIO_SYSTEM_ID = "audio";
 export const AUDIO_SYSTEM_PATH = "specs/systems/audio.md";
+
+export interface AudioComponentSeed {
+  id: string;
+  title: string;
+  description: string;
+  fields: { key: string; label: string; type: "number" | "string" | "boolean"; default: number | string | boolean }[];
+  body: string;
+}
+
+export const AUDIO_COMPONENT_PATHS = {
+  audio_source: "specs/components/audio_source.md",
+  audio_listener: "specs/components/audio_listener.md",
+} as const;
+
+/**
+ * Capability components shipped with the audio system. They describe what the
+ * audio system can do — playing an event on a bus, and listening — without
+ * binding the project to a specific engine.
+ */
+export const AUDIO_COMPONENTS: readonly AudioComponentSeed[] = [
+  {
+    id: "audio_source",
+    title: "音频源",
+    description: "播放一个音频事件：引用总线，并描述音量、音高、并发、冷却、循环与定位。",
+    fields: [
+      { key: "enabled", label: "启用", type: "boolean", default: true },
+      { key: "bus", label: "总线", type: "string", default: "sfx" },
+      { key: "volume_db", label: "音量（分贝）", type: "number", default: 0 },
+      { key: "pitch", label: "音高浮动", type: "number", default: 0 },
+      { key: "max_concurrent", label: "并发上限", type: "number", default: 3 },
+      { key: "cooldown", label: "冷却（秒）", type: "number", default: 0 },
+      { key: "priority", label: "优先级", type: "number", default: 0 },
+      { key: "loop", label: "循环", type: "boolean", default: false },
+      { key: "positional", label: "定位音效", type: "boolean", default: false },
+    ],
+    body: "# 音频源\n\n## 行为契约\n\n- `bus` 指向音频系统里已存在的总线；引用不存在的总线时保存失败。\n- 同一实体或系统可挂多个音频源实例，用 `key` 区分。\n- `volume_db`、`pitch`、`max_concurrent`、`cooldown`、`priority` 与音频事件字段同名同义。\n- `positional` 为真时，播放位置取挂载者的位置，输出以音频监听器为基准。",
+  },
+  {
+    id: "audio_listener",
+    title: "音频监听器",
+    description: "音频的接收端；定位音效以监听器位置为基准，音量是最终输出的线性缩放。",
+    fields: [
+      { key: "enabled", label: "启用", type: "boolean", default: true },
+      { key: "volume", label: "监听音量", type: "number", default: 1 },
+    ],
+    body: "# 音频监听器\n\n## 行为契约\n\n- 同一时刻只有挂载了音频监听器的所有者参与定位计算。\n- `volume` 是 0~1 的线性缩放，叠加在总线音量之上。\n- 未挂载监听器时，项目按非定位音效处理，不报错。",
+  },
+];
+
+/** Instances the audio system starts with, so its capabilities are visible at once. */
+export const AUDIO_DEFAULT_MOUNTS = [
+  { id: "audio_listener", key: "listener", values: { enabled: true, volume: 1 } },
+  { id: "audio_source", key: "music", values: { bus: "music", loop: true } },
+  { id: "audio_source", key: "sfx", values: { bus: "sfx" } },
+] as const;
+
+/** Group that holds the audio capability components. */
+export const AUDIO_COMPONENT_GROUP_ID = "group_audio_components";

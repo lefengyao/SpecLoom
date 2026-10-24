@@ -46,6 +46,17 @@ events:
 - 打开已有项目时，若音频系统缺失则创建；若存在但缺少内置总线，则补齐缺失项，**不覆盖**项目里已有的值（幂等）。
 - 其它系统不能声明 `buses` / `events`，会报 `AUDIO_SYSTEM_INVALID`。
 
+## 能力组件
+
+音频系统随项目附带两个官方组件，放在「音频组件」分组下（`scope: system`）：
+
+| 组件 | 字段 | 对应音频功能 |
+| --- | --- | --- |
+| `audio_source`（音频源） | `enabled`、`bus`、`volume_db`、`pitch`、`max_concurrent`、`cooldown`、`priority`、`loop`、`positional` | 事件播放：音量、音高、并发、冷却、优先级、循环、定位 |
+| `audio_listener`（音频监听器） | `enabled`、`volume` | 接收端与定位基准 |
+
+音频系统默认挂载三个实例：`listener`、`music`（`bus: music`、循环）、`sfx`（`bus: sfx`）。补齐规则与总线一致：缺失才创建，已有 `components` / `mounts` 时原样保留。
+
 ## 校验
 
 | 码 | 触发 |

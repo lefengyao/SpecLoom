@@ -2,7 +2,17 @@ import { lstat, mkdir, readFile, readdir, realpath, writeFile } from "node:fs/pr
 import path from "node:path";
 import { parse, stringify } from "yaml";
 import { SCHEMA_VERSION, type GodotConfig, type ProjectMetadata } from "../../shared/contracts";
-import { AUDIO_SYSTEM_ID, AUDIO_SYSTEM_PATH, builtinAudioBuses, mergeBuiltinBuses, readAudioBuses } from "../../shared/audio-system";
+import {
+  AUDIO_COMPONENT_GROUP_ID,
+  AUDIO_COMPONENT_PATHS,
+  AUDIO_COMPONENTS,
+  AUDIO_DEFAULT_MOUNTS,
+  AUDIO_SYSTEM_ID,
+  AUDIO_SYSTEM_PATH,
+  builtinAudioBuses,
+  mergeBuiltinBuses,
+  readAudioBuses,
+} from "../../shared/audio-system";
 import { ProjectError } from "./errors";
 
 export interface ProjectLayoutOptions {
@@ -135,8 +145,65 @@ const AUDIO_SYSTEM_BODY = `# 音频
 
 /**
  * Every project owns one audio system. Existing projects get the missing built-in
- * buses back; values already stored are never rewritten.
+ * buses, capability components and default mounts back; stored values are never
+ * rewritten.
  */
+async function ensureAudioComponents(root: string): Promise<void> {
+  for (const component of AUDIO_COMPONENTS) {
+    const relative = AUDIO_COMPONENT_PATHS[component.id as keyof typeof AUDIO_COMPONENT_PATHS];
+    const target = path.join(root, relative);
+    try {
+      await readFile(target, "utf8");
+      continue;
+    } catch (error) {
+      if (!isMissing(error)) throw error;
+    }
+    await writeInitialFile(root, relative, markdown({
+      schemaVersion: SCHEMA_VERSION,
+      id: component.id,
+      title: component.title,
+      type: "component",
+      scope: "system",
+      groupId: AUDIO_COMPONENT_GROUP_ID,
+      description: component.description,
+      fields: component.fields,
+    }, component.body));
+  }
+}
+
+/** Add the audio component group to existing projects without touching other groups. */
+async function ensureAudioComponentGroup(root: string): Promise<void> {
+  const target = path.join(root, "specs/project.md");
+  let content: string;
+  try {
+    content = await readFile(target, "utf8");
+  } catch (error) {
+    if (!isMissing(error)) throw error;
+    return;
+  }
+  const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(content);
+  if (!match) return;
+  let data: unknown;
+  try {
+    data = parse(match[1]!);
+  } catch {
+    return;
+  }
+  if (data === null || typeof data !== "object" || Array.isArray(data)) return;
+  const frontmatter = data as Record<string, unknown>;
+  const registry = frontmatter.materialGroups;
+  const groups = registry && typeof registry === "object" && !Array.isArray(registry) ? registry as Record<string, unknown> : {};
+  const componentGroups = Array.isArray(groups.component) ? groups.component as unknown[] : [];
+  if (componentGroups.some((entry) => entry !== null && typeof entry === "object" && (entry as Record<string, unknown>).id === AUDIO_COMPONENT_GROUP_ID)) return;
+  await writeFile(target, markdown({
+    ...frontmatter,
+    materialGroups: {
+      ...groups,
+      component: [...componentGroups, { id: AUDIO_COMPONENT_GROUP_ID, name: "音频组件", legacyName: "音频组件", order: 1, scope: "system" }],
+    },
+  }, match[2] ?? ""), "utf8");
+}
+
 async function ensureAudioSystem(root: string): Promise<void> {
   const target = path.join(root, AUDIO_SYSTEM_PATH);
   let content: string | undefined;
@@ -145,6 +212,7 @@ async function ensureAudioSystem(root: string): Promise<void> {
   } catch (error) {
     if (!isMissing(error)) throw error;
   }
+  const defaultMounts = AUDIO_DEFAULT_MOUNTS.map((mount) => ({ id: mount.id, key: mount.key, values: { ...mount.values } }));
   if (content === undefined) {
     await writeInitialFile(root, AUDIO_SYSTEM_PATH, markdown({
       schemaVersion: SCHEMA_VERSION,
@@ -156,6 +224,8 @@ async function ensureAudioSystem(root: string): Promise<void> {
       description: "项目音频总线与事件；master、music、sfx 为内置总线，可继续添加自定义总线。",
       buses: builtinAudioBuses(),
       events: [],
+      components: AUDIO_COMPONENTS.map((component) => component.id),
+      mounts: defaultMounts,
     }, AUDIO_SYSTEM_BODY));
     return;
   }
@@ -170,8 +240,15 @@ async function ensureAudioSystem(root: string): Promise<void> {
   if (data === null || typeof data !== "object" || Array.isArray(data)) return;
   const frontmatter = data as Record<string, unknown>;
   const merged = mergeBuiltinBuses(readAudioBuses(frontmatter));
-  if (!merged.changed) return;
-  await writeFile(target, markdown({ ...frontmatter, buses: merged.buses }, match[2] ?? ""), "utf8");
+  const missingComponents = !Array.isArray(frontmatter.components) || frontmatter.components.length === 0;
+  const missingMounts = !Array.isArray(frontmatter.mounts) || frontmatter.mounts.length === 0;
+  if (!merged.changed && !missingComponents && !missingMounts) return;
+  await writeFile(target, markdown({
+    ...frontmatter,
+    buses: merged.buses,
+    ...(missingComponents ? { components: AUDIO_COMPONENTS.map((component) => component.id) } : {}),
+    ...(missingMounts ? { mounts: defaultMounts } : {}),
+  }, match[2] ?? ""), "utf8");
 }
 
 export class ProjectLayout {
@@ -202,7 +279,10 @@ export class ProjectLayout {
       title: metadata.name,
       description: metadata.description,
       materialGroups: {
-        component: [{ id: "group_basic_components", name: "基础组件", legacyName: "基础组件", order: 0, scope: "system" }],
+        component: [
+          { id: "group_basic_components", name: "基础组件", legacyName: "基础组件", order: 0, scope: "system" },
+          { id: AUDIO_COMPONENT_GROUP_ID, name: "音频组件", legacyName: "音频组件", order: 1, scope: "system" },
+        ],
         system: [{ id: "group_audio", name: "音频", legacyName: "音频", order: 0, scope: "system" }],
       },
     }, `# ${metadata.name}\n\n${metadata.description}`));
@@ -233,7 +313,9 @@ export class ProjectLayout {
         { key: "tree", label: "决策树", type: "string", default: "" },
       ],
     }, "# 决策树\n\n## 行为契约\n\n- `tree` 指向 `specs/decision_trees/<id>.md`，由实现按树结构执行。\n- 同一实体或系统可挂多个决策树实例，用 `key` 区分。\n- 决策树只描述选择逻辑，具体条件与动作由实现解释。"));
+    await ensureAudioComponents(root);
     await ensureAudioSystem(root);
+    await ensureAudioComponentGroup(root);
     await writeInitialFile(root, ".specloom/project.yaml", stringify({ schemaVersion: SCHEMA_VERSION, project: { name: metadata.name, description: metadata.description }, godot: metadata.godot, defaultTaskMode: "manual" }));
     await writeInitialFile(root, ".specloom/generated-manifest.json", `${JSON.stringify({ schemaVersion: SCHEMA_VERSION, files: {} }, null, 2)}\n`);
     if (this.options.bundledSkillsDirectory !== undefined) await this.copyBundledSkills(root, this.options.bundledSkillsDirectory);
