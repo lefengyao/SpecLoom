@@ -17,6 +17,12 @@
 .material-consumers code { color: var(--text-subtle); font-size: 10px; }
 .material-signal-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .material-signal-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.audio-bus-list, .audio-event-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.audio-bus-list li { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.1fr) 80px auto auto; gap: 8px; align-items: center; }
+.audio-bus-list small { grid-column: 1 / -1; color: var(--text-muted); font-size: 10px; }
+.audio-bus-muted, .audio-event-flag { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text-muted); }
+.audio-event-list li { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.9fr) 76px 70px 64px 70px auto auto auto; gap: 8px; align-items: center; }
+.audio-event-streams { grid-column: 1 / -1; }
 .material-section { display: flex; flex-direction: column; gap: 12px; padding: 18px 0; border-top: 1px solid var(--border); }
 .material-section > header, .material-card > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .material-section h3 { font-size: 14px; margin: 0; }

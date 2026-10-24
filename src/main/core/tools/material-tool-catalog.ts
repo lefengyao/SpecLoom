@@ -30,6 +30,18 @@ const changes = z.object({
   }).strict()).max(256).optional(),
   stateMachine: StateMachineSchema.nullable().optional(),
   materialGroups: materialGroups.optional(),
+  buses: z.array(z.object({
+    name: z.string().trim().min(1).max(64), parent: z.string().trim().max(64).optional(),
+    volume: z.number().min(0).max(1).optional(), muted: z.boolean().optional(), description: z.string().max(2000).optional(),
+  }).strict()).max(64).optional(),
+  events: z.array(z.object({
+    id: z.string().trim().min(1).max(64), bus: z.string().trim().min(1).max(64),
+    streams: z.array(z.string().max(2048)).max(32).optional(),
+    volume_db: z.number().min(-80).max(24).optional(), pitch: z.number().min(0).max(8).optional(),
+    max_concurrent: z.number().int().min(1).max(64).optional(), cooldown: z.number().min(0).max(60).optional(),
+    priority: z.number().int().min(-100).max(100).optional(),
+    loop: z.boolean().optional(), positional: z.boolean().optional(),
+  }).strict()).max(256).optional(),
 }).strict();
 const crop = z.object({ x: z.number().min(0).max(1), y: z.number().min(0).max(1), width: z.number().gt(0).max(1), height: z.number().gt(0).max(1) }).strict()
   .refine(area => area.x + area.width <= 1 && area.y + area.height <= 1, "裁剪区域必须位于图片范围内");

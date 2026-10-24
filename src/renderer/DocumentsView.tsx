@@ -6,6 +6,7 @@ import { parseMaterial, readFields, writeMaterial } from "../shared/project-mate
 import { importMissingLegacyGroups, normalizeMaterialGroups, validateMaterialGroupRegistry, type MaterialGroup, type MaterialGroupCategory, type MaterialGroupRegistry } from "../shared/material-groups";
 import { NewComponent, NewEntity, NewSpec } from "./AuthoringForms";
 import { DecisionTreeEditor } from "./DecisionTreeEditor";
+import { AUDIO_SYSTEM_ID, validateAudioSpec } from "../shared/audio-system";
 import { MaterialDetails } from "./MaterialDetails";
 import { MaterialExplorer } from "./MaterialExplorer";
 import { MaterialImageEditor } from "./MaterialImage";
@@ -423,6 +424,12 @@ export function DocumentsView({ api, projectPath, onError, busy, revision, categ
   }
   async function saveDocument() {
     if (!file || busy || saving || loading || (usesCatalog && catalogLoading) || (structured && !sourceMode && catalogError) || !dirty) return;
+    // Audio buses and events fail the same way in the UI as in the tools, before the write.
+    const parsedData = parseMaterial(text)?.data ?? {};
+    if (category === "system" && parsedData.id === AUDIO_SYSTEM_ID) {
+      const issues = validateAudioSpec(parsedData);
+      if (issues.length) { onError(new Error(`${issues[0]!.message}（${issues[0]!.path}）`)); return; }
+    }
     setSavePending(true);
     refreshRequest.current++;
     try {

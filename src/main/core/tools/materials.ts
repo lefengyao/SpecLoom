@@ -10,6 +10,7 @@ import { ProjectError } from "../errors";
 import { digestBytes } from "../store-fs";
 import { resolveComponentFields, type ComponentDefinition } from "../../../shared/component-inheritance";
 import { StateMachineSchema } from "../../../shared/state-machine";
+import { validateAudioSpec } from "../../../shared/audio-system";
 
 const mimeTypes: Record<string, string> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp", gif: "image/gif" };
 const folders: Record<Exclude<DocumentCategory, "all">, string> = {
@@ -124,6 +125,11 @@ export class WorkMaterials {
     if (properties.scope !== undefined && category !== "component") throw new ProjectError("VALIDATION_FAILED", "仅组件资料可定义 scope");
     if (properties.extends !== undefined && !["entity", "map", "component"].includes(category)) throw new ProjectError("VALIDATION_FAILED", "仅实体、地图或组件可继承");
     if (properties.components !== undefined && !["entity", "map", "system"].includes(category)) throw new ProjectError("VALIDATION_FAILED", "仅实体、地图或系统可声明组件");
+    if (properties.buses !== undefined || properties.events !== undefined) {
+      if (category !== "system") throw new ProjectError("VALIDATION_FAILED", "仅系统资料可以声明音频总线与事件");
+      const issues = validateAudioSpec({ ...properties });
+      if (issues.length) throw new ProjectError("VALIDATION_FAILED", `${issues[0]!.message}（${issues[0]!.path}）`);
+    }
     if (properties.entities !== undefined && category !== "system") throw new ProjectError("VALIDATION_FAILED", "仅系统资料可声明实体引用");
     if (properties.dependsOn !== undefined && category !== "system") throw new ProjectError("VALIDATION_FAILED", "仅系统资料可声明依赖");
     if (properties.systems !== undefined && category !== "feature") throw new ProjectError("VALIDATION_FAILED", "仅功能资料可关联系统");

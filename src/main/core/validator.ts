@@ -77,6 +77,8 @@ export class Validator {
       options.signal?.throwIfAborted();
       const content = await source.read(relative);
       if (content === undefined) continue;
+      // Decision notes written before the decision schema are plain Markdown; leave them alone.
+      if (validationPathIdentity(relative).startsWith("specs/decisions/") && !/^\uFEFF?---[ \t]*\r?\n/.test(content)) continue;
       const spec = parseSpec(relative, content, diagnostics);
       if (spec) { validateFields(spec, diagnostics); specs.push(spec); }
     }

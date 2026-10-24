@@ -1,7 +1,8 @@
 import { lstat, mkdir, readFile, readdir, realpath, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { stringify } from "yaml";
+import { parse, stringify } from "yaml";
 import { SCHEMA_VERSION, type GodotConfig, type ProjectMetadata } from "../../shared/contracts";
+import { AUDIO_SYSTEM_ID, AUDIO_SYSTEM_PATH, builtinAudioBuses, mergeBuiltinBuses, readAudioBuses } from "../../shared/audio-system";
 import { ProjectError } from "./errors";
 
 export interface ProjectLayoutOptions {
@@ -122,6 +123,55 @@ function markdown(frontmatter: Record<string, unknown>, body: string): string {
   return `---\n${stringify(frontmatter)}---\n\n${body}\n`;
 }
 
+const AUDIO_SYSTEM_BODY = `# 音频
+
+## 总线
+
+- \`master\`：所有音频的最终出口，不能删除，也不能设置父总线。
+- \`music\`：音乐。
+- \`sfx\`：音效。
+
+自定义总线直接写进 \`buses\`；事件用 \`bus\` 字段引用总线，名称在项目内唯一。`;
+
+/**
+ * Every project owns one audio system. Existing projects get the missing built-in
+ * buses back; values already stored are never rewritten.
+ */
+async function ensureAudioSystem(root: string): Promise<void> {
+  const target = path.join(root, AUDIO_SYSTEM_PATH);
+  let content: string | undefined;
+  try {
+    content = await readFile(target, "utf8");
+  } catch (error) {
+    if (!isMissing(error)) throw error;
+  }
+  if (content === undefined) {
+    await writeInitialFile(root, AUDIO_SYSTEM_PATH, markdown({
+      schemaVersion: SCHEMA_VERSION,
+      id: AUDIO_SYSTEM_ID,
+      title: "音频",
+      type: "system",
+      description: "项目音频总线与事件；master、music、sfx 为内置总线，可继续添加自定义总线。",
+      buses: builtinAudioBuses(),
+      events: [],
+    }, AUDIO_SYSTEM_BODY));
+    return;
+  }
+  const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(content);
+  if (!match) return;
+  let data: unknown;
+  try {
+    data = parse(match[1]!);
+  } catch {
+    return;
+  }
+  if (data === null || typeof data !== "object" || Array.isArray(data)) return;
+  const frontmatter = data as Record<string, unknown>;
+  const merged = mergeBuiltinBuses(readAudioBuses(frontmatter));
+  if (!merged.changed) return;
+  await writeFile(target, markdown({ ...frontmatter, buses: merged.buses }, match[2] ?? ""), "utf8");
+}
+
 export class ProjectLayout {
   constructor(private readonly options: ProjectLayoutOptions = {}) {}
 
@@ -172,6 +222,7 @@ export class ProjectLayout {
         { key: "tree", label: "决策树", type: "string", default: "" },
       ],
     }, "# 决策树\n\n## 行为契约\n\n- `tree` 指向 `specs/decision_trees/<id>.md`，由实现按树结构执行。\n- 同一实体或系统可挂多个决策树实例，用 `key` 区分。\n- 决策树只描述选择逻辑，具体条件与动作由实现解释。"));
+    await ensureAudioSystem(root);
     await writeInitialFile(root, ".specloom/project.yaml", stringify({ schemaVersion: SCHEMA_VERSION, project: { name: metadata.name, description: metadata.description }, godot: metadata.godot, defaultTaskMode: "manual" }));
     await writeInitialFile(root, ".specloom/generated-manifest.json", `${JSON.stringify({ schemaVersion: SCHEMA_VERSION, files: {} }, null, 2)}\n`);
     if (this.options.bundledSkillsDirectory !== undefined) await this.copyBundledSkills(root, this.options.bundledSkillsDirectory);

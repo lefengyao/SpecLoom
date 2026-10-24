@@ -2,6 +2,7 @@ import { parseDocument } from "yaml";
 import { TaskScopeSpecSchema, type ValidationDiagnostic } from "../../shared/contracts";
 import { StateMachineSchema } from "../../shared/state-machine";
 import { validateDecisionTree } from "../../shared/decision-tree";
+import { AUDIO_SYSTEM_ID, validateAudioSpec } from "../../shared/audio-system";
 import { TaskScope } from "./task-scope";
 
 export type SpecData = Record<string, unknown>;
@@ -96,6 +97,9 @@ export function validateFields(spec: ParsedSpec, diagnostics: ValidationDiagnost
   const field = (key: string, valid: boolean) => { if (!valid) diagnostics.push(diagnostic(path, "SPEC_FIELD_INVALID", `Field '${key}' is missing or invalid`)); };
   if (data.scope !== undefined && data.type !== "component") field("scope", false);
   field("id", nonempty(data.id));
+  if (!identity.startsWith("specs/systems/") && (data.buses !== undefined || data.events !== undefined)) {
+    diagnostics.push(diagnostic(path, "SPEC_FIELD_INVALID", "Audio buses and events belong to the audio system specification"));
+  }
   if (data.stateMachine !== undefined) {
     const allowed = identity.startsWith("specs/entities/") && data.type !== "map";
     const parsed = allowed ? StateMachineSchema.safeParse(data.stateMachine) : undefined;
@@ -191,6 +195,10 @@ export function validateFields(spec: ParsedSpec, diagnostics: ValidationDiagnost
       if (data.dependsOn !== undefined) field("dependsOn", referenceList(data.dependsOn));
       if (data.signals !== undefined) field("signals", signalList(data.signals));
       if (data.mounts !== undefined) field("mounts", Array.isArray(data.mounts) && data.mounts.every((item) => validReference(item, true)));
+      if (data.buses !== undefined || data.events !== undefined) {
+        if (data.id !== AUDIO_SYSTEM_ID) diagnostics.push(diagnostic(path, "AUDIO_SYSTEM_INVALID", "Only the audio system declares buses and events"));
+        for (const issue of validateAudioSpec(data)) diagnostics.push(diagnostic(path, issue.code, `${issue.message} (${issue.path})`));
+      }
     } else if (kind === "feature") {
       field("status", data.status === "planned" || data.status === "active" || data.status === "done");
       if (data.systems !== undefined) field("systems", referenceList(data.systems));

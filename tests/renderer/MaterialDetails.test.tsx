@@ -89,6 +89,22 @@ describe("structured editors for system, feature and decision specs", () => {
     expect(within(section).getByText("战斗决策")).toBeInTheDocument();
   });
 
+  it("edits audio buses on the audio system and locks built-ins", () => {
+    const audioCatalog = [summary("audio", "音频", "system", "systems")];
+    const onChange = renderDetails({
+      schemaVersion: 1, id: "audio", title: "音频", type: "system", description: "",
+      buses: [{ name: "master", volume: 1 }, { name: "music", parent: "master", volume: 1 }, { name: "sfx", parent: "master", volume: 1 }],
+      events: [],
+    }, audioCatalog);
+    expect(screen.getByLabelText("总线名称 1")).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "添加总线" }));
+    const buses = (onChange.mock.calls.at(-1)![0] as { buses: { name: string }[] }).buses;
+    expect(buses.map((bus) => bus.name)).toContain("bus_4");
+    fireEvent.click(screen.getByRole("button", { name: "添加事件" }));
+    const events = (onChange.mock.calls.at(-1)![0] as { events: { id: string; bus: string }[] }).events;
+    expect(events[0]).toMatchObject({ id: "event_1", bus: "sfx" });
+  });
+
   it("lists the systems and decision trees that reference a component", () => {
     const componentCatalog = [
       summary("vitality", "生命", "component", "components"),
